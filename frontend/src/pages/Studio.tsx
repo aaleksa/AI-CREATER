@@ -38,7 +38,10 @@ export default function Studio() {
   }, [id]);
 
   useEffect(() => {
-    if (!id || !project?.hasVideo) return;
+    if (!id || !project?.hasVideo) {
+      setVideoSrc(null);
+      return;
+    }
     let cancelled = false;
     let url = "";
     fetchMedia(`/projects/${id}/file`)
@@ -57,7 +60,10 @@ export default function Studio() {
   }, [id, project?.hasVideo]);
 
   useEffect(() => {
-    if (!id || !project?.audioUrl) return;
+    if (!id || !project?.audioUrl) {
+      setAudioSrc(null);
+      return;
+    }
     let cancelled = false;
     let url = "";
     fetchMedia(`/projects/${id}/audio`)
@@ -79,12 +85,12 @@ export default function Studio() {
   const frame = project?.visuals?.[scene]?.imageUrl;
   const caption = project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title;
 
-  async function run(step: string) {
+  async function run(step: string, regenerate = false) {
     if (!id) return;
     setBusy(step);
     setError("");
     try {
-      const { project: nextProject } = await api.runStep(id, step);
+      const { project: nextProject } = await api.runStep(id, step, regenerate);
       setProject(nextProject);
       refreshMe();
     } catch (err) {
@@ -179,8 +185,24 @@ export default function Studio() {
 
           {next && (
             <button className="btn accent" style={{ marginTop: 18 }} disabled={Boolean(busy)} onClick={() => run(next.id)}>
-              {busy ? makingLabel : `Make ${next.label.toLowerCase()} · ${next.cost} credits`}
+              {busy && busy === next.id ? makingLabel : `Make ${next.label.toLowerCase()} · ${next.cost} credits`}
             </button>
+          )}
+          {STEPS.some((s) => doneThrough(project, s.id)) && (
+            <div style={{ marginTop: 18 }}>
+              <p className="hint">Didn’t like a step? Regenerate it — same credits, later steps reset.</p>
+              {STEPS.filter((s) => doneThrough(project, s.id)).map((s) => (
+                <button
+                  key={`regen-${s.id}`}
+                  className="btn ghost"
+                  style={{ marginTop: 8, marginRight: 8 }}
+                  disabled={Boolean(busy)}
+                  onClick={() => run(s.id, true)}
+                >
+                  {busy === s.id ? makingLabel : `Regenerate ${s.label.toLowerCase()} · ${s.cost}`}
+                </button>
+              ))}
+            </div>
           )}
           {error && (
             <p className="err">

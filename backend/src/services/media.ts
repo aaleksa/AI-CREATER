@@ -34,6 +34,16 @@ export function hasVideoFile(projectId: string) {
   return fs.existsSync(videoFile(projectId)) && fs.statSync(videoFile(projectId)).size > 0;
 }
 
+export function removeVoiceFile(projectId: string) {
+  const file = voiceFile(projectId);
+  if (fs.existsSync(file)) fs.unlinkSync(file);
+}
+
+export function removeVideoFile(projectId: string) {
+  const file = videoFile(projectId);
+  if (fs.existsSync(file)) fs.unlinkSync(file);
+}
+
 function run(bin: string, args: string[]) {
   if (!bin || !fs.existsSync(bin)) {
     return Promise.reject(new Error("ffmpeg-static is missing. Run npm install in backend."));

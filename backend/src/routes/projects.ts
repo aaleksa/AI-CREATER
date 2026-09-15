@@ -76,7 +76,9 @@ projectsRouter.post("/:id/steps/:step", async (req, res) => {
     return;
   }
   try {
-    const project = await runStep(req.user!.id, String(req.params.id), step);
+    const project = await runStep(req.user!.id, String(req.params.id), step, {
+      regenerate: Boolean(req.body?.regenerate),
+    });
     res.json({ project });
   } catch (error) {
     const err = error as Error & { status?: number };

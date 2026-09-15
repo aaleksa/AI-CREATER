@@ -77,8 +77,11 @@ export const api = {
   project: (id: string) => request<{ project: Project; costs: Record<string, number>; fullVideoCost: number }>(`/projects/${id}`),
   createProject: (type: string, prompt: string) =>
     request<{ project: Project }>("/projects", { method: "POST", body: JSON.stringify({ type, prompt }) }),
-  runStep: (id: string, step: string) =>
-    request<{ project: Project }>(`/projects/${id}/steps/${step}`, { method: "POST" }),
+  runStep: (id: string, step: string, regenerate = false) =>
+    request<{ project: Project }>(`/projects/${id}/steps/${step}`, {
+      method: "POST",
+      body: JSON.stringify({ regenerate }),
+    }),
   brand: () => request<{ brandKit: Record<string, string> | null }>("/brand"),
   saveBrand: (body: Record<string, string>) =>
     request<{ brandKit: Record<string, string> }>("/brand", { method: "PUT", body: JSON.stringify(body) }),

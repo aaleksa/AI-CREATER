@@ -14,7 +14,7 @@ import {
   type Script,
   type Visual,
 } from "./ai.js";
-import { hasVideoFile, hasVoiceFile, renderReel, synthesizeSpeech } from "./media.js";
+import { hasVideoFile, hasVoiceFile, removeVideoFile, removeVoiceFile, renderReel, synthesizeSpeech } from "./media.js";
 
 export const FORMAT_TYPES = ["video", "instagram_reel", "tiktok", "image_post", "advertisement", "social_post"] as const;
 export type FormatType = (typeof FORMAT_TYPES)[number];
@@ -105,12 +105,18 @@ export function createProject(userId: string, type: FormatType, prompt: string) 
   return getProject(id, userId);
 }
 
-export async function runStep(userId: string, projectId: string, step: keyof typeof CREDIT_COSTS) {
+export async function runStep(
+  userId: string,
+  projectId: string,
+  step: keyof typeof CREDIT_COSTS,
+  opts: { regenerate?: boolean } = {}
+) {
   const project = getProject(projectId, userId);
   const brand = brandFor(userId);
   const cost = CREDIT_COSTS[step];
   const prompt = String(project.prompt);
   const type = String(project.type);
+  const regenerate = Boolean(opts.regenerate);
 
   const alreadyDone =
     (step === "idea" && Boolean(project.idea_json)) ||
@@ -119,7 +125,7 @@ export async function runStep(userId: string, projectId: string, step: keyof typ
     (step === "voice" && hasVoiceFile(projectId)) ||
     (step === "captions" && Boolean(project.captions_json)) ||
     (step === "render" && hasVideoFile(projectId));
-  if (alreadyDone) return serializeProject(project);
+  if (alreadyDone && !regenerate) return serializeProject(project);
 
   if (getBalance(userId) < cost) {
     const err = new Error("Not enough credits. Buy a pack or upgrade your plan.") as Error & { status: number };
@@ -228,9 +234,15 @@ export async function runStep(userId: string, projectId: string, step: keyof typ
       actualCost = rendered.cost;
     }
 
-    spendCredits(userId, cost, `${step} for ${type}`, generationId);
+    spendCredits(userId, cost, `${regenerate ? "regenerate " : ""}${step} for ${type}`, generationId);
     const used = Number(project.credits_used) + cost;
     updates.credits_used = used;
+
+    if (regenerate) {
+      Object.assign(updates, downstreamWipe(step));
+      if (step === "idea" || step === "script") removeVoiceFile(projectId);
+      if (step !== "render") removeVideoFile(projectId);
+    }
 
     const fields = Object.keys(updates)
       .map((k) => `${k} = @${k}`)
@@ -246,4 +258,32 @@ export async function runStep(userId: string, projectId: string, step: keyof typ
     db.prepare(`UPDATE ai_generations SET status = 'failed' WHERE id = ?`).run(generationId);
     throw error;
   }
+}
+
+function downstreamWipe(step: keyof typeof CREDIT_COSTS): Record<string, string | number | null> {
+  if (step === "idea") {
+    return {
+      script_json: null,
+      visuals_json: null,
+      voice_json: null,
+      captions_json: null,
+      audio_url: "",
+      output_url: null,
+      status: "draft",
+    };
+  }
+  if (step === "script") {
+    return {
+      visuals_json: null,
+      voice_json: null,
+      captions_json: null,
+      audio_url: "",
+      output_url: null,
+      status: "draft",
+    };
+  }
+  if (step === "visuals" || step === "voice" || step === "captions") {
+    return { output_url: null, status: "draft" };
+  }
+  return {};
 }
