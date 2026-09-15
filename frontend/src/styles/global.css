@@ -134,7 +134,7 @@ button { cursor: pointer; }
 }
 .prompt-stage textarea {
   width: 100%;
-  min-height: 120px;
+  min-height: 160px;
   background: transparent;
   border: 0;
   resize: vertical;

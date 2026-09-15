@@ -1,9 +1,20 @@
 import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
-import { CREDIT_COSTS, FULL_VIDEO_COST } from "../config.js";
+import { CREDIT_COSTS, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
 import { FORMAT_TYPES, MVP_READY, createProject, runStep, serializeProject } from "../services/pipeline.js";
 import { hasVideoFile, hasVoiceFile, videoFile, voiceFile } from "../services/media.js";
+
+function readPrompt(value: unknown) {
+  const text = String(value || "").trim();
+  if (text.length < MIN_PROMPT_CHARS) {
+    return { error: "Tell us what you want to create — a sentence is enough, more is fine." };
+  }
+  if (text.length > MAX_PROMPT_CHARS) {
+    return { error: "That’s too long. Keep it under 2,000 characters." };
+  }
+  return { text };
+}
 
 export const projectsRouter = Router();
 projectsRouter.use(requireAuth);
@@ -21,8 +32,9 @@ projectsRouter.post("/", (req, res) => {
     res.status(400).json({ error: "Unknown format." });
     return;
   }
-  if (!prompt || String(prompt).trim().length < 8) {
-    res.status(400).json({ error: "Tell us what you want to create — a sentence is enough." });
+  const parsed = readPrompt(prompt);
+  if ("error" in parsed) {
+    res.status(400).json({ error: parsed.error });
     return;
   }
   if (!MVP_READY.includes(type as (typeof FORMAT_TYPES)[number])) {
@@ -31,7 +43,7 @@ projectsRouter.post("/", (req, res) => {
     });
     return;
   }
-  const project = createProject(req.user!.id, type as (typeof FORMAT_TYPES)[number], String(prompt).trim());
+  const project = createProject(req.user!.id, type as (typeof FORMAT_TYPES)[number], parsed.text);
   res.status(201).json({ project: serializeProject(project) });
 });
 
@@ -67,6 +79,29 @@ projectsRouter.get("/:id", (req, res) => {
     return;
   }
   res.json({ project: serializeProject(row), costs: CREDIT_COSTS, fullVideoCost: FULL_VIDEO_COST });
+});
+
+projectsRouter.patch("/:id", (req, res) => {
+  const id = String(req.params.id);
+  const row = db
+    .prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?")
+    .get(id, req.user!.id) as Record<string, unknown> | undefined;
+  if (!row) {
+    res.status(404).json({ error: "Project not found." });
+    return;
+  }
+  const parsed = readPrompt(req.body?.prompt);
+  if ("error" in parsed) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  db.prepare("UPDATE projects SET prompt = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?").run(
+    parsed.text,
+    id,
+    req.user!.id
+  );
+  const next = db.prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?").get(id, req.user!.id) as Record<string, unknown>;
+  res.json({ project: serializeProject(next) });
 });
 
 projectsRouter.post("/:id/steps/:step", async (req, res) => {

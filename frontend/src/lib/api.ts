@@ -44,6 +44,9 @@ export type Project = {
   outputUrl: string | null;
   hasVideo: boolean;
   creditsUsed: number;
+  stepAttempts: Record<string, number>;
+  maxStepAttempts: number;
+  maxRegenerates: number;
   createdAt: string;
 };
 
@@ -77,6 +80,8 @@ export const api = {
   project: (id: string) => request<{ project: Project; costs: Record<string, number>; fullVideoCost: number }>(`/projects/${id}`),
   createProject: (type: string, prompt: string) =>
     request<{ project: Project }>("/projects", { method: "POST", body: JSON.stringify({ type, prompt }) }),
+  updatePrompt: (id: string, prompt: string) =>
+    request<{ project: Project }>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify({ prompt }) }),
   runStep: (id: string, step: string, regenerate = false, sceneId?: number) =>
     request<{ project: Project }>(`/projects/${id}/steps/${step}`, {
       method: "POST",

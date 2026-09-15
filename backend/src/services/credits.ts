@@ -57,3 +57,8 @@ export function spendCredits(
   tx();
   return getBalance(userId);
 }
+
+export function refundCredits(userId: string, amount: number, description: string) {
+  if (amount <= 0) return getBalance(userId);
+  return grantCredits(userId, amount, "refund", description);
+}

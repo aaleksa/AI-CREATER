@@ -1,7 +1,7 @@
 import { v4 as uuid } from "uuid";
 import { db } from "../db/index.js";
-import { CREDIT_COSTS, VISUAL_SCENE_CREDITS, visualMinLive } from "../config.js";
-import { getBalance, spendCredits } from "./credits.js";
+import { CREDIT_COSTS, MAX_STEP_ATTEMPTS, MAX_REGENERATES_PER_STEP, VISUAL_SCENE_CREDITS, visualMinLive } from "../config.js";
+import { getBalance, refundCredits, spendCredits } from "./credits.js";
 import {
   generateCaptions,
   generateIdea,
@@ -76,6 +76,34 @@ function parse<T>(value: unknown): T | null {
   }
 }
 
+const STEP_TYPES = ["idea", "script", "visuals", "voice", "captions", "render"] as const;
+
+function stepAttemptCount(projectId: string, step: string) {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM ai_generations
+       WHERE project_id = ? AND type = ? AND status IN ('succeeded', 'running', 'failed')`
+    )
+    .get(projectId, step) as { n: number } | undefined;
+  return Number(row?.n ?? 0);
+}
+
+function stepAttemptCounts(projectId: string) {
+  const rows = db
+    .prepare(
+      `SELECT type, COUNT(*) AS n FROM ai_generations
+       WHERE project_id = ? AND type IN ('idea', 'script', 'visuals', 'voice', 'captions', 'render')
+         AND status IN ('succeeded', 'running', 'failed')
+       GROUP BY type`
+    )
+    .all(projectId) as { type: string; n: number }[];
+  const counts = Object.fromEntries(STEP_TYPES.map((step) => [step, 0])) as Record<(typeof STEP_TYPES)[number], number>;
+  for (const row of rows) {
+    if (row.type in counts) counts[row.type as (typeof STEP_TYPES)[number]] = Number(row.n);
+  }
+  return counts;
+}
+
 export function serializeProject(row: Record<string, unknown>) {
   return {
     id: row.id,
@@ -92,6 +120,9 @@ export function serializeProject(row: Record<string, unknown>) {
     outputUrl: hasVideoFile(String(row.id)) ? `/projects/${row.id}/file` : row.output_url || null,
     hasVideo: hasVideoFile(String(row.id)),
     creditsUsed: row.credits_used,
+    stepAttempts: stepAttemptCounts(String(row.id)),
+    maxStepAttempts: MAX_STEP_ATTEMPTS,
+    maxRegenerates: MAX_REGENERATES_PER_STEP,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -132,6 +163,30 @@ export async function runStep(
     (step === "render" && hasVideoFile(projectId));
   if (alreadyDone && !regenerate) return serializeProject(project);
 
+  const idea = parse<Idea>(project.idea_json);
+  const script = parse<Script>(project.script_json);
+  if (step === "script" && !idea) {
+    throw Object.assign(new Error("Generate the idea first."), { status: 400 });
+  }
+  if ((step === "visuals" || step === "voice" || step === "captions" || step === "render") && !script) {
+    throw Object.assign(new Error("Generate the script first."), { status: 400 });
+  }
+  if (step === "visuals" && sceneId && script && !script.scenes.find((item) => item.id === sceneId)) {
+    throw Object.assign(new Error("Unknown scene."), { status: 400 });
+  }
+  if (step === "render" && !hasVoiceFile(projectId)) {
+    throw Object.assign(new Error("Generate the voice audio first."), { status: 400 });
+  }
+
+  if (stepAttemptCount(projectId, step) >= MAX_STEP_ATTEMPTS) {
+    throw Object.assign(
+      new Error(
+        `This step has been generated enough times on this Reel (${MAX_STEP_ATTEMPTS} tries). Each try is a paid AI call. Start a new project if you want another go.`
+      ),
+      { status: 429 }
+    );
+  }
+
   if (getBalance(userId) < cost) {
     const err = new Error("Not enough credits. Buy a pack or upgrade your plan.") as Error & { status: number };
     err.status = 402;
@@ -148,6 +203,9 @@ export async function runStep(
     credits: cost,
     status: "running",
   });
+  const reserved = cost;
+  spendCredits(userId, reserved, `${regenerate ? "regenerate " : ""}${step} for ${type}`, generationId);
+  let providerTouched = false;
 
   try {
     let provider = "auteur-studio";
@@ -158,27 +216,25 @@ export async function runStep(
     };
 
     if (step === "idea") {
+      providerTouched = true;
       const result = await generateIdea(prompt, type, brand);
       updates.idea_json = JSON.stringify(result.data);
       updates.current_step = "idea";
       provider = result.provider;
       model = result.model;
       actualCost = result.cost;
-    } else if (step === "script") {
-      const idea = parse<Idea>(project.idea_json);
-      if (!idea) throw Object.assign(new Error("Generate the idea first."), { status: 400 });
+    } else if (step === "script" && idea) {
+      providerTouched = true;
       const result = await generateScript(prompt, idea, brand);
       updates.script_json = JSON.stringify(result.data);
       updates.current_step = "script";
       provider = result.provider;
       model = result.model;
       actualCost = result.cost;
-    } else if (step === "visuals") {
-      const script = parse<Script>(project.script_json);
-      if (!script) throw Object.assign(new Error("Generate the script first."), { status: 400 });
+    } else if (step === "visuals" && script) {
+      providerTouched = true;
       if (sceneId) {
-        const scene = script.scenes.find((item) => item.id === sceneId);
-        if (!scene) throw Object.assign(new Error("Unknown scene."), { status: 400 });
+        const scene = script.scenes.find((item) => item.id === sceneId)!;
         const current = parse<Visual[]>(project.visuals_json) || [];
         const one = await generateOneVisual(scene, brand);
         const next = current.some((item) => item.sceneId === sceneId)
@@ -207,9 +263,8 @@ export async function runStep(
         actualCost = result.cost;
         if (result.usedOpenAI) cost = result.live * VISUAL_SCENE_CREDITS;
       }
-    } else if (step === "voice") {
-      const script = parse<Script>(project.script_json);
-      if (!script) throw Object.assign(new Error("Generate the script first."), { status: 400 });
+    } else if (step === "voice" && script) {
+      providerTouched = true;
       const result = await generateVoice(script, brand);
       const direction = {
         voicePreset: result.data.voicePreset || result.data.voice || "warm_british_female",
@@ -234,21 +289,16 @@ export async function runStep(
         credits: 0,
         status: "succeeded",
       });
-    } else if (step === "captions") {
-      const script = parse<Script>(project.script_json);
-      if (!script) throw Object.assign(new Error("Generate the script first."), { status: 400 });
+    } else if (step === "captions" && script) {
+      providerTouched = true;
       const result = await generateCaptions(script);
       updates.captions_json = JSON.stringify(result.data);
       updates.current_step = "captions";
       provider = result.provider;
       model = result.model;
       actualCost = result.cost;
-    } else if (step === "render") {
-      const script = parse<Script>(project.script_json);
-      if (!script) throw Object.assign(new Error("Generate the script first."), { status: 400 });
-      if (!hasVoiceFile(projectId)) {
-        throw Object.assign(new Error("Generate the voice audio first."), { status: 400 });
-      }
+    } else if (step === "render" && script) {
+      providerTouched = true;
       const rendered = await renderReel({
         projectId,
         script,
@@ -264,9 +314,11 @@ export async function runStep(
       actualCost = rendered.cost;
     }
 
-    spendCredits(userId, cost, `${regenerate ? "regenerate " : ""}${step} for ${type}`, generationId);
-    const used = Number(project.credits_used) + cost;
-    updates.credits_used = used;
+    if (cost < reserved) {
+      refundCredits(userId, reserved - cost, `Unused ${step} credits after live frames`);
+    }
+
+    updates.credits_used = Number(project.credits_used) + cost;
 
     if (regenerate || sceneId) {
       Object.assign(updates, downstreamWipe(step, Boolean(sceneId)));
@@ -286,6 +338,13 @@ export async function runStep(
     return serializeProject(getProject(projectId, userId));
   } catch (error) {
     db.prepare(`UPDATE ai_generations SET status = 'failed' WHERE id = ?`).run(generationId);
+    if (!providerTouched) {
+      refundCredits(userId, reserved, `Refund ${step} — AI was not called`);
+    } else {
+      db.prepare(
+        `UPDATE projects SET credits_used = credits_used + ?, updated_at = datetime('now') WHERE id = ?`
+      ).run(reserved, projectId);
+    }
     throw error;
   }
 }

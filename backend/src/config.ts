@@ -9,6 +9,8 @@ export const config = {
   appUrl: process.env.APP_URL || "http://localhost:5173",
 };
 
+export const MIN_PROMPT_CHARS = 8;
+export const MAX_PROMPT_CHARS = 2000;
 export const FREE_CREDITS = 200;
 
 export const CREDIT_COSTS = {
@@ -28,6 +30,10 @@ export const VISUAL_SCENE_CREDITS = 8;
 export function visualMinLive(sceneCount: number) {
   return Math.max(1, Math.ceil((sceneCount * 3) / 5));
 }
+
+/** First Make + this many paid retries. Caps OpenAI spend per Reel step. */
+export const MAX_REGENERATES_PER_STEP = 2;
+export const MAX_STEP_ATTEMPTS = 1 + MAX_REGENERATES_PER_STEP;
 
 export const CREDIT_PACKS = [
   { id: "pack_200", credits: 200, price_gbp: 499, label: "200 credits" },

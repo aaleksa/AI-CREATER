@@ -12,8 +12,8 @@ export default function Landing() {
       </header>
       <h1>Tell us what you want to create. We’ll do the rest.</h1>
       <p className="lede">
-        You run a salon, café or gym. Write one sentence. Auteur finishes a 30-second Reel —
-        idea, script, pictures, voice, captions, and an mp4 you can post.
+        You run a salon, café or gym. Write what you want — one sentence is usually enough,
+        add more if you need to. Auteur finishes a 30-second Reel you can post.
       </p>
       <Link to="/signup" className="btn accent">Create a Reel</Link>
       <p className="hint" style={{ marginTop: 28 }}>

@@ -45,7 +45,7 @@ export default function Home() {
     <div className="hero-home">
       <p className="hint">The studio</p>
       <h1 style={{ fontSize: "clamp(40px, 6vw, 64px)" }}>What do you want to create?</h1>
-      <p className="lede">Pick a format. Write a sentence. Auteur finishes a Reel you can post — for salons, cafés and gyms first.</p>
+      <p className="lede">Pick a format. Write what you want — a sentence is enough; add the offer, place or who it’s for if one line isn’t.</p>
 
       <div className="format-grid">
         {FORMATS.map((format) => (
@@ -72,10 +72,13 @@ export default function Home() {
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Create a 30-second Reel about…"
+          maxLength={2000}
+          placeholder="Create a 30-second Reel about… Add the offer, the street, or who it’s for if a sentence isn’t enough."
         />
         <div className="row">
-          <span className="hint">A finished Reel is 150 credits (Idea 5 · Script 10 · Visuals 40 · Voice 30 · Captions 10 · Create 55) · Free starts with 200</span>
+          <span className="hint">
+            A sentence is enough. More is fine (up to 2,000 characters). A finished Reel is 150 credits · Free starts with 200
+          </span>
           <button className="btn accent" onClick={start} disabled={busy}>
             {busy ? "Opening studio…" : `Continue with ${selected?.title}`}
           </button>

@@ -32,9 +32,15 @@ export default function Studio() {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
 
+  const [brief, setBrief] = useState("");
+  const [briefSaved, setBriefSaved] = useState(false);
+
   useEffect(() => {
     if (!id) return;
-    api.project(id).then((d) => setProject(d.project)).catch((e) => setError(e.message));
+    api.project(id).then((d) => {
+      setProject(d.project);
+      setBrief(d.project.prompt);
+    }).catch((e) => setError(e.message));
   }, [id]);
 
   useEffect(() => {
@@ -82,23 +88,57 @@ export default function Studio() {
   }, [id, project?.audioUrl]);
 
   const next = useMemo(() => STEPS.find((s) => project && !doneThrough(project, s.id)), [project]);
+  const lastDone = useMemo(() => [...STEPS].reverse().find((s) => project && !doneThrough(project, s.id)), [project]);
+  const triesLeft = (step: string) =>
+    Math.max(0, (project?.maxStepAttempts ?? 3) - (project?.stepAttempts?.[step] ?? 0));
   const frame = project?.visuals?.[scene]?.imageUrl;
   const frameIsPlaceholder = Boolean(project?.visuals?.[scene]?.placeholder);
   const placeholderCount = project?.visuals?.filter((v) => v.placeholder).length ?? 0;
   const caption = project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title;
 
   async function run(step: string, regenerate = false, sceneId?: number) {
-    if (!id) return;
+    if (!id || !project) return;
+    if (regenerate && !sceneId && step === "idea" && brief.trim() !== project.prompt) {
+      try {
+        const { project: saved } = await api.updatePrompt(id, brief);
+        setProject(saved);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not save the brief.");
+        return;
+      }
+    }
+    if (regenerate && !sceneId && (step === "idea" || step === "script")) {
+      const ok = window.confirm(
+        step === "idea"
+          ? "This remakes the idea and clears script, frames, voice and video. 5 credits."
+          : "This remakes the script and clears frames, voice and video. 10 credits."
+      );
+      if (!ok) return;
+    }
     setBusy(sceneId ? `visual-${sceneId}` : step);
     setError("");
     try {
       const { project: nextProject } = await api.runStep(id, step, regenerate, sceneId);
       setProject(nextProject);
+      setBrief(nextProject.prompt);
       refreshMe();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Step failed.");
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function saveBrief() {
+    if (!id) return;
+    setError("");
+    try {
+      const { project: nextProject } = await api.updatePrompt(id, brief);
+      setProject(nextProject);
+      setBriefSaved(true);
+      setTimeout(() => setBriefSaved(false), 2500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the brief.");
     }
   }
 
@@ -109,7 +149,22 @@ export default function Studio() {
   return (
     <div>
       <p className="hint">{project.type.replaceAll("_", " ")}</p>
-      <h1 className="page-title" style={{ fontSize: 42 }}>{project.prompt}</h1>
+      <div className="field">
+        <label htmlFor="brief">What you asked for — change it if this isn’t right</label>
+        <textarea
+          id="brief"
+          value={brief}
+          onChange={(e) => setBrief(e.target.value)}
+          maxLength={2000}
+          rows={3}
+        />
+      </div>
+      <div className="row" style={{ marginBottom: 20 }}>
+        <button className="btn ghost" type="button" disabled={brief.trim() === project.prompt} onClick={saveBrief}>
+          Save brief
+        </button>
+        {briefSaved && <span className="ok">Saved. Regenerate idea to use the new brief.</span>}
+      </div>
       <div className="steps">
         {STEPS.map((s, i) => {
           const isDone = doneThrough(project, s.id);
@@ -160,10 +215,14 @@ export default function Studio() {
                       )}
                       <button
                         className="btn ghost"
-                        disabled={Boolean(busy)}
+                        disabled={Boolean(busy) || triesLeft("visuals") < 1}
                         onClick={() => run("visuals", true, s.id)}
                       >
-                        {busy === `visual-${s.id}` ? "Making…" : `Regenerate this frame · 8 credits`}
+                        {busy === `visual-${s.id}`
+                          ? "Making…"
+                          : triesLeft("visuals") < 1
+                            ? "No more frame retries on this Reel"
+                            : `Regenerate this frame · 8 credits`}
                       </button>
                     </>
                   )}
@@ -214,23 +273,45 @@ export default function Studio() {
             </>
           )}
 
-          {next && (
+          {next && triesLeft(next.id) > 0 && (
             <button className="btn accent" style={{ marginTop: 18 }} disabled={Boolean(busy)} onClick={() => run(next.id)}>
               {busy && busy === next.id ? makingLabel : `Make ${next.label.toLowerCase()} · ${next.cost} credits`}
             </button>
           )}
+          {next && triesLeft(next.id) < 1 && (
+            <p className="err" style={{ marginTop: 18 }}>
+              No more tries for {next.label.toLowerCase()} on this Reel. Each try is a paid AI call. Start a new project.
+            </p>
+          )}
+          {lastDone && triesLeft(lastDone.id) > 0 && (
+            <button
+              className="btn ghost"
+              style={{ marginTop: 10 }}
+              disabled={Boolean(busy)}
+              onClick={() => run(lastDone.id, true)}
+            >
+              {busy === lastDone.id ? makingLabel : `Not this ${lastDone.label.toLowerCase()}? Try again · ${lastDone.cost} credits`}
+            </button>
+          )}
           {STEPS.some((s) => doneThrough(project, s.id)) && (
             <div style={{ marginTop: 18 }}>
-              <p className="hint">Didn’t like a step? Regenerate it — same credits, later steps reset.</p>
+              <p className="hint">
+                Each retry spends credits — we pay the AI on every call. Two retries per step on this Reel. A later redo
+                clears the video. One frame is 8 credits.
+              </p>
               {STEPS.filter((s) => doneThrough(project, s.id)).map((s) => (
                 <button
                   key={`regen-${s.id}`}
                   className="btn ghost"
                   style={{ marginTop: 8, marginRight: 8 }}
-                  disabled={Boolean(busy)}
+                  disabled={Boolean(busy) || triesLeft(s.id) < 1}
                   onClick={() => run(s.id, true)}
                 >
-                  {busy === s.id ? makingLabel : `Regenerate ${s.label.toLowerCase()} · ${s.cost}`}
+                  {busy === s.id
+                    ? makingLabel
+                    : triesLeft(s.id) < 1
+                      ? `No more ${s.label.toLowerCase()} retries`
+                      : `Regenerate ${s.label.toLowerCase()} · ${s.cost}`}
                 </button>
               ))}
             </div>
