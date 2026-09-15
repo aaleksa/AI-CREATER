@@ -18,6 +18,10 @@ export function projectMediaDir(projectId: string) {
   return dir;
 }
 
+export function projectMediaPath(projectId: string) {
+  return path.join(dataDir, "media", projectId);
+}
+
 export function voiceFile(projectId: string) {
   return path.join(projectMediaDir(projectId), "voice.mp3");
 }

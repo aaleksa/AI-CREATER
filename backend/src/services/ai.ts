@@ -39,6 +39,7 @@ export type Visual = {
   sceneId: number;
   imageUrl: string;
   prompt: string;
+  placeholder?: boolean;
 };
 
 export type Voiceover = {
@@ -201,37 +202,65 @@ export async function generateVisuals(script: Script, brand?: BrandKit | null) {
   let provider = "auteur-studio";
   let model = "preview-frames";
   let cost = 0;
+  let live = 0;
 
   for (const scene of script.scenes) {
-    if (openai) {
-      try {
-        const image = await openai.images.generate({
-          model: "dall-e-3",
-          prompt: `${scene.visualPrompt}. Vertical 9:16 cinematic still, filmic, no text overlay.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}.` : ""}`,
-          size: "1024x1792",
-          n: 1,
-        });
-        visuals.push({
-          sceneId: scene.id,
-          imageUrl: image.data?.[0]?.url || PLACEHOLDER_FRAMES[(scene.id - 1) % PLACEHOLDER_FRAMES.length],
-          prompt: scene.visualPrompt,
-        });
-        provider = "openai";
-        model = "dall-e-3";
-        cost += 0.04;
-        continue;
-      } catch {
-        // fall through to studio frames
-      }
+    const frame = await generateSceneFrame(scene, brand);
+    visuals.push(frame.visual);
+    cost += frame.cost;
+    if (!frame.visual.placeholder) {
+      live += 1;
+      provider = frame.provider;
+      model = frame.model;
     }
-    visuals.push({
-      sceneId: scene.id,
-      imageUrl: PLACEHOLDER_FRAMES[(scene.id - 1) % PLACEHOLDER_FRAMES.length],
-      prompt: scene.visualPrompt,
-    });
   }
 
-  return { data: visuals, provider, model, cost };
+  if (openai && live === 0) {
+    throw Object.assign(new Error("We couldn’t generate these frames. Try a simpler description."), { status: 400 });
+  }
+
+  return { data: visuals, provider, model, cost, live, refused: visuals.filter((v) => v.placeholder).length };
+}
+
+export async function generateOneVisual(scene: ScriptScene, brand?: BrandKit | null) {
+  const openai = client();
+  const frame = await generateSceneFrame(scene, brand);
+  if (openai && frame.visual.placeholder) {
+    throw Object.assign(new Error("We couldn’t generate this frame. Try a simpler description."), { status: 400 });
+  }
+  return { data: frame.visual, provider: frame.provider, model: frame.model, cost: frame.cost };
+}
+
+async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null) {
+  const openai = client();
+  const fallback = PLACEHOLDER_FRAMES[(Math.max(1, scene.id) - 1) % PLACEHOLDER_FRAMES.length];
+  if (openai) {
+    try {
+      const image = await openai.images.generate({
+        model: "dall-e-3",
+        prompt: `${scene.visualPrompt}. Vertical 9:16 cinematic still, filmic, no text overlay.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}.` : ""}`,
+        size: "1024x1792",
+        n: 1,
+      });
+      const url = image.data?.[0]?.url;
+      if (url) {
+        return {
+          visual: { sceneId: scene.id, imageUrl: url, prompt: scene.visualPrompt },
+          provider: "openai",
+          model: "dall-e-3",
+          cost: 0.04,
+        };
+      }
+    } catch {
+      /* policy or network — placeholder for the batch; single-frame regen throws above */
+    }
+  }
+  return {
+    visual: { sceneId: scene.id, imageUrl: fallback, prompt: scene.visualPrompt, placeholder: true },
+    provider: openai ? "openai" : "auteur-studio",
+    model: openai ? "dall-e-3-refused" : "preview-frames",
+    cost: 0,
+  };
 }
 
 export async function generateVoice(script: Script, brand?: BrandKit | null) {

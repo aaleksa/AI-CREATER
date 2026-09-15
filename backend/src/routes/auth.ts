@@ -5,6 +5,7 @@ import { db } from "../db/index.js";
 import { FREE_CREDITS } from "../config.js";
 import { requireAuth, signToken } from "../middleware/auth.js";
 import { ensureCreditAccount, grantCredits } from "../services/credits.js";
+import { deleteAccount } from "../services/account.js";
 
 export const authRouter = Router();
 
@@ -87,4 +88,14 @@ authRouter.get("/me", requireAuth, (req, res) => {
     | { credits: number }
     | undefined;
   res.json({ user, subscription: sub ?? null, credits: Number(credits?.credits ?? 0) });
+});
+
+authRouter.delete("/account", requireAuth, (req, res) => {
+  try {
+    deleteAccount(req.user!.id);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not delete the account." });
+  }
 });

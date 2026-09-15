@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { api } from "../lib/api";
+import { useNavigate } from "react-router-dom";
+import { api, clearSession } from "../lib/api";
 
 function gbp(pence: number) {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(pence / 100);
 }
 
 export default function Billing() {
+  const nav = useNavigate();
   const [plans, setPlans] = useState<{ id: string; name: string; price_gbp: number; monthly_credits: number; description: string }[]>([]);
   const [packs, setPacks] = useState<{ id: string; credits: number; price_gbp: number; label: string }[]>([]);
   const [credits, setCredits] = useState<{
@@ -112,6 +114,25 @@ export default function Billing() {
         ))}
         {!credits?.generations?.length && <p className="empty">No generations yet.</p>}
       </div>
+
+      <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>Account</h2>
+      <p className="hint">Deletes your Reels, brand kit, credits and email from this studio. This cannot be undone.</p>
+      <button
+        className="btn ghost"
+        style={{ marginTop: 12 }}
+        onClick={async () => {
+          if (!window.confirm("Delete your Auteur account and all Reels on this studio?")) return;
+          try {
+            await api.deleteAccount();
+            clearSession();
+            nav("/");
+          } catch (err) {
+            setMsg(err instanceof Error ? err.message : "Could not delete the account.");
+          }
+        }}
+      >
+        Delete my account
+      </button>
     </div>
   );
 }

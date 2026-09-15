@@ -37,7 +37,7 @@ export type Project = {
   currentStep: string;
   idea: Idea | null;
   script: { durationSec: number; cta: string; scenes: ScriptScene[] } | null;
-  visuals: { sceneId: number; imageUrl: string; prompt: string }[] | null;
+  visuals: { sceneId: number; imageUrl: string; prompt: string; placeholder?: boolean }[] | null;
   voice: { voicePreset?: string; voice: string; script: string; notes: string } | null;
   captions: { cues: { start: number; end: number; text: string }[] } | null;
   audioUrl: string | null;
@@ -77,11 +77,12 @@ export const api = {
   project: (id: string) => request<{ project: Project; costs: Record<string, number>; fullVideoCost: number }>(`/projects/${id}`),
   createProject: (type: string, prompt: string) =>
     request<{ project: Project }>("/projects", { method: "POST", body: JSON.stringify({ type, prompt }) }),
-  runStep: (id: string, step: string, regenerate = false) =>
+  runStep: (id: string, step: string, regenerate = false, sceneId?: number) =>
     request<{ project: Project }>(`/projects/${id}/steps/${step}`, {
       method: "POST",
-      body: JSON.stringify({ regenerate }),
+      body: JSON.stringify({ regenerate, sceneId }),
     }),
+  deleteAccount: () => request<{ ok: boolean }>("/auth/account", { method: "DELETE" }),
   brand: () => request<{ brandKit: Record<string, string> | null }>("/brand"),
   saveBrand: (body: Record<string, string>) =>
     request<{ brandKit: Record<string, string> }>("/brand", { method: "PUT", body: JSON.stringify(body) }),

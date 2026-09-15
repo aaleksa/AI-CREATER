@@ -2,7 +2,7 @@
 
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
-**Версія документа:** 1.3  
+**Версія документа:** 1.4  
 **Мова інтерфейсу першої версії:** English  
 **Валюта:** GBP (£)
 
@@ -106,7 +106,8 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 | Idea / Script / Visuals / Captions | так (текст + кадри; captions = scene-level) | так; word-level не вимагається в MVP |
 | Voice | TTS → `voice.mp3` (`audio_url`); JSON = direction | так; без файлу крок не done |
 | Create | ffmpeg → `reel.mp4` 1080×1920, плеєр + Download | так |
-| Регенерація кроку за credits | `POST` з `{ regenerate: true }`, кнопка в студії | так — §7.2 |
+| Регенерація кроку / одного кадру | `regenerate` + `sceneId` (8 cr) | так — §7.2–7.3 |
+| Видалення акаунта | `DELETE /auth/account` | так для етапу 4; на беті вже є |
 | Вертикаль Brand Kit | `salon` / `cafe` / `fitness` | так |
 | S3, постійний Download URL, HQ | немає | **не MVP** |
 | Закрита бета / публічний лендінг | код є; зовні не запускали | бета §1.5 перед ads |
@@ -279,7 +280,7 @@ Text AI  Image AI   TTS
 | `reel.mp4` | **90 днів** після Create, або одразу після успішного S3 | зберігання дешеве; регенерація = 55 cr + залежності |
 | Після S3 | локальна копія mp4 можна стерти; рядок проєкту й `output_url` лишаються | |
 
-Ліміт **готових mp4 на диску** — від плану, не єдине «10» для Free і Business:
+Ліміт **готових mp4 на диску** — від плану. **TTL 90 днів для mp4 однаковий для Free і Business** — свідомо проста політика; довший архів Business з’явиться разом із S3, не як окремий локальний TTL.
 
 | План | Готових mp4 на диску |
 | --- | --- |
@@ -296,7 +297,7 @@ Text AI  Image AI   TTS
 
 ### 5.4 Паралельний рендер (відомий ліміт бети)
 
-Один Node-процес, ffmpeg як child process. **Максимум 2 одночасні Create.** Третій і далі чекають у черзі процесу (не 503 одразу). Для закритої бети 5–10 людей цього достатньо. Окрема черга (Bull/Redis) і горизонтальне масштабування — **після бети**, не блокер інвайтів. У логах фіксувати час очікування слота, щоб побачити захлин до публічного запуску.
+Один Node-процес, ffmpeg як child process. **Максимум 2 одночасні Create.** Третій і далі чекають у черзі процесу (не 503 одразу). Закриття вкладки **не скасовує** рендер: робота живе на бекенді; credits списуються лише після успішного mp4. Для закритої бети 5–10 людей цього достатньо. Окрема черга (Bull/Redis) і горизонтальне масштабування — **після бети**, не блокер інвайтів. У логах фіксувати час очікування слота, щоб побачити захлин до публічного запуску.
 
 ---
 
@@ -466,7 +467,7 @@ JSON-контракти:
 }
 ```
 
-**visuals** — масив `{ sceneId, imageUrl, prompt }`
+**visuals** — масив `{ sceneId, imageUrl, prompt, placeholder? }`. `placeholder: true` = DALL·E відхилив або немає ключа.
 
 **voice_json (інструкція, не медіа).** Назва поля в API можна показувати як `voiceDirection`, щоб ні розробник, ні UI не вважали крок «озвучено».
 
@@ -502,7 +503,8 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | GET | `/projects` | так | список + `fullVideoCost` |
 | POST | `/projects` | так | `{ type, prompt }` → 201 `{ project }` |
 | GET | `/projects/:id` | так | проєкт + таблиця costs |
-| POST | `/projects/:id/steps/:step` | так | `idea\|script\|visuals\|voice\|captions\|render`; тіло `{ regenerate?: boolean }` |
+| POST | `/projects/:id/steps/:step` | так | тіло `{ regenerate?: boolean, sceneId?: number }` — `sceneId` лише для visuals, 8 credits |
+| DELETE | `/auth/account` | так | self-service видалення акаунта, проєктів і медіа |
 | GET | `/projects/:id/file` | так | mp4 після Create |
 | GET | `/projects/:id/audio` | так | mp3 після Voice |
 | GET | `/brand` | так | `{ brandKit }` |
@@ -521,7 +523,8 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | --- | --- | --- |
 | idea | 5 | `idea_json` |
 | script | 10 | `script_json` |
-| visuals | 40 | кадри на сцени |
+| visuals | 40 | кадри на сцени; **часткова відмова DALL·E ≠ fail кроку** (§7.3) |
+| visuals *один кадр* | **8** | `{ regenerate: true, sceneId }` |
 | voice | 30 | `voice_json` **і** `audio_url` (TTS) |
 | captions | 10 | cues (scene-level) |
 | render | 55 | **існує mp4**, `status=ready` |
@@ -537,6 +540,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | --- | --- | --- |
 | `POST /steps/:step` повторно, крок уже done, **без** `regenerate` | 0 | повернути поточний проєкт, файли не чіпати |
 | `POST /steps/:step` з `{ "regenerate": true }` | як у таблиці кроку | новий виклик AI/TTS/ffmpeg, перезапис артефакту |
+| `POST /steps/visuals` з `{ "regenerate": true, "sceneId": N }` | **8** | лише цей кадр; mp4 скидається |
 | Недостатньо credits на regenerate | 402 | як на першому Make |
 
 Каскад після успішної регенерації (наступні кроки знову **не done**, їхні файли/JSON чистяться):
@@ -545,12 +549,26 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | --- | --- |
 | idea | script, visuals, voice+audio, captions, mp4 |
 | script | visuals, voice+audio, captions, mp4 |
-| visuals | mp4 (captions лишаються: вони зі скрипта, тривалість аудіо та сама) |
+| visuals | mp4 (повний набір або один `sceneId`; captions лишаються) |
 | voice | **captions і mp4** (новий TTS = інша тривалість `voice.mp3`; старі cues, підігнані під попередній файл, роз’їдуться вже на scene-level) |
 | captions | mp4 |
 | render | лише новий mp4 |
 
-У UI: на завершеному кроці кнопка `Regenerate {step} · N credits`, не ховати Make після done без альтернативи.
+У UI: на завершеному кроці кнопка `Regenerate {step} · N credits`. На кожній сцені після Visuals — `Regenerate this frame · 8 credits`.
+
+### 7.3 Часткова відмова Visuals
+
+Крок Visuals = пачка до ~5 викликів DALL·E за **40 credits**.
+
+| Результат | Крок | Credits | `actual_cost_gbp` |
+| --- | --- | --- | --- |
+| Усі кадри відхилені політикою / мережею (є ключ OpenAI) | `failed` | **0** | 0; людський текст *We couldn’t generate these frames. Try a simpler description.* |
+| ≥1 кадр успішний, решта відхилені | `succeeded` | 40 | сума успішних викликів; відхилені слоти — placeholder (`placeholder: true` у JSON), Create збирає mp4 з градієнтом на цій сцені |
+| Без ключа (dev) | `succeeded` | 40 | 0; усі кадри preview |
+
+Успішні виклики в пачці, яка впала цілком, **не тарифікуються credits** (крок не succeeded). Собівартість OpenAI все одно могла виникнути — пишемо в лог `failed`, credits 0. Це прийнятий компроміс MVP: не списувати 40 за порожній крок.
+
+Один невдалий кадр після succeeded **не** вимагає 40 credits знову — 8 за `sceneId`.
 
 ---
 
@@ -652,9 +670,9 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 
 Закрита бета 5–10 інвайтів може йти без публічної privacy policy. **Етап «Публічний лендінг» (§1.5 / §12) заборонений**, доки немає:
 
-1. **Content policy / відмова моделі.** Якщо DALL·E або TTS відхиляє промпт (політика OpenAI, бренд, обличчя, конкурент) — крок `failed`, credits **не** списуються, користувач бачить людський текст на кшталт *We couldn’t generate this frame. Try a simpler description.* Не показувати сирий error OpenAI.
+1. **Content policy / відмова моделі.** Повна відмова пачки Visuals або TTS — крок `failed`, credits **не** списуються, людський текст, не сирий error OpenAI. **Часткова** відмова кадрів — §7.3 (крок succeeded з placeholder).
 2. **Чужі знаки.** Brand Kit — відповідальність користувача: лого/назва, які він вводить, вважаються його. Короткий disclaimer на Brand і на signup (не юридичний трактат). Перевірка товарних знаків автоматично — **не MVP**.
-3. **GDPR / UK GDPR.** Аудіо (навіть синтетичне), бізнес-назва, промпти, кадри — персональні/бізнес-дані. Перед публічним запуском: privacy policy (що зберігаємо, 90/7 днів, хто процесор — OpenAI), право на видалення акаунта (як уже зроблено вручну для тесту), підстава обробки. §10 зараз закриває лише паролі/JWT — цього **недостатньо** для етапу 4 дорожньої карти.
+3. **GDPR / UK GDPR.** Перед публічним запуском: privacy policy (що зберігаємо, 90/7 днів, процесор OpenAI), підстава обробки, **self-service `DELETE /auth/account`** (проєкти, медіа, brand, credits, email). Ручне видалення адміном — лише запас для бети 5–10 людей, **не** заміна ендпоінта на етапі 4.
 
 ---
 
@@ -691,7 +709,7 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 1. **Внутрішній файл** — команда проходить 6 кроків, є mp4, credits, Brand Kit, regenerate.
 2. **Закрита бета** — 5–10 інвайтів (§1.5). Зібрати 20–50 роликів собівартості + якісний фідбек. Публічний лендінг і ads вимкнені.
 3. **Чекпоінт собівартості** — перерахунок або свідоме залишення FROZEN після реальних інвойсів TTS+рендеру.
-4. **Privacy / content policy (§10.1)** — DALL·E-refusal UX, disclaimer Brand Kit, GDPR-текст. **Обов’язково перед публічним лендінгом.**
+4. **Privacy / content policy (§10.1)** — DALL·E-refusal UX, disclaimer Brand Kit, GDPR-текст, **self-service delete**. **Обов’язково перед публічним лендінгом.**
 5. **Публічний лендінг** — copy «готовий Reel» дозволений.
 6. **Платний CAC-тест** — гіпотеза £25–40 / перший mp4 (§9.5).
 7. **Retention-гейт** — §11.11 на **n≥40**. Лише тоді пости / реклама як формат.
@@ -746,10 +764,10 @@ cd frontend && npm install && npm run dev
 
 ## 15. Що лишається відкритим (не стек)
 
-TTS, ffmpeg, шлях файлу, диференційований TTL, регенерація (voice скидає captions), ліміт ffmpeg — **закриті в §1.4 / §5.3–5.4 / §7.2**. Нижче лише чекпоінти:
+TTS, ffmpeg, TTL, регенерація, часткові Visuals, self-service delete, ліміт ffmpeg — **закриті**. Нижче лише чекпоінти:
 
 1. Перерахунок `CREDIT_COSTS` / планів після **20–50 роликів закритої бети** (обов’язковий, не «колись»).
 2. Чи scene-level captions достатні, чи після бети брати ElevenLabs заради word-timestamps.
 3. Чи гіпотеза CAC £25–40 жива після першого ads-тесту (§9.5) — якщо ні, не масштабувати рекламу.
-4. Точна дата публічного лендінгу — після бети **і** §10.1 (privacy/content), не навпаки.
+4. Точна дата публічного лендінгу — після бети **і** §10.1 (privacy/content + delete), не навпаки.
 5. Чи черга з 2 ffmpeg тримає бету; якщо середній wait > 30 с — винести рендер з API-процесу до публічного запуску.

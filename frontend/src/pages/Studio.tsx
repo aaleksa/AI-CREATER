@@ -85,12 +85,12 @@ export default function Studio() {
   const frame = project?.visuals?.[scene]?.imageUrl;
   const caption = project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title;
 
-  async function run(step: string, regenerate = false) {
+  async function run(step: string, regenerate = false, sceneId?: number) {
     if (!id) return;
-    setBusy(step);
+    setBusy(sceneId ? `visual-${sceneId}` : step);
     setError("");
     try {
-      const { project: nextProject } = await api.runStep(id, step, regenerate);
+      const { project: nextProject } = await api.runStep(id, step, regenerate, sceneId);
       setProject(nextProject);
       refreshMe();
     } catch (err) {
@@ -141,10 +141,21 @@ export default function Studio() {
           {project.script && (
             <div className="scenes">
               {project.script.scenes.map((s, i) => (
-                <button key={s.id} className="scene" onClick={() => setScene(i)} style={{ background: "none", borderLeft: 0, borderRight: 0, borderTop: 0, textAlign: "left", width: "100%" }}>
-                  <b>{s.time}</b>
-                  <span>{s.voiceover}</span>
-                </button>
+                <div key={s.id} className="scene" style={{ display: "grid", gap: 8 }}>
+                  <button onClick={() => setScene(i)} style={{ background: "none", border: 0, textAlign: "left", width: "100%", padding: 0, color: "inherit" }}>
+                    <b>{s.time}</b>
+                    <span style={{ display: "block" }}>{s.voiceover}</span>
+                  </button>
+                  {project.visuals && (
+                    <button
+                      className="btn ghost"
+                      disabled={Boolean(busy)}
+                      onClick={() => run("visuals", true, s.id)}
+                    >
+                      {busy === `visual-${s.id}` ? "Making…" : `Regenerate this frame · 8 credits`}
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           )}
@@ -162,7 +173,10 @@ export default function Studio() {
           )}
           {project.script && !project.visuals && <p className="lede">A 30-second voiceover, already broken into scenes.</p>}
           {project.visuals && !project.audioUrl && (
-            <p className="lede">Frames are in. Next we record a voiceover. Direction JSON is not enough — this step finishes when you can hear it.</p>
+            <p className="lede">
+              Frames are in. If one shot missed, regenerate that frame for 8 credits — not the whole set.
+              Next we record a voiceover.
+            </p>
           )}
           {project.audioUrl && !project.captions && (
             <>

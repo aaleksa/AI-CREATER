@@ -1,6 +1,6 @@
 import { v4 as uuid } from "uuid";
 import { db } from "../db/index.js";
-import { CREDIT_COSTS } from "../config.js";
+import { CREDIT_COSTS, VISUAL_SCENE_CREDITS } from "../config.js";
 import { getBalance, spendCredits } from "./credits.js";
 import {
   generateCaptions,
@@ -8,6 +8,7 @@ import {
   generateScript,
   generateVisuals,
   generateVoice,
+  generateOneVisual,
   type BrandKit,
   type CaptionCue,
   type Idea,
@@ -109,11 +110,15 @@ export async function runStep(
   userId: string,
   projectId: string,
   step: keyof typeof CREDIT_COSTS,
-  opts: { regenerate?: boolean } = {}
+  opts: { regenerate?: boolean; sceneId?: number } = {}
 ) {
   const project = getProject(projectId, userId);
   const brand = brandFor(userId);
-  const cost = CREDIT_COSTS[step];
+  const sceneId = Number.isFinite(opts.sceneId) ? Number(opts.sceneId) : undefined;
+  if (sceneId && step !== "visuals") {
+    throw Object.assign(new Error("Only visuals can regenerate a single frame."), { status: 400 });
+  }
+  const cost = step === "visuals" && sceneId ? VISUAL_SCENE_CREDITS : CREDIT_COSTS[step];
   const prompt = String(project.prompt);
   const type = String(project.type);
   const regenerate = Boolean(opts.regenerate);
@@ -171,12 +176,27 @@ export async function runStep(
     } else if (step === "visuals") {
       const script = parse<Script>(project.script_json);
       if (!script) throw Object.assign(new Error("Generate the script first."), { status: 400 });
-      const result = await generateVisuals(script, brand);
-      updates.visuals_json = JSON.stringify(result.data);
-      updates.current_step = "visuals";
-      provider = result.provider;
-      model = result.model;
-      actualCost = result.cost;
+      if (sceneId) {
+        const scene = script.scenes.find((item) => item.id === sceneId);
+        if (!scene) throw Object.assign(new Error("Unknown scene."), { status: 400 });
+        const current = parse<Visual[]>(project.visuals_json) || [];
+        const one = await generateOneVisual(scene, brand);
+        const next = current.some((item) => item.sceneId === sceneId)
+          ? current.map((item) => (item.sceneId === sceneId ? one.data : item))
+          : [...current, one.data];
+        updates.visuals_json = JSON.stringify(next);
+        updates.current_step = "visuals";
+        provider = one.provider;
+        model = one.model;
+        actualCost = one.cost;
+      } else {
+        const result = await generateVisuals(script, brand);
+        updates.visuals_json = JSON.stringify(result.data);
+        updates.current_step = "visuals";
+        provider = result.provider;
+        model = result.model;
+        actualCost = result.cost;
+      }
     } else if (step === "voice") {
       const script = parse<Script>(project.script_json);
       if (!script) throw Object.assign(new Error("Generate the script first."), { status: 400 });
@@ -238,8 +258,8 @@ export async function runStep(
     const used = Number(project.credits_used) + cost;
     updates.credits_used = used;
 
-    if (regenerate) {
-      Object.assign(updates, downstreamWipe(step));
+    if (regenerate || sceneId) {
+      Object.assign(updates, downstreamWipe(step, Boolean(sceneId)));
       if (step === "idea" || step === "script") removeVoiceFile(projectId);
       if (step !== "render") removeVideoFile(projectId);
     }
@@ -260,7 +280,7 @@ export async function runStep(
   }
 }
 
-function downstreamWipe(step: keyof typeof CREDIT_COSTS): Record<string, string | number | null> {
+function downstreamWipe(step: keyof typeof CREDIT_COSTS, _singleFrame = false): Record<string, string | number | null> {
   if (step === "idea") {
     return {
       script_json: null,
