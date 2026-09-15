@@ -175,6 +175,10 @@ export default function Studio() {
           {project.hasVideo && (
             <>
               <p className="ok">Your Reel is ready. {project.creditsUsed} credits used.</p>
+              <p className="hint">
+                Download this Reel now. We keep the mp4 for 90 days. Voice and frames may be cleared after 7 days.
+                Recreating after that uses credits again.
+              </p>
               {videoSrc && (
                 <a className="btn" style={{ marginTop: 18 }} href={videoSrc} download="reel.mp4">
                   Download mp4

@@ -282,8 +282,11 @@ function downstreamWipe(step: keyof typeof CREDIT_COSTS): Record<string, string 
       status: "draft",
     };
   }
-  if (step === "visuals" || step === "voice" || step === "captions") {
+  if (step === "visuals" || step === "captions") {
     return { output_url: null, status: "draft" };
+  }
+  if (step === "voice") {
+    return { captions_json: null, output_url: null, status: "draft" };
   }
   return {};
 }

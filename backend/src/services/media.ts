@@ -142,6 +142,25 @@ async function sceneImage(visual: Visual | undefined, index: number, dir: string
   return null;
 }
 
+const MAX_PARALLEL_RENDERS = 2;
+let rendersActive = 0;
+const renderWaiters: Array<() => void> = [];
+
+async function acquireRenderSlot() {
+  if (rendersActive >= MAX_PARALLEL_RENDERS) {
+    await new Promise<void>((resolve) => {
+      renderWaiters.push(resolve);
+    });
+  }
+  rendersActive += 1;
+}
+
+function releaseRenderSlot() {
+  rendersActive = Math.max(0, rendersActive - 1);
+  const next = renderWaiters.shift();
+  if (next) next();
+}
+
 export async function renderReel(params: {
   projectId: string;
   script: Script;
@@ -152,6 +171,21 @@ export async function renderReel(params: {
   if (!hasVoiceFile(params.projectId)) {
     throw new Error("Generate the voice audio first.");
   }
+  await acquireRenderSlot();
+  try {
+    return await encodeReel(params);
+  } finally {
+    releaseRenderSlot();
+  }
+}
+
+async function encodeReel(params: {
+  projectId: string;
+  script: Script;
+  visuals: Visual[] | null;
+  captions: { cues: CaptionCue[] } | null;
+  primaryColor?: string;
+}) {
   const dir = projectMediaDir(params.projectId);
   const scenes = params.script.scenes.length ? params.script.scenes : [{ id: 1, time: "0–30s", onScreen: "", voiceover: "", visualPrompt: "" }];
   const duration = Math.max(3, Math.round((params.script.durationSec || 30) / scenes.length));

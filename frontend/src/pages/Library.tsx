@@ -22,6 +22,7 @@ export default function Library() {
   return (
     <div>
       <h1 className="page-title" style={{ fontSize: 48 }}>Library</h1>
+      <p className="hint">Finished Reels stay on disk for 90 days. Download anything you still need to post later.</p>
       <div className="list" style={{ marginTop: 24 }}>
         {projects.map((p) => (
           <Link key={p.id} to={`/app/studio/${p.id}`}>
