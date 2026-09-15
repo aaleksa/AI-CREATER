@@ -41,12 +41,32 @@ export default function Billing() {
     <div>
       <h1 className="page-title" style={{ fontSize: 48 }}>Credits</h1>
       <p className="lede">
-        A finished Reel costs 150 credits. Prices stay provisional until we measure real AI cost per video.
+        A finished Reel costs 150 credits. These prices stay frozen until we measure real TTS and render cost per video.
       </p>
       <div className="credits-pill" style={{ marginTop: 20 }}>
         Balance <b>{credits?.balance?.credits ?? 0}</b>
       </div>
       {msg && <p className="hint">{msg}</p>}
+
+      <div className="list" style={{ maxWidth: 640, marginTop: 24 }}>
+        {[
+          ["Idea", 5],
+          ["Script", 10],
+          ["Visuals", 40],
+          ["Voice (with audio)", 30],
+          ["Captions", 10],
+          ["Create (mp4)", 55],
+        ].map(([label, cost]) => (
+          <div className="item" key={String(label)}>
+            <span>{label}</span>
+            <span className="hint">{cost} credits</span>
+          </div>
+        ))}
+        <div className="item">
+          <span><b>Full Reel</b></span>
+          <span className="hint">150 credits</span>
+        </div>
+      </div>
 
       <div className="plans">
         {plans.map((plan) => (
@@ -65,6 +85,7 @@ export default function Billing() {
       </div>
 
       <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>Buy credits</h2>
+      <p className="hint">A pack is cheaper per Reel than a subscription. Subscribe if you publish every week; buy a pack if you only make a few.</p>
       <div className="list" style={{ maxWidth: 640, marginTop: 12 }}>
         {packs.map((pack) => (
           <div className="item" key={pack.id}>
@@ -76,8 +97,8 @@ export default function Billing() {
         ))}
       </div>
 
-      <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>Cost of each AI request</h2>
-      <p className="hint">This is the owner’s view: provider, model, credits, and actual cost.</p>
+      <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>Each AI request</h2>
+      <p className="hint">Provider, model, credits spent, and our actual cost — so you can see what a Reel really costs us.</p>
       <div className="list" style={{ marginTop: 12 }}>
         {(credits?.generations || []).map((g) => (
           <div className="item" key={g.id}>

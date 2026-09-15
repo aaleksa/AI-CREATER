@@ -9,9 +9,12 @@ import {
   generateVisuals,
   generateVoice,
   type BrandKit,
+  type CaptionCue,
   type Idea,
   type Script,
+  type Visual,
 } from "./ai.js";
+import { hasVideoFile, hasVoiceFile, renderReel, synthesizeSpeech } from "./media.js";
 
 export const FORMAT_TYPES = ["video", "instagram_reel", "tiktok", "image_post", "advertisement", "social_post"] as const;
 export type FormatType = (typeof FORMAT_TYPES)[number];
@@ -84,7 +87,9 @@ export function serializeProject(row: Record<string, unknown>) {
     visuals: parse(row.visuals_json),
     voice: parse(row.voice_json),
     captions: parse(row.captions_json),
-    outputUrl: row.output_url,
+    audioUrl: hasVoiceFile(String(row.id)) ? `/projects/${row.id}/audio` : null,
+    outputUrl: hasVideoFile(String(row.id)) ? `/projects/${row.id}/file` : row.output_url || null,
+    hasVideo: hasVideoFile(String(row.id)),
     creditsUsed: row.credits_used,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -111,9 +116,9 @@ export async function runStep(userId: string, projectId: string, step: keyof typ
     (step === "idea" && Boolean(project.idea_json)) ||
     (step === "script" && Boolean(project.script_json)) ||
     (step === "visuals" && Boolean(project.visuals_json)) ||
-    (step === "voice" && Boolean(project.voice_json)) ||
+    (step === "voice" && hasVoiceFile(projectId)) ||
     (step === "captions" && Boolean(project.captions_json)) ||
-    (step === "render" && project.status === "ready");
+    (step === "render" && hasVideoFile(projectId));
   if (alreadyDone) return serializeProject(project);
 
   if (getBalance(userId) < cost) {
@@ -170,11 +175,29 @@ export async function runStep(userId: string, projectId: string, step: keyof typ
       const script = parse<Script>(project.script_json);
       if (!script) throw Object.assign(new Error("Generate the script first."), { status: 400 });
       const result = await generateVoice(script, brand);
-      updates.voice_json = JSON.stringify(result.data);
+      const direction = {
+        voicePreset: result.data.voicePreset || result.data.voice || "warm_british_female",
+        voice: result.data.voice || result.data.voicePreset || "warm british female",
+        script: result.data.script,
+        notes: result.data.notes,
+      };
+      updates.voice_json = JSON.stringify(direction);
+      const tts = await synthesizeSpeech(direction.script, projectId);
+      updates.audio_url = `/projects/${projectId}/audio`;
       updates.current_step = "voice";
-      provider = result.provider;
-      model = result.model;
-      actualCost = result.cost;
+      provider = tts.provider;
+      model = tts.model;
+      actualCost = result.cost + tts.cost;
+      logGeneration({
+        userId,
+        projectId,
+        type: "tts",
+        provider: tts.provider,
+        model: tts.model,
+        cost: tts.cost,
+        credits: 0,
+        status: "succeeded",
+      });
     } else if (step === "captions") {
       const script = parse<Script>(project.script_json);
       if (!script) throw Object.assign(new Error("Generate the script first."), { status: 400 });
@@ -185,12 +208,24 @@ export async function runStep(userId: string, projectId: string, step: keyof typ
       model = result.model;
       actualCost = result.cost;
     } else if (step === "render") {
+      const script = parse<Script>(project.script_json);
+      if (!script) throw Object.assign(new Error("Generate the script first."), { status: 400 });
+      if (!hasVoiceFile(projectId)) {
+        throw Object.assign(new Error("Generate the voice audio first."), { status: 400 });
+      }
+      const rendered = await renderReel({
+        projectId,
+        script,
+        visuals: parse<Visual[]>(project.visuals_json),
+        captions: parse<{ cues: CaptionCue[] }>(project.captions_json),
+        primaryColor: brand?.primary_color,
+      });
       updates.current_step = "create";
       updates.status = "ready";
-      updates.output_url = `/projects/${projectId}/preview`;
-      provider = "auteur-renderer";
-      model = "vertical-30s";
-      actualCost = 0.01;
+      updates.output_url = `/projects/${projectId}/file`;
+      provider = rendered.provider;
+      model = rendered.model;
+      actualCost = rendered.cost;
     }
 
     spendCredits(userId, cost, `${step} for ${type}`, generationId);

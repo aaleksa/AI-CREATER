@@ -38,9 +38,11 @@ export type Project = {
   idea: Idea | null;
   script: { durationSec: number; cta: string; scenes: ScriptScene[] } | null;
   visuals: { sceneId: number; imageUrl: string; prompt: string }[] | null;
-  voice: { voice: string; script: string; notes: string } | null;
+  voice: { voicePreset?: string; voice: string; script: string; notes: string } | null;
   captions: { cues: { start: number; end: number; text: string }[] } | null;
+  audioUrl: string | null;
   outputUrl: string | null;
+  hasVideo: boolean;
   creditsUsed: number;
   createdAt: string;
 };
@@ -80,7 +82,14 @@ export const api = {
   brand: () => request<{ brandKit: Record<string, string> | null }>("/brand"),
   saveBrand: (body: Record<string, string>) =>
     request<{ brandKit: Record<string, string> }>("/brand", { method: "PUT", body: JSON.stringify(body) }),
-  plans: () => request<{ plans: { id: string; name: string; price_gbp: number; monthly_credits: number; description: string }[]; packs: { id: string; credits: number; price_gbp: number; label: string }[] }>("/billing/plans"),
+  plans: () =>
+    request<{
+      plans: { id: string; name: string; price_gbp: number; monthly_credits: number; description: string }[];
+      packs: { id: string; credits: number; price_gbp: number; label: string }[];
+      frozenPrices: boolean;
+      costs: Record<string, number>;
+      fullVideoCost: number;
+    }>("/billing/plans"),
   credits: () =>
     request<{
       balance: { credits: number } | null;
@@ -103,4 +112,11 @@ export function hasSession() {
 
 export function refreshMe() {
   window.dispatchEvent(new Event("auteur:refresh"));
+}
+
+export async function fetchMedia(path: string) {
+  const token = localStorage.getItem(TOKEN);
+  const res = await fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new ApiError("File not ready", res.status);
+  return res.blob();
 }

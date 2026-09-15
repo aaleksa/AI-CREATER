@@ -10,6 +10,7 @@ export type BrandKit = {
   tone_of_voice: string;
   website: string;
   instagram: string;
+  vertical?: string;
 };
 
 export type Idea = {
@@ -41,7 +42,8 @@ export type Visual = {
 };
 
 export type Voiceover = {
-  voice: string;
+  voicePreset: string;
+  voice?: string;
   script: string;
   notes: string;
 };
@@ -61,6 +63,7 @@ function brandContext(brand?: BrandKit | null) {
     brand.font && `Font: ${brand.font}`,
     brand.instagram && `Instagram: ${brand.instagram}`,
     brand.website && `Website: ${brand.website}`,
+    brand.vertical && `Business vertical: ${brand.vertical}. Use the pacing and details a ${brand.vertical} would actually post.`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -111,12 +114,46 @@ function mockIdea(prompt: string, type: string, brand?: BrandKit | null): Idea {
   };
 }
 
-function mockScript(prompt: string, idea: Idea): Script {
+function mockScript(prompt: string, idea: Idea, brand?: BrandKit | null): Script {
+  const vertical = brand?.vertical || "";
+  const niche: Record<string, { onScreen: string; voiceover: string }[]> = {
+    cafe: [
+      { onScreen: "Morning steam", voiceover: "The first pour isn’t for the camera. It’s for the person who walks in half-asleep." },
+      { onScreen: "The regular", voiceover: "You already know their name. That’s the whole brand." },
+      { onScreen: "The last table", voiceover: "Stay for one more minute. Then tell a friend." },
+    ],
+    salon: [
+      { onScreen: "The chair", voiceover: "This is the quiet before the reveal — not the after photo." },
+      { onScreen: "The cut", voiceover: "One good line does more than a hundred filters." },
+      { onScreen: "Book in", voiceover: "Save this. Then book the chair, not the trend." },
+    ],
+    fitness: [
+      { onScreen: "The floor", voiceover: "Nobody posts the third set. That’s where it actually happens." },
+      { onScreen: "The breath", voiceover: "Slow is still a session. Show up anyway." },
+      { onScreen: "Tomorrow", voiceover: "Same hour. Same room. Come back." },
+    ],
+  };
+  const extra = niche[vertical];
   const beats = [
     { time: "0–3s", onScreen: idea.title, voiceover: idea.hook, visualPrompt: `Cinematic opening frame for: ${prompt}` },
-    { time: "3–10s", onScreen: "First place", voiceover: "Start with the unexpected — not the postcard, the street that actually feels like the city.", visualPrompt: `Street-level cinematic still for: ${prompt}` },
-    { time: "10–18s", onScreen: "Second beat", voiceover: "Then slow down. Let one detail do the work a list never can.", visualPrompt: `Intimate detail shot for: ${prompt}` },
-    { time: "18–26s", onScreen: "Third beat", voiceover: "End on a feeling the viewer can copy this weekend.", visualPrompt: `Golden-hour closing frame for: ${prompt}` },
+    {
+      time: "3–10s",
+      onScreen: extra?.[0]?.onScreen || "First place",
+      voiceover: extra?.[0]?.voiceover || "Start with the unexpected — not the postcard, the street that actually feels like the city.",
+      visualPrompt: `Street-level cinematic still for: ${prompt}`,
+    },
+    {
+      time: "10–18s",
+      onScreen: extra?.[1]?.onScreen || "Second beat",
+      voiceover: extra?.[1]?.voiceover || "Then slow down. Let one detail do the work a list never can.",
+      visualPrompt: `Intimate detail shot for: ${prompt}`,
+    },
+    {
+      time: "18–26s",
+      onScreen: extra?.[2]?.onScreen || "Third beat",
+      voiceover: extra?.[2]?.voiceover || "End on a feeling the viewer can copy this weekend.",
+      visualPrompt: `Golden-hour closing frame for: ${prompt}`,
+    },
     { time: "26–30s", onScreen: idea.title, voiceover: "Save this. Then go.", visualPrompt: `Title card, cinematic, vertical 9:16, for: ${prompt}` },
   ];
   return {
@@ -150,7 +187,7 @@ export async function generateIdea(prompt: string, type: string, brand?: BrandKi
 }
 
 export async function generateScript(prompt: string, idea: Idea, brand?: BrandKit | null) {
-  const fallback = mockScript(prompt, idea);
+  const fallback = mockScript(prompt, idea, brand);
   return jsonCompletion<Script>(
     `Write a 30-second vertical video script. 4–6 scenes. Voiceover should sound spoken, not marketed.\n${brandContext(brand)}`,
     `Request: ${prompt}\nIdea: ${JSON.stringify(idea)}\nReturn JSON: { durationSec, cta, scenes: [{ id, time, onScreen, voiceover, visualPrompt }] }`,
@@ -199,14 +236,16 @@ export async function generateVisuals(script: Script, brand?: BrandKit | null) {
 
 export async function generateVoice(script: Script, brand?: BrandKit | null) {
   const spoken = script.scenes.map((s) => s.voiceover).join(" ");
+  const preset = brand?.tone_of_voice?.toLowerCase().includes("playful") ? "soft_british_female" : "warm_british_female";
   const fallback: Voiceover = {
-    voice: brand?.tone_of_voice?.toLowerCase().includes("playful") ? "soft british female" : "warm british female",
+    voicePreset: preset,
+    voice: preset.replaceAll("_", " "),
     script: spoken,
     notes: "Natural pace. Pause after the hook. Never sound like an ad read.",
   };
   return jsonCompletion<Voiceover>(
-    `Cast a voice for a 30s vertical film. Prefer British English unless the brand says otherwise.\n${brandContext(brand)}`,
-    `Script: ${spoken}\nReturn JSON: { voice, script, notes }`,
+    `Cast a voice for a 30s vertical film. This is direction for TTS, not audio. Prefer British English unless the brand says otherwise.\n${brandContext(brand)}`,
+    `Script: ${spoken}\nReturn JSON: { voicePreset, script, notes }`,
     fallback
   );
 }

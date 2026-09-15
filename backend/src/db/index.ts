@@ -13,6 +13,16 @@ sqlite.exec("PRAGMA journal_mode = WAL");
 sqlite.exec("PRAGMA foreign_keys = ON");
 sqlite.exec(SCHEMA_SQL);
 
+function addColumn(sql: string) {
+  try {
+    sqlite.exec(sql);
+  } catch {
+    /* column already exists */
+  }
+}
+addColumn("ALTER TABLE projects ADD COLUMN audio_url TEXT NOT NULL DEFAULT ''");
+addColumn("ALTER TABLE brand_kits ADD COLUMN vertical TEXT NOT NULL DEFAULT ''");
+
 let savepoint = 0;
 
 function named(args: unknown[]) {
@@ -65,10 +75,10 @@ const upsertPlan = db.prepare(
      description = excluded.description`
 );
 for (const plan of [
-  { id: "free", name: "Free", price_gbp: 0, monthly_credits: 200, description: "Enough for one finished Reel." },
-  { id: "creator", name: "Creator", price_gbp: 999, monthly_credits: 1000, description: "A week of Reels and posts." },
-  { id: "pro", name: "Pro", price_gbp: 2499, monthly_credits: 3500, description: "Daily publishing." },
-  { id: "business", name: "Business", price_gbp: 4999, monthly_credits: 8000, description: "Brand kit at volume." },
+  { id: "free", name: "Free", price_gbp: 0, monthly_credits: 200, description: "Enough for one finished Reel. Prices frozen until TTS and render cost is measured." },
+  { id: "creator", name: "Creator", price_gbp: 999, monthly_credits: 1000, description: "A week of Reels. Price frozen until we measure real AI cost." },
+  { id: "pro", name: "Pro", price_gbp: 2499, monthly_credits: 3500, description: "Daily publishing. Price frozen until we measure real AI cost." },
+  { id: "business", name: "Business", price_gbp: 4999, monthly_credits: 8000, description: "Brand kit at volume. Price frozen until we measure real AI cost." },
 ]) {
   upsertPlan.run(plan);
 }

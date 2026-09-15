@@ -45,7 +45,7 @@ export default function Home() {
     <div className="hero-home">
       <p className="hint">The studio</p>
       <h1 style={{ fontSize: "clamp(40px, 6vw, 64px)" }}>What do you want to create?</h1>
-      <p className="lede">Pick a format. Write a sentence. Auteur chooses the idea, script, pictures, voice and captions.</p>
+      <p className="lede">Pick a format. Write a sentence. Auteur finishes a Reel you can post — for salons, cafés and gyms first.</p>
 
       <div className="format-grid">
         {FORMATS.map((format) => (
@@ -75,7 +75,7 @@ export default function Home() {
           placeholder="Create a 30-second Reel about…"
         />
         <div className="row">
-          <span className="hint">A full Reel uses 150 credits · Free plan starts with 200</span>
+          <span className="hint">A finished Reel is 150 credits (Idea 5 · Script 10 · Visuals 40 · Voice 30 · Captions 10 · Create 55) · Free starts with 200</span>
           <button className="btn accent" onClick={start} disabled={busy}>
             {busy ? "Opening studio…" : `Continue with ${selected?.title}`}
           </button>

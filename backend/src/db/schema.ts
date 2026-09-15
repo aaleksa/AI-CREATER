@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS brand_kits (
   tone_of_voice TEXT NOT NULL DEFAULT 'Warm, confident, cinematic',
   website TEXT NOT NULL DEFAULT '',
   instagram TEXT NOT NULL DEFAULT '',
+  vertical TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
@@ -73,6 +74,7 @@ CREATE TABLE IF NOT EXISTS projects (
   visuals_json TEXT,
   voice_json TEXT,
   captions_json TEXT,
+  audio_url TEXT NOT NULL DEFAULT '',
   output_url TEXT,
   credits_used INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),

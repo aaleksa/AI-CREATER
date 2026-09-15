@@ -10,6 +10,7 @@ const empty = {
   tone_of_voice: "Warm, confident, cinematic",
   website: "",
   instagram: "",
+  vertical: "",
 };
 
 export default function Brand() {
@@ -32,6 +33,7 @@ export default function Brand() {
         tone_of_voice: kit.tone_of_voice || empty.tone_of_voice,
         website: kit.website || "",
         instagram: kit.instagram || "",
+        vertical: kit.vertical || "",
       });
     });
   }, []);
@@ -51,6 +53,7 @@ export default function Brand() {
         tone_of_voice: kit.tone_of_voice || empty.tone_of_voice,
         website: kit.website || "",
         instagram: kit.instagram || "",
+        vertical: kit.vertical || "",
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -68,7 +71,7 @@ export default function Brand() {
       <h1 className="page-title" style={{ fontSize: 48 }}>My Brand</h1>
       <p className="lede">
         Set this once. Then write “Create a Reel promoting my coffee shop” —
-        Auteur already knows the colours, type, and tone of voice.
+        Auteur already knows the colours, type, tone, and whether you are a salon, café or gym.
       </p>
       <form className="panel" style={{ maxWidth: 640, marginTop: 28 }} onSubmit={onSubmit}>
         <div className="field">
@@ -95,6 +98,15 @@ export default function Brand() {
             <option>Outfit</option>
             <option>Playfair Display</option>
             <option>IBM Plex Sans</option>
+          </select>
+        </div>
+        <div className="field">
+          <label>Vertical</label>
+          <select value={form.vertical} onChange={(e) => set("vertical", e.target.value)}>
+            <option value="">Choose one</option>
+            <option value="salon">Salon</option>
+            <option value="cafe">Café</option>
+            <option value="fitness">Fitness</option>
           </select>
         </div>
         <div className="field">

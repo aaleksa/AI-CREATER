@@ -27,7 +27,7 @@ export default function Library() {
           <Link key={p.id} to={`/app/studio/${p.id}`}>
             <span>
               <b>{p.prompt}</b>
-              <div className="hint">{p.type} · {p.status} · {p.creditsUsed} credits</div>
+              <div className="hint">{p.type} · {p.hasVideo ? "mp4 ready" : p.status} · {p.creditsUsed} credits</div>
             </span>
             <span className="hint">{new Date(p.createdAt).toLocaleString()}</span>
           </Link>

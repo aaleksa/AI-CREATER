@@ -27,6 +27,7 @@ brandRouter.put("/", (req, res) => {
     tone_of_voice: String(body.tone_of_voice ?? ""),
     website: String(body.website ?? ""),
     instagram: String(body.instagram ?? ""),
+    vertical: ["salon", "cafe", "fitness"].includes(String(body.vertical)) ? String(body.vertical) : "",
   };
   const existing = db.prepare("SELECT id FROM brand_kits WHERE user_id = ?").get(req.user!.id) as { id: string } | undefined;
   if (existing) {
@@ -34,13 +35,13 @@ brandRouter.put("/", (req, res) => {
       `UPDATE brand_kits SET
         business_name=@business_name, logo_url=@logo_url, primary_color=@primary_color,
         secondary_color=@secondary_color, font=@font, tone_of_voice=@tone_of_voice,
-        website=@website, instagram=@instagram, updated_at=datetime('now')
+        website=@website, instagram=@instagram, vertical=@vertical, updated_at=datetime('now')
        WHERE user_id=@user_id`
     ).run({ ...fields, user_id: req.user!.id });
   } else {
     db.prepare(
-      `INSERT INTO brand_kits (id, user_id, business_name, logo_url, primary_color, secondary_color, font, tone_of_voice, website, instagram)
-       VALUES (@id, @user_id, @business_name, @logo_url, @primary_color, @secondary_color, @font, @tone_of_voice, @website, @instagram)`
+      `INSERT INTO brand_kits (id, user_id, business_name, logo_url, primary_color, secondary_color, font, tone_of_voice, website, instagram, vertical)
+       VALUES (@id, @user_id, @business_name, @logo_url, @primary_color, @secondary_color, @font, @tone_of_voice, @website, @instagram, @vertical)`
     ).run({ id: uuid(), user_id: req.user!.id, ...fields });
   }
   const kit = db.prepare("SELECT * FROM brand_kits WHERE user_id = ?").get(req.user!.id);

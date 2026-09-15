@@ -1,7 +1,7 @@
 import { Router } from "express";
 import Stripe from "stripe";
 import { db } from "../db/index.js";
-import { config, CREDIT_PACKS } from "../config.js";
+import { config, CREDIT_PACKS, CREDIT_COSTS, FULL_VIDEO_COST } from "../config.js";
 import { requireAuth } from "../middleware/auth.js";
 import { grantCredits } from "../services/credits.js";
 import { v4 as uuid } from "uuid";
@@ -10,7 +10,7 @@ export const billingRouter = Router();
 
 billingRouter.get("/plans", (_req, res) => {
   const plans = db.prepare("SELECT * FROM plans ORDER BY price_gbp ASC").all();
-  res.json({ plans, packs: CREDIT_PACKS });
+  res.json({ plans, packs: CREDIT_PACKS, frozenPrices: true, costs: CREDIT_COSTS, fullVideoCost: FULL_VIDEO_COST });
 });
 
 billingRouter.use(requireAuth);

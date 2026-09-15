@@ -3,6 +3,7 @@ import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_VIDEO_COST } from "../config.js";
 import { FORMAT_TYPES, MVP_READY, createProject, runStep, serializeProject } from "../services/pipeline.js";
+import { hasVideoFile, hasVoiceFile, videoFile, voiceFile } from "../services/media.js";
 
 export const projectsRouter = Router();
 projectsRouter.use(requireAuth);
@@ -32,6 +33,28 @@ projectsRouter.post("/", (req, res) => {
   }
   const project = createProject(req.user!.id, type as (typeof FORMAT_TYPES)[number], String(prompt).trim());
   res.status(201).json({ project: serializeProject(project) });
+});
+
+projectsRouter.get("/:id/file", (req, res) => {
+  const id = String(req.params.id);
+  const row = db.prepare("SELECT id FROM projects WHERE id = ? AND user_id = ?").get(id, req.user!.id);
+  if (!row || !hasVideoFile(id)) {
+    res.status(404).json({ error: "Video not ready." });
+    return;
+  }
+  res.type("video/mp4");
+  res.sendFile(videoFile(id));
+});
+
+projectsRouter.get("/:id/audio", (req, res) => {
+  const id = String(req.params.id);
+  const row = db.prepare("SELECT id FROM projects WHERE id = ? AND user_id = ?").get(id, req.user!.id);
+  if (!row || !hasVoiceFile(id)) {
+    res.status(404).json({ error: "Audio not ready." });
+    return;
+  }
+  res.type("audio/mpeg");
+  res.sendFile(voiceFile(id));
 });
 
 projectsRouter.get("/:id", (req, res) => {
