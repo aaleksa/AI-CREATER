@@ -90,9 +90,9 @@ authRouter.get("/me", requireAuth, (req, res) => {
   res.json({ user, subscription: sub ?? null, credits: Number(credits?.credits ?? 0) });
 });
 
-authRouter.delete("/account", requireAuth, (req, res) => {
+authRouter.delete("/account", requireAuth, async (req, res) => {
   try {
-    deleteAccount(req.user!.id);
+    await deleteAccount(req.user!.id);
     res.json({ ok: true });
   } catch (error) {
     console.error(error);

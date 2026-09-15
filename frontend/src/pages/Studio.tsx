@@ -83,6 +83,8 @@ export default function Studio() {
 
   const next = useMemo(() => STEPS.find((s) => project && !doneThrough(project, s.id)), [project]);
   const frame = project?.visuals?.[scene]?.imageUrl;
+  const frameIsPlaceholder = Boolean(project?.visuals?.[scene]?.placeholder);
+  const placeholderCount = project?.visuals?.filter((v) => v.placeholder).length ?? 0;
   const caption = project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title;
 
   async function run(step: string, regenerate = false, sceneId?: number) {
@@ -134,6 +136,11 @@ export default function Studio() {
                   <div className="phone-frame" style={{ background: frame }} />
                 )}
                 {!frame && <div className="phone-frame" style={{ background: "linear-gradient(160deg,#2b1d14,#c45c26)" }} />}
+                {frameIsPlaceholder && (
+                  <div className="caption" style={{ top: 18, bottom: "auto", fontSize: 14, fontFamily: "var(--sans, inherit)" }}>
+                    Couldn’t generate — regenerate this frame (8cr)
+                  </div>
+                )}
                 <div className="caption">{caption}</div>
               </>
             )}
@@ -147,13 +154,18 @@ export default function Studio() {
                     <span style={{ display: "block" }}>{s.voiceover}</span>
                   </button>
                   {project.visuals && (
-                    <button
-                      className="btn ghost"
-                      disabled={Boolean(busy)}
-                      onClick={() => run("visuals", true, s.id)}
-                    >
-                      {busy === `visual-${s.id}` ? "Making…" : `Regenerate this frame · 8 credits`}
-                    </button>
+                    <>
+                      {project.visuals.find((v) => v.sceneId === s.id)?.placeholder && (
+                        <p className="hint">Couldn’t generate — regenerate this frame (8cr)</p>
+                      )}
+                      <button
+                        className="btn ghost"
+                        disabled={Boolean(busy)}
+                        onClick={() => run("visuals", true, s.id)}
+                      >
+                        {busy === `visual-${s.id}` ? "Making…" : `Regenerate this frame · 8 credits`}
+                      </button>
+                    </>
                   )}
                 </div>
               ))}
@@ -174,8 +186,9 @@ export default function Studio() {
           {project.script && !project.visuals && <p className="lede">A 30-second voiceover, already broken into scenes.</p>}
           {project.visuals && !project.audioUrl && (
             <p className="lede">
-              Frames are in. If one shot missed, regenerate that frame for 8 credits — not the whole set.
-              Next we record a voiceover.
+              {placeholderCount
+                ? `${placeholderCount} frame${placeholderCount === 1 ? "" : "s"} couldn’t be generated. Regenerate them for 8 credits each before Voice, or the Reel will use colour cards.`
+                : "Frames are in. If one shot missed, regenerate that frame for 8 credits — not the whole set. Next we record a voiceover."}
             </p>
           )}
           {project.audioUrl && !project.captions && (

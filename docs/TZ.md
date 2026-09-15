@@ -2,7 +2,7 @@
 
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
-**Версія документа:** 1.4  
+**Версія документа:** 1.5  
 **Мова інтерфейсу першої версії:** English  
 **Валюта:** GBP (£)
 
@@ -220,7 +220,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 
 **Create.** Сітка 6 форматів. Reel/TikTok — активні. Інші — «soon». Промпт — одне речення, мінімум 8 символів. Підказка вартості: 150 credits, Free = 200 (**цифри заморожені**, §9).
 
-**Studio.** Вертикальний прев’ю 9:16 ліворуч (після Create — `<video>` з mp4). Панель **одного** поточного кроку + `Make {step} · N credits`. На **завершеному** кроці — `Regenerate {step} · N credits`. Після Create — Download mp4 і явний текст: **файл варто завантажити зараз**; проміжні файли можуть зникнути через 7 днів, mp4 тримаємо 90 днів; повторний Create після expiry — знову 55 credits.
+**Studio.** Вертикальний прев’ю 9:16 ліворуч (після Create — `<video>` з mp4). Панель **одного** поточного кроку + `Make {step} · N credits`. На **завершеному** кроці — `Regenerate {step} · N credits`. Кадри з `placeholder: true` **видимі до Voice**: бейдж *Couldn’t generate — regenerate this frame (8cr)* на прев’ю і в списку сцен. Після Create — Download mp4 і явний текст: **файл варто завантажити зараз**; проміжні файли можуть зникнути через 7 днів, mp4 тримаємо 90 днів; повторний Create після expiry — знову 55 credits.
 
 **Brand Kit.** Поля: business name, logo URL, primary/secondary colour (hex), font, tone of voice, website, Instagram, **vertical** (salon / cafe / fitness). Невалідний hex не ламає color picker.
 
@@ -504,7 +504,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | POST | `/projects` | так | `{ type, prompt }` → 201 `{ project }` |
 | GET | `/projects/:id` | так | проєкт + таблиця costs |
 | POST | `/projects/:id/steps/:step` | так | тіло `{ regenerate?: boolean, sceneId?: number }` — `sceneId` лише для visuals, 8 credits |
-| DELETE | `/auth/account` | так | self-service видалення акаунта, проєктів і медіа |
+| DELETE | `/auth/account` | так | спочатку Stripe `subscriptions.cancel`, потім дані |
 | GET | `/projects/:id/file` | так | mp4 після Create |
 | GET | `/projects/:id/audio` | так | mp3 після Voice |
 | GET | `/brand` | так | `{ brandKit }` |
@@ -523,7 +523,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | --- | --- | --- |
 | idea | 5 | `idea_json` |
 | script | 10 | `script_json` |
-| visuals | 40 | кадри на сцени; **часткова відмова DALL·E ≠ fail кроку** (§7.3) |
+| visuals | 40 max | кадри; оплата **live × 8**, поріг ≥3/5 (§7.3) |
 | visuals *один кадр* | **8** | `{ regenerate: true, sceneId }` |
 | voice | 30 | `voice_json` **і** `audio_url` (TTS) |
 | captions | 10 | cues (scene-level) |
@@ -558,17 +558,22 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 
 ### 7.3 Часткова відмова Visuals
 
-Крок Visuals = пачка до ~5 викликів DALL·E за **40 credits**.
+Крок Visuals = пачка кадрів. Повна ціна 40 = 5 × 8. **Не списувати 40, якщо цінність неповна.**
 
-| Результат | Крок | Credits | `actual_cost_gbp` |
+Поріг успіху: **≥ ceil(n × 3/5)** живих кадрів (для 5 сцен = **3**). Нижче порогу (є ключ OpenAI) — крок `failed`, credits **0**.
+
+| Результат | Крок | Credits | Що бачить користувач |
 | --- | --- | --- | --- |
-| Усі кадри відхилені політикою / мережею (є ключ OpenAI) | `failed` | **0** | 0; людський текст *We couldn’t generate these frames. Try a simpler description.* |
-| ≥1 кадр успішний, решта відхилені | `succeeded` | 40 | сума успішних викликів; відхилені слоти — placeholder (`placeholder: true` у JSON), Create збирає mp4 з градієнтом на цій сцені |
-| Без ключа (dev) | `succeeded` | 40 | 0; усі кадри preview |
+| Живих кадрів нижче порогу (ключ є) | `failed` | **0** | *We couldn’t generate enough frames (k of n). Try a simpler description.* |
+| Живих ≥ порогу, частина placeholder | `succeeded` | **live × 8** (не 40) | Бейдж на кожному placeholder **до Voice** |
+| Усі n кадрів живі | `succeeded` | **n × 8** (5 сцен = 40) | Звичайний прев’ю |
+| Без ключа (dev) | `succeeded` | 40 | Усі кадри preview, без бейджа policy |
 
-Успішні виклики в пачці, яка впала цілком, **не тарифікуються credits** (крок не succeeded). Собівартість OpenAI все одно могла виникнути — пишемо в лог `failed`, credits 0. Це прийнятий компроміс MVP: не списувати 40 за порожній крок.
+5xx від DALL·E: **один автоматичний retry** на кадр, потім як відмова (placeholder / поріг). 4xx policy — без retry, одразу placeholder.
 
-Один невдалий кадр після succeeded **не** вимагає 40 credits знову — 8 за `sceneId`.
+Успішні API-виклики в пачці, яка впала по порогу, **не тарифікуються credits**. Собівартість OpenAI може лишитись у логу `failed`.
+
+Один кадр після succeeded: **8 credits** за `sceneId`.
 
 ---
 
@@ -670,9 +675,9 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 
 Закрита бета 5–10 інвайтів може йти без публічної privacy policy. **Етап «Публічний лендінг» (§1.5 / §12) заборонений**, доки немає:
 
-1. **Content policy / відмова моделі.** Повна відмова пачки Visuals або TTS — крок `failed`, credits **не** списуються, людський текст, не сирий error OpenAI. **Часткова** відмова кадрів — §7.3 (крок succeeded з placeholder).
+1. **Content policy / відмова моделі.** TTS або Visuals нижче порогу §7.3 — `failed`, credits 0, людський текст. Частковий успіх ≥ порогу — `live × 8`, placeholder з бейджем **до Voice**.
 2. **Чужі знаки.** Brand Kit — відповідальність користувача: лого/назва, які він вводить, вважаються його. Короткий disclaimer на Brand і на signup (не юридичний трактат). Перевірка товарних знаків автоматично — **не MVP**.
-3. **GDPR / UK GDPR.** Перед публічним запуском: privacy policy (що зберігаємо, 90/7 днів, процесор OpenAI), підстава обробки, **self-service `DELETE /auth/account`** (проєкти, медіа, brand, credits, email). Ручне видалення адміном — лише запас для бети 5–10 людей, **не** заміна ендпоінта на етапі 4.
+3. **GDPR / UK GDPR.** Перед публічним запуском: privacy policy, підстава обробки, **self-service `DELETE /auth/account`**. Перед стиранням рядків: якщо є `stripe_subscription_id` — **`subscriptions.cancel` у Stripe**, потім видалення проєктів/медіа/brand/credits/email. Інакше Stripe продовжить списувати картку. Ручне видалення адміном — запас для бети 5–10, не заміна ендпоінта.
 
 ---
 

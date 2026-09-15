@@ -1,6 +1,6 @@
 import { v4 as uuid } from "uuid";
 import { db } from "../db/index.js";
-import { CREDIT_COSTS, VISUAL_SCENE_CREDITS } from "../config.js";
+import { CREDIT_COSTS, VISUAL_SCENE_CREDITS, visualMinLive } from "../config.js";
 import { getBalance, spendCredits } from "./credits.js";
 import {
   generateCaptions,
@@ -118,7 +118,7 @@ export async function runStep(
   if (sceneId && step !== "visuals") {
     throw Object.assign(new Error("Only visuals can regenerate a single frame."), { status: 400 });
   }
-  const cost = step === "visuals" && sceneId ? VISUAL_SCENE_CREDITS : CREDIT_COSTS[step];
+  let cost = step === "visuals" && sceneId ? VISUAL_SCENE_CREDITS : CREDIT_COSTS[step];
   const prompt = String(project.prompt);
   const type = String(project.type);
   const regenerate = Boolean(opts.regenerate);
@@ -191,11 +191,21 @@ export async function runStep(
         actualCost = one.cost;
       } else {
         const result = await generateVisuals(script, brand);
+        const minLive = visualMinLive(script.scenes.length);
+        if (result.usedOpenAI && result.live < minLive) {
+          throw Object.assign(
+            new Error(
+              `We couldn’t generate enough frames (${result.live} of ${script.scenes.length}). Try a simpler description.`
+            ),
+            { status: 400 }
+          );
+        }
         updates.visuals_json = JSON.stringify(result.data);
         updates.current_step = "visuals";
         provider = result.provider;
         model = result.model;
         actualCost = result.cost;
+        if (result.usedOpenAI) cost = result.live * VISUAL_SCENE_CREDITS;
       }
     } else if (step === "voice") {
       const script = parse<Script>(project.script_json);
@@ -270,8 +280,8 @@ export async function runStep(
     db.prepare(`UPDATE projects SET ${fields} WHERE id = @id`).run({ ...updates, id: projectId });
 
     db.prepare(
-      `UPDATE ai_generations SET provider = ?, model = ?, actual_cost_gbp = ?, status = 'succeeded' WHERE id = ?`
-    ).run(provider, model, actualCost, generationId);
+      `UPDATE ai_generations SET provider = ?, model = ?, actual_cost_gbp = ?, credits_used = ?, status = 'succeeded' WHERE id = ?`
+    ).run(provider, model, actualCost, cost, generationId);
 
     return serializeProject(getProject(projectId, userId));
   } catch (error) {

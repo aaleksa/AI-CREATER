@@ -25,6 +25,10 @@ export const FULL_VIDEO_COST = Object.values(CREDIT_COSTS).reduce((a, b) => a + 
 /** One DALL·E frame. 40 / 5 scenes. FROZEN with the rest of §9. */
 export const VISUAL_SCENE_CREDITS = 8;
 
+export function visualMinLive(sceneCount: number) {
+  return Math.max(1, Math.ceil((sceneCount * 3) / 5));
+}
+
 export const CREDIT_PACKS = [
   { id: "pack_200", credits: 200, price_gbp: 499, label: "200 credits" },
   { id: "pack_600", credits: 600, price_gbp: 1299, label: "600 credits" },

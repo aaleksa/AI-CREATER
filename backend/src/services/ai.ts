@@ -219,7 +219,15 @@ export async function generateVisuals(script: Script, brand?: BrandKit | null) {
     throw Object.assign(new Error("We couldn’t generate these frames. Try a simpler description."), { status: 400 });
   }
 
-  return { data: visuals, provider, model, cost, live, refused: visuals.filter((v) => v.placeholder).length };
+  return {
+    data: visuals,
+    provider,
+    model,
+    cost,
+    live,
+    refused: visuals.filter((v) => v.placeholder).length,
+    usedOpenAI: Boolean(openai),
+  };
 }
 
 export async function generateOneVisual(scene: ScriptScene, brand?: BrandKit | null) {
@@ -234,33 +242,46 @@ export async function generateOneVisual(scene: ScriptScene, brand?: BrandKit | n
 async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null) {
   const openai = client();
   const fallback = PLACEHOLDER_FRAMES[(Math.max(1, scene.id) - 1) % PLACEHOLDER_FRAMES.length];
-  if (openai) {
-    try {
-      const image = await openai.images.generate({
-        model: "dall-e-3",
-        prompt: `${scene.visualPrompt}. Vertical 9:16 cinematic still, filmic, no text overlay.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}.` : ""}`,
-        size: "1024x1792",
-        n: 1,
-      });
-      const url = image.data?.[0]?.url;
-      if (url) {
-        return {
-          visual: { sceneId: scene.id, imageUrl: url, prompt: scene.visualPrompt },
-          provider: "openai",
-          model: "dall-e-3",
-          cost: 0.04,
-        };
-      }
-    } catch {
-      /* policy or network — placeholder for the batch; single-frame regen throws above */
-    }
-  }
-  return {
-    visual: { sceneId: scene.id, imageUrl: fallback, prompt: scene.visualPrompt, placeholder: true },
+  const placeholder = {
+    visual: { sceneId: scene.id, imageUrl: fallback, prompt: scene.visualPrompt, placeholder: true as const },
     provider: openai ? "openai" : "auteur-studio",
     model: openai ? "dall-e-3-refused" : "preview-frames",
     cost: 0,
   };
+  if (!openai) return placeholder;
+
+  const prompt = `${scene.visualPrompt}. Vertical 9:16 cinematic still, filmic, no text overlay.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}.` : ""}`;
+
+  const once = async () => {
+    const image = await openai.images.generate({
+      model: "dall-e-3",
+      prompt,
+      size: "1024x1792",
+      n: 1,
+    });
+    const url = image.data?.[0]?.url;
+    if (!url) throw Object.assign(new Error("empty image"), { status: 500 });
+    return {
+      visual: { sceneId: scene.id, imageUrl: url, prompt: scene.visualPrompt },
+      provider: "openai",
+      model: "dall-e-3",
+      cost: 0.04,
+    };
+  };
+
+  try {
+    return await once();
+  } catch (error) {
+    const status = Number((error as { status?: number }).status);
+    if (status >= 500 && status < 600) {
+      try {
+        return await once();
+      } catch {
+        return placeholder;
+      }
+    }
+    return placeholder;
+  }
 }
 
 export async function generateVoice(script: Script, brand?: BrandKit | null) {
