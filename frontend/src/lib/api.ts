@@ -47,6 +47,7 @@ export type Project = {
   stepAttempts: Record<string, number>;
   maxStepAttempts: number;
   maxRegenerates: number;
+  extraAttemptMultiplier: number;
   createdAt: string;
 };
 

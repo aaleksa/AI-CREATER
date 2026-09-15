@@ -31,9 +31,14 @@ export function visualMinLive(sceneCount: number) {
   return Math.max(1, Math.ceil((sceneCount * 3) / 5));
 }
 
-/** First Make + this many paid retries. Caps OpenAI spend per Reel step. */
+/** First Make + this many retries at list price. Further tries stay allowed at 2× — user chooses to pay. */
 export const MAX_REGENERATES_PER_STEP = 2;
 export const MAX_STEP_ATTEMPTS = 1 + MAX_REGENERATES_PER_STEP;
+export const EXTRA_ATTEMPT_MULTIPLIER = 2;
+
+export function attemptCost(baseCredits: number, attemptsSoFar: number) {
+  return baseCredits * (attemptsSoFar >= MAX_STEP_ATTEMPTS ? EXTRA_ATTEMPT_MULTIPLIER : 1);
+}
 
 export const CREDIT_PACKS = [
   { id: "pack_200", credits: 200, price_gbp: 499, label: "200 credits" },

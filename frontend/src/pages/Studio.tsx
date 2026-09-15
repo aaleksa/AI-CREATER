@@ -88,9 +88,14 @@ export default function Studio() {
   }, [id, project?.audioUrl]);
 
   const next = useMemo(() => STEPS.find((s) => project && !doneThrough(project, s.id)), [project]);
-  const lastDone = useMemo(() => [...STEPS].reverse().find((s) => project && !doneThrough(project, s.id)), [project]);
-  const triesLeft = (step: string) =>
-    Math.max(0, (project?.maxStepAttempts ?? 3) - (project?.stepAttempts?.[step] ?? 0));
+  const lastDone = useMemo(() => [...STEPS].reverse().find((s) => project && doneThrough(project, s.id)), [project]);
+  const extraPrice = (step: string, sceneId?: number) => {
+    const base = sceneId ? 8 : STEPS.find((s) => s.id === step)?.cost ?? 0;
+    const used = project?.stepAttempts?.[step] ?? 0;
+    const included = project?.maxStepAttempts ?? 3;
+    const mult = used >= included ? (project?.extraAttemptMultiplier ?? 2) : 1;
+    return { extra: used >= included, credits: base * mult };
+  };
   const frame = project?.visuals?.[scene]?.imageUrl;
   const frameIsPlaceholder = Boolean(project?.visuals?.[scene]?.placeholder);
   const placeholderCount = project?.visuals?.filter((v) => v.placeholder).length ?? 0;
@@ -107,11 +112,17 @@ export default function Studio() {
         return;
       }
     }
-    if (regenerate && !sceneId && (step === "idea" || step === "script")) {
+    const price = extraPrice(step, sceneId);
+    if (price.extra) {
+      const ok = window.confirm(
+        `Keep this version (free), or try again at 2× — ${price.credits} credits? We pay the AI on every extra try.`
+      );
+      if (!ok) return;
+    } else if (regenerate && !sceneId && (step === "idea" || step === "script")) {
       const ok = window.confirm(
         step === "idea"
-          ? "This remakes the idea and clears script, frames, voice and video. 5 credits."
-          : "This remakes the script and clears frames, voice and video. 10 credits."
+          ? `This remakes the idea and clears script, frames, voice and video. ${price.credits} credits.`
+          : `This remakes the script and clears frames, voice and video. ${price.credits} credits.`
       );
       if (!ok) return;
     }
@@ -215,14 +226,14 @@ export default function Studio() {
                       )}
                       <button
                         className="btn ghost"
-                        disabled={Boolean(busy) || triesLeft("visuals") < 1}
+                        disabled={Boolean(busy)}
                         onClick={() => run("visuals", true, s.id)}
                       >
                         {busy === `visual-${s.id}`
                           ? "Making…"
-                          : triesLeft("visuals") < 1
-                            ? "No more frame retries on this Reel"
-                            : `Regenerate this frame · 8 credits`}
+                          : extraPrice("visuals", s.id).extra
+                            ? `Another try · ${extraPrice("visuals", s.id).credits} credits (2×)`
+                            : `Regenerate this frame · ${extraPrice("visuals", s.id).credits} credits`}
                       </button>
                     </>
                   )}
@@ -273,45 +284,48 @@ export default function Studio() {
             </>
           )}
 
-          {next && triesLeft(next.id) > 0 && (
+          {next && (
             <button className="btn accent" style={{ marginTop: 18 }} disabled={Boolean(busy)} onClick={() => run(next.id)}>
-              {busy && busy === next.id ? makingLabel : `Make ${next.label.toLowerCase()} · ${next.cost} credits`}
+              {busy && busy === next.id
+                ? makingLabel
+                : extraPrice(next.id).extra
+                  ? `Make ${next.label.toLowerCase()} · ${extraPrice(next.id).credits} credits (2×)`
+                  : `Make ${next.label.toLowerCase()} · ${extraPrice(next.id).credits} credits`}
             </button>
           )}
-          {next && triesLeft(next.id) < 1 && (
-            <p className="err" style={{ marginTop: 18 }}>
-              No more tries for {next.label.toLowerCase()} on this Reel. Each try is a paid AI call. Start a new project.
-            </p>
-          )}
-          {lastDone && triesLeft(lastDone.id) > 0 && (
+          {lastDone && (
             <button
               className="btn ghost"
               style={{ marginTop: 10 }}
               disabled={Boolean(busy)}
               onClick={() => run(lastDone.id, true)}
             >
-              {busy === lastDone.id ? makingLabel : `Not this ${lastDone.label.toLowerCase()}? Try again · ${lastDone.cost} credits`}
+              {busy === lastDone.id
+                ? makingLabel
+                : extraPrice(lastDone.id).extra
+                  ? `Keep this, or another try · ${extraPrice(lastDone.id).credits} credits (2×)`
+                  : `Not this ${lastDone.label.toLowerCase()}? Try again · ${extraPrice(lastDone.id).credits} credits`}
             </button>
           )}
           {STEPS.some((s) => doneThrough(project, s.id)) && (
             <div style={{ marginTop: 18 }}>
               <p className="hint">
-                Each retry spends credits — we pay the AI on every call. Two retries per step on this Reel. A later redo
-                clears the video. One frame is 8 credits.
+                Keep this version — that’s free. Two retries at the usual price. After that you can still try, at 2×,
+                if you want. A later redo clears the video.
               </p>
               {STEPS.filter((s) => doneThrough(project, s.id)).map((s) => (
                 <button
                   key={`regen-${s.id}`}
                   className="btn ghost"
                   style={{ marginTop: 8, marginRight: 8 }}
-                  disabled={Boolean(busy) || triesLeft(s.id) < 1}
+                  disabled={Boolean(busy)}
                   onClick={() => run(s.id, true)}
                 >
                   {busy === s.id
                     ? makingLabel
-                    : triesLeft(s.id) < 1
-                      ? `No more ${s.label.toLowerCase()} retries`
-                      : `Regenerate ${s.label.toLowerCase()} · ${s.cost}`}
+                    : extraPrice(s.id).extra
+                      ? `Another ${s.label.toLowerCase()} · ${extraPrice(s.id).credits} (2×)`
+                      : `Regenerate ${s.label.toLowerCase()} · ${extraPrice(s.id).credits}`}
                 </button>
               ))}
             </div>

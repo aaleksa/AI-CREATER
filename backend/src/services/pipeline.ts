@@ -1,6 +1,6 @@
 import { v4 as uuid } from "uuid";
 import { db } from "../db/index.js";
-import { CREDIT_COSTS, MAX_STEP_ATTEMPTS, MAX_REGENERATES_PER_STEP, VISUAL_SCENE_CREDITS, visualMinLive } from "../config.js";
+import { attemptCost, CREDIT_COSTS, EXTRA_ATTEMPT_MULTIPLIER, MAX_STEP_ATTEMPTS, MAX_REGENERATES_PER_STEP, VISUAL_SCENE_CREDITS, visualMinLive } from "../config.js";
 import { getBalance, refundCredits, spendCredits } from "./credits.js";
 import {
   generateCaptions,
@@ -123,6 +123,7 @@ export function serializeProject(row: Record<string, unknown>) {
     stepAttempts: stepAttemptCounts(String(row.id)),
     maxStepAttempts: MAX_STEP_ATTEMPTS,
     maxRegenerates: MAX_REGENERATES_PER_STEP,
+    extraAttemptMultiplier: EXTRA_ATTEMPT_MULTIPLIER,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -149,7 +150,6 @@ export async function runStep(
   if (sceneId && step !== "visuals") {
     throw Object.assign(new Error("Only visuals can regenerate a single frame."), { status: 400 });
   }
-  let cost = step === "visuals" && sceneId ? VISUAL_SCENE_CREDITS : CREDIT_COSTS[step];
   const prompt = String(project.prompt);
   const type = String(project.type);
   const regenerate = Boolean(opts.regenerate);
@@ -162,6 +162,10 @@ export async function runStep(
     (step === "captions" && Boolean(project.captions_json)) ||
     (step === "render" && hasVideoFile(projectId));
   if (alreadyDone && !regenerate) return serializeProject(project);
+
+  const attemptsSoFar = stepAttemptCount(projectId, step);
+  const multiplier = attemptsSoFar >= MAX_STEP_ATTEMPTS ? EXTRA_ATTEMPT_MULTIPLIER : 1;
+  let cost = attemptCost(step === "visuals" && sceneId ? VISUAL_SCENE_CREDITS : CREDIT_COSTS[step], attemptsSoFar);
 
   const idea = parse<Idea>(project.idea_json);
   const script = parse<Script>(project.script_json);
@@ -176,15 +180,6 @@ export async function runStep(
   }
   if (step === "render" && !hasVoiceFile(projectId)) {
     throw Object.assign(new Error("Generate the voice audio first."), { status: 400 });
-  }
-
-  if (stepAttemptCount(projectId, step) >= MAX_STEP_ATTEMPTS) {
-    throw Object.assign(
-      new Error(
-        `This step has been generated enough times on this Reel (${MAX_STEP_ATTEMPTS} tries). Each try is a paid AI call. Start a new project if you want another go.`
-      ),
-      { status: 429 }
-    );
   }
 
   if (getBalance(userId) < cost) {
@@ -261,7 +256,7 @@ export async function runStep(
         provider = result.provider;
         model = result.model;
         actualCost = result.cost;
-        if (result.usedOpenAI) cost = result.live * VISUAL_SCENE_CREDITS;
+        if (result.usedOpenAI) cost = result.live * VISUAL_SCENE_CREDITS * multiplier;
       }
     } else if (step === "voice" && script) {
       providerTouched = true;
