@@ -4,6 +4,8 @@ Tell us what you want to create. We'll do the rest.
 
 Auteur is not a Canva clone. It is a simple AI content studio: the user never chooses a model, a prompt stack, or a voice engine. They pick a format, write a sentence, and the studio runs Idea → Script → Visuals → Voice → Captions → Create.
 
+Full specification (current build + future expansion): [docs/TZ.md](docs/TZ.md).
+
 The first studio is **Instagram Reels and TikTok** — a finished 30-second vertical video. Posts, ads, YouTube and presentations come only if people actually use this.
 
 ## Product
