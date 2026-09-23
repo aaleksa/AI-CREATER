@@ -550,6 +550,17 @@ export async function runStep(
       if (isImagePost(type)) {
         updates.script_json = JSON.stringify(imageScript);
       }
+      if (regenerate || sceneId) {
+        const currentFrames = parse<Visual[]>(project.visuals_json) || [];
+        const currentVersion = db
+          .prepare(
+            `SELECT id FROM project_step_versions
+             WHERE project_id = ? AND step = 'visuals' AND accepted = 1
+             ORDER BY created_at DESC LIMIT 1`
+          )
+          .get(projectId) as { id: string } | undefined;
+        if (currentVersion && currentFrames.length) snapshotStills(projectId, currentVersion.id, currentFrames);
+      }
       if (sceneId) {
         const scene = imageScript.scenes.find((item) => item.id === sceneId)!;
         const current = parse<Visual[]>(project.visuals_json) || [];

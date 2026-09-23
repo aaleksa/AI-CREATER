@@ -4,7 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_INVITE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
 import { FORMAT_TYPES, MVP_READY, createProject, readCreateImageIntent, restoreStepVersion, runStep, saveFeedback, serializeProject, updateInvite } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
-import { hasStillFile, hasVideoFile, hasVoiceFile, stillFile, videoFile, voiceFile } from "../services/media.js";
+import { hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 
 function readPrompt(value: unknown) {
@@ -69,6 +69,26 @@ projectsRouter.get("/:id/file", (req, res) => {
   }
   res.type("video/mp4");
   res.sendFile(videoFile(id));
+});
+
+projectsRouter.get("/:id/image/:sceneId/versions/:versionId", (req, res) => {
+  const id = String(req.params.id);
+  const sceneId = Number(req.params.sceneId);
+  const versionId = String(req.params.versionId);
+  if (!/^[0-9a-f-]{36}$/i.test(versionId)) {
+    res.status(404).json({ error: "Image not ready." });
+    return;
+  }
+  const row = db.prepare("SELECT id FROM projects WHERE id = ? AND user_id = ?").get(id, req.user!.id);
+  const version = db
+    .prepare("SELECT id FROM project_step_versions WHERE id = ? AND project_id = ? AND step = 'visuals'")
+    .get(versionId, id);
+  if (!row || !version || !hasStillVersionFile(id, sceneId, versionId)) {
+    res.status(404).json({ error: "Image not ready." });
+    return;
+  }
+  res.type("image/jpeg");
+  res.sendFile(stillVersionFile(id, sceneId, versionId));
 });
 
 projectsRouter.get("/:id/image/:sceneId", (req, res) => {

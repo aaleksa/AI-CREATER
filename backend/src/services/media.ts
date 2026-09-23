@@ -119,6 +119,11 @@ export function hasStillFile(projectId: string, sceneId: number) {
   return fs.existsSync(file) && fs.statSync(file).size > 0;
 }
 
+export function hasStillVersionFile(projectId: string, sceneId: number, versionId: string) {
+  const file = stillVersionFile(projectId, sceneId, versionId);
+  return fs.existsSync(file) && fs.statSync(file).size > 0;
+}
+
 export function hasStillFiles(projectId: string) {
   const dir = projectMediaPath(projectId);
   if (!fs.existsSync(dir)) return false;

@@ -88,6 +88,57 @@ function doneThrough(project: Project, step: string) {
   return Boolean(map[step]);
 }
 
+function PictureCompare({
+  versions,
+  srcs,
+  onRestore,
+  onPreview,
+  previewId,
+  busy,
+}: {
+  versions: { id: string; accepted: boolean }[];
+  srcs: Record<string, string>;
+  onRestore: (versionId: string) => void;
+  onPreview: (versionId: string) => void;
+  previewId: string | null;
+  busy: boolean;
+}) {
+  if (versions.length < 2) return null;
+  return (
+    <div style={{ marginTop: 16 }}>
+      <p className="hint">Compare the last two. Using the older one is free — you already paid for it.</p>
+      <div className="compare-grid">
+        {versions.map((version) => {
+          const src = srcs[version.id];
+          const showing = previewId === version.id || (!previewId && version.accepted);
+          return (
+            <div key={version.id} className={`compare-card${showing ? " on" : ""}`}>
+              <p className="hint">{version.accepted ? "Current" : "Previous"}</p>
+              {src ? (
+                <button
+                  type="button"
+                  className="compare-still-btn"
+                  onClick={() => onPreview(version.id)}
+                  aria-label={version.accepted ? "Show current picture" : "Show previous picture"}
+                >
+                  <img className="compare-still" src={src} alt={version.accepted ? "Current picture" : "Previous picture"} />
+                </button>
+              ) : (
+                <p className="hint">This take isn’t on disk any more.</p>
+              )}
+              {!version.accepted && src && (
+                <button className="btn ghost" type="button" disabled={busy} onClick={() => onRestore(version.id)}>
+                  Use this version
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function VersionCompare({
   step,
   versions,
@@ -143,6 +194,8 @@ export default function Studio() {
   const [publishable, setPublishable] = useState("");
   const [reasons, setReasons] = useState<string[]>([]);
   const [imageSrcs, setImageSrcs] = useState<Record<number, string>>({});
+  const [versionSrcs, setVersionSrcs] = useState<Record<string, string>>({});
+  const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
   const [pendingRegen, setPendingRegen] = useState<{ step: string; sceneId?: number } | null>(null);
   const [regenReason, setRegenReason] = useState("");
   const [regenNote, setRegenNote] = useState("");
@@ -237,6 +290,37 @@ export default function Studio() {
     };
   }, [id, project?.visuals, project?.updatedAt]);
 
+  useEffect(() => {
+    const versions = project?.type === "image_post" ? project.versions?.visuals || [] : [];
+    const sceneId = project?.visuals?.[0]?.sceneId ?? 1;
+    if (!id || versions.length < 2) {
+      setVersionSrcs({});
+      setPreviewVersionId(null);
+      return;
+    }
+    let cancelled = false;
+    const created: string[] = [];
+    Promise.all(
+      versions.map(async (version) => {
+        try {
+          const blob = await fetchMedia(`/projects/${id}/image/${sceneId}/versions/${version.id}`);
+          const url = URL.createObjectURL(blob);
+          created.push(url);
+          return [version.id, url] as const;
+        } catch {
+          return [version.id, ""] as const;
+        }
+      })
+    ).then((pairs) => {
+      if (cancelled) return;
+      setVersionSrcs(Object.fromEntries(pairs.filter(([, url]) => url)));
+    });
+    return () => {
+      cancelled = true;
+      created.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [id, project?.type, project?.versions?.visuals, project?.visuals, project?.updatedAt]);
+
   const isImage = project?.type === "image_post";
   const isInvite = Boolean(isImage && project?.imageIntent === "invite");
   const STEPS = isImage
@@ -255,9 +339,10 @@ export default function Studio() {
     return { extra: used >= included, credits: base * mult };
   };
   const rawFrame = project?.visuals?.[scene]?.imageUrl || "";
-  const frame =
+  const currentFrame =
     (project?.visuals?.[scene] && imageSrcs[project.visuals[scene].sceneId]) ||
     (rawFrame.startsWith("data:") ? "" : rawFrame);
+  const frame = (previewVersionId && versionSrcs[previewVersionId]) || currentFrame;
   const frameIsPlaceholder = Boolean(project?.visuals?.[scene]?.placeholder);
   const placeholderCount = project?.visuals?.filter((v) => v.placeholder).length ?? 0;
   const caption = project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title;
@@ -268,6 +353,7 @@ export default function Studio() {
     setError("");
     try {
       const { project: nextProject } = await api.runStep(id, step, regenerate, sceneId, feedback);
+      setPreviewVersionId(null);
       setProject(nextProject);
       setBrief(nextProject.prompt);
       if (nextProject.invite) setInviteDraft(draftFromInvite(nextProject.invite));
@@ -345,7 +431,7 @@ export default function Studio() {
       step === "idea"
         ? "Use this idea? It clears what follows. Free — you already paid for this version."
         : step === "visuals"
-          ? "Use the previous picture? Free — you already paid for it. The video will need Create again."
+          ? "Use this picture? Free — you already paid for it."
           : "Use this script? It clears frames, voice and video. Free — you already paid for this version."
     );
     if (!ok) return;
@@ -353,6 +439,7 @@ export default function Studio() {
     setError("");
     try {
       const { project: nextProject } = await api.restoreVersion(id, step, versionId, sceneId);
+      setPreviewVersionId(null);
       setProject(nextProject);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not restore that version.");
@@ -425,7 +512,7 @@ export default function Studio() {
         : busy === "visuals" && isInvite
           ? "Making the invitation…"
           : busy === "visuals" && isImage
-            ? "Making pictures…"
+            ? "Making the picture…"
             : "Making…";
 
   return (
@@ -495,7 +582,7 @@ export default function Studio() {
               </>
             )}
           </div>
-          {project.script && (
+          {!isImage && project.script && (
             <div className="scenes">
               {project.script.scenes.map((s, i) => (
                 <div key={s.id} className="scene" style={{ display: "grid", gap: 8 }}>
@@ -593,13 +680,27 @@ export default function Studio() {
           {project.hasImages && (
             <>
               <p className="ok">
-                {isInvite ? "Your invitation is ready." : "Your pictures are ready."} {project.creditsUsed} credits used.
+                {isInvite ? "Your invitation is ready." : "Your picture is ready."} {project.creditsUsed} credits used.
               </p>
               <p className="hint">
                 {isInvite
                   ? "Download the invitation. We keep it for 90 days. Recreating after that uses credits again."
-                  : "Download the stills now. We keep them for 90 days. Recreating after that uses credits again."}
+                  : "Download the picture now. We keep it for 90 days. Recreating after that uses credits again."}
               </p>
+              {(project.versions?.visuals || []).length < 2 ? (
+                <p className="hint" style={{ marginTop: 12 }}>
+                  Not this one? Try again — then you can look at both and keep the one you prefer, free.
+                </p>
+              ) : (
+                <PictureCompare
+                  versions={project.versions?.visuals || []}
+                  srcs={versionSrcs}
+                  previewId={previewVersionId}
+                  busy={Boolean(busy)}
+                  onPreview={setPreviewVersionId}
+                  onRestore={(versionId) => restore("visuals", versionId)}
+                />
+              )}
               <div className="row" style={{ marginTop: 12 }}>
                 <button className="btn ghost" type="button" onClick={sharePreview}>
                   {shareCopied ? "Preview link copied" : "Share a preview"}

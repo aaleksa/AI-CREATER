@@ -619,7 +619,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 - `GET /projects/:id/preview?token=` — той самий JSON без auth.
 - Не постійний Download URL і не S3. Після TTL — 404. Кнопка в студії: *Share a preview*.
 
-Порівняння версій Idea/Script/**Visuals**: `GET` проєкту віддає дві останні в `versions`; `POST /projects/:id/versions/{idea|script|visuals}/:versionId/restore` ставить обрану `accepted=1`, **0 credits**. Idea/script — каскад як regenerate. Visuals — за `{ sceneId }` відкочує один кадр з файлового знімка `still-{sceneId}-{versionId}.jpg` (mp4 скидається).
+Порівняння версій Idea/Script/**Visuals**: `GET` проєкту віддає дві останні в `versions`; `POST /projects/:id/versions/{idea|script|visuals}/:versionId/restore` ставить обрану `accepted=1`, **0 credits**. Idea/script — каскад як regenerate. Visuals — за `{ sceneId }` відкочує один кадр з файлового знімка `still-{sceneId}-{versionId}.jpg` (mp4 скидається). Image / Post після другої Pictures показує обидві картинки; `GET /projects/:id/image/:sceneId/versions/:versionId` віддає знімок.
 
 ---
 
@@ -652,6 +652,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | DELETE | `/auth/account` | так | спочатку Stripe `subscriptions.cancel`, потім дані |
 | GET | `/projects/:id/file` | так | mp4 після Create |
 | GET | `/projects/:id/image/:sceneId` | так | JPG still після Pictures |
+| GET | `/projects/:id/image/:sceneId/versions/:versionId` | так | JPG попереднього take |
 | GET | `/projects/:id/audio` | так | mp3 після Voice |
 | GET | `/brand` | так | `{ brandKit }` + completeness + learned_lines |
 | PUT | `/brand` | так | зберегти kit |
