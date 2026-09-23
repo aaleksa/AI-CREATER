@@ -233,7 +233,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 
 **Auth.** Ім’я (тільки signup), email, пароль. Помилки зрозумілою мовою.
 
-**Create.** Сітка 6 форматів. Reel / TikTok / Image Post — активні. Video, Ad, Social — «soon». Промпт — від 8 до 2 000 символів. Copy: одне речення досить, можна більше. Reel 150 cr · stills 37 cr.
+**Create.** Сітка 6 форматів. Reel / TikTok / Image Post — активні. Video, Ad, Social — «soon». Промпт — від 8 до 2 000 символів. Copy: речення може вистачити; якщо ні — офер, місце, для кого. Reel 150 cr · stills 37 cr.
 
 **Studio.** Reel/TikTok: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: квадратний прев’ю 1:1, кроки Idea → Pictures, без Voice/Captions/Create. Бриф зверху — textarea, `Save brief` (PATCH, 0 credits); щоб застосувати — regenerate idea. Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб кнопка лишається: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі: бейдж *Couldn’t generate — regenerate this picture (8cr)*. Після Create (Reel) — Download mp4; після Pictures — Download JPG. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
 

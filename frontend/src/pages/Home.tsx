@@ -46,7 +46,7 @@ export default function Home() {
     <div className="hero-home">
       <p className="hint">The studio</p>
       <h1 style={{ fontSize: "clamp(40px, 6vw, 64px)" }}>What do you want to create?</h1>
-      <p className="lede">Pick a format. Write what you want — a sentence is enough; add the offer, place or who it’s for if one line isn’t.</p>
+      <p className="lede">Pick a format. Write what you want. A sentence can be enough — but if the offer, the place or who it’s for matters, say that too.</p>
 
       <div className="format-grid">
         {FORMATS.map((format) => (
@@ -74,11 +74,11 @@ export default function Home() {
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           maxLength={2000}
-          placeholder="Create a 30-second Reel about… Add the offer, the street, or who it’s for if a sentence isn’t enough."
+          placeholder="Create a 30-second Reel about… Add the offer, the street, or who it’s for when a sentence isn’t enough."
         />
         <div className="row">
           <span className="hint">
-            A sentence is enough. More is fine (up to 2,000 characters). A Reel is 150 credits · stills are 37 · Free starts with 200
+            A sentence can be enough. Add more when you need to — offer, place, who it’s for (up to 2,000 characters). A Reel is 150 credits · stills are 37 · Free starts with 200
           </span>
           <button className="btn accent" onClick={start} disabled={busy}>
             {busy ? "Opening studio…" : `Continue with ${selected?.title}`}
