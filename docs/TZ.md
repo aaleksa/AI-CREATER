@@ -2,7 +2,7 @@
 
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
-**Версія документа:** 1.7  
+**Версія документа:** 1.8  
 **Мова інтерфейсу першої версії:** English  
 **Валюта:** GBP (£)
 
@@ -75,6 +75,7 @@ Brand Kit — головна фіча саме для цієї персони: c
 | **Де файл** | `backend/data/media/{projectId}/voice.mp3` і `reel.mp4`. Не системний tmp. S3 — не MVP. | Передбачуваний шлях, gitignore `data/`. |
 | **TTL / ліміт** | **Диференційовано.** Проміжні `voice.mp3` / кадри / `.srt` — **7 днів**. Готовий `reel.mp4` — **90 днів** (або до S3). Ліміт архіву **залежить від плану** (§5.3), не єдине «10 для всіх». Перед витісненням — попередження в UI, не тихе видалення. На екрані Create: «завантажте зараз». | mp4 дешевший у зберіганні і дорожчий у регенерації (55 cr). 7 днів на все = повторна оплата за вже куплений ролик. |
 | **Регенерація** | Повтор `POST` без прапора — **безкоштовний і не викликає AI** (залишити як є). `{ "regenerate": true }` — платно. **Перші 3 спроби** (1 Make + 2 retry) за ціною кроку; далі можна ще, **за 2× credits**, з confirm. Credits до виклику провайдера; якщо AI вже пішов — не повертаються. | Користувач вибирає: лишити / заплатити ще раз. Жорсткий 429 після 3 спроб убиває вибір і retention. 2× криє вендора, коли credits FROZEN. |
+| **Idempotency** | Заголовок `Idempotency-Key` (або тіло) на `POST /steps/:step`. Повтор того самого ключа після success — 0 credits, без AI. Паралельний той самий крок — 409. | Подвійний клік / retry браузера не має списувати Voice двічі. |
 
 ElevenLabs як дефолт — **відхилено для MVP**. Перегляд після бети, якщо (а) якість `tts-1` ріже retention або (б) scene-level субтитри неприйнятні.
 
@@ -298,7 +299,9 @@ Text AI  Image AI   TTS
 
 ### 5.4 Паралельний рендер (відомий ліміт бети)
 
-Один Node-процес, ffmpeg як child process. **Максимум 2 одночасні Create.** Третій і далі чекають у черзі процесу (не 503 одразу). Закриття вкладки **не скасовує** рендер: робота живе на бекенді; credits списуються лише після успішного mp4. Для закритої бети 5–10 людей цього достатньо. Окрема черга (Bull/Redis) і горизонтальне масштабування — **після бети**, не блокер інвайтів. У логах фіксувати час очікування слота, щоб побачити захлин до публічного запуску.
+Один Node-процес, ffmpeg як child process. **Максимум 2 одночасні Create.** Третій і далі чекають у черзі процесу (не 503 одразу). Закриття вкладки **не скасовує** рендер: робота живе на бекенді. Credits за Create резервуються **до** ffmpeg (як інші кроки). Для закритої бети 5–10 людей цього достатньо. Окрема черга (Bull/Redis) — **після бети**, не блокер інвайтів.
+
+**Метрика №1 бети (рендер):** у `ai_generations.meta_json` / колонки `started_at`, `finished_at`, `duration_ms` для кожного кроку; для render ще `queueWaitMs`, `encodeMs`. Якщо середній `queueWaitMs` > 30 с — винести рендер з API-процесу до публічного запуску. Окремо дивитись TTS vs DALL·E vs ffmpeg: захлин може бути в послідовних OpenAI, не в ffmpeg.
 
 ---
 
@@ -385,13 +388,18 @@ Text AI  Image AI   TTS
 | actual_cost_gbp | real | оцінка в £ |
 | credits_used | integer | |
 | status | text | `running` / `succeeded` / `failed` |
-| meta_json | text nullable | |
+| idempotency_key | text nullable | унікально з `user_id`, якщо задано |
+| started_at, finished_at | datetime nullable | |
+| duration_ms | integer nullable | стіна-годинник кроку |
+| meta_json | text nullable | `queueWaitMs`, `encodeMs` для render |
 | created_at | datetime | |
 
 Правила:
 
 - credits списуються **до** виклику провайдера (резерв). Після успіху Visuals з live < n — повертається різниця до `live × 8`. Якщо провайдер уже викликаний і крок упав — **credits лишаються** (ми вже заплатили OpenAI);
 - повторний POST **без** `regenerate` **не тарифікує і не викликає AI**;
+- `Idempotency-Key`: повтор success = той самий проєкт, 0 нового spend; `running` = 409;
+- паралельний другий Make того ж кроку без ключа = 409;
 - `regenerate: true` тарифікує знову і перезаписує артефакт; див. §7.2;
 - після 3 спроб на `(project, step)` наступні **дозволені за 2× credits** (`EXTRA_ATTEMPT_MULTIPLIER`), не 429;
 - падіння **до** виклику AI → `failed` + refund резерву.
@@ -425,7 +433,7 @@ Text AI  Image AI   TTS
 | user_id | FK | |
 | type | text | див. формати |
 | prompt | text | речення користувача |
-| status | text | `draft` / `ready` |
+| status | text | `draft` / `generating` / `ready` / `expired` |
 | current_step | text | `prompt` / `idea` / `script` / `visuals` / `voice` / `captions` / `create` |
 | idea_json | text | |
 | script_json | text | |
@@ -436,6 +444,8 @@ Text AI  Image AI   TTS
 | output_url | text | **шлях/URL mp4**; прев’ю без файлу ≠ ready для прийняття |
 | credits_used | integer | |
 | created_at, updated_at | datetime | |
+
+Поля `idea_json`…`output_url` — **поточна** версія. Історія для навчання Kit — `project_step_versions` (§6.9).
 
 JSON-контракти:
 
@@ -487,6 +497,26 @@ JSON-контракти:
 
 MVP-вирівнювання: **не word-level**. Cues будуються зі сцен скрипта (частки 30 с або фактична тривалість аудіо, пропорційно). Спалити в mp4 через ffmpeg `subtitles=`. Це свідомий компроміс: OpenAI `tts-1` не дає таймкодів слів. Точне «слово = кадр» — post-MVP (ElevenLabs / whisper alignment), не блокер першого файлу і не блокер бети, якщо текст читається.
 
+### 6.9 `project_step_versions` (закладаємо зараз, навчання Kit — одразу після першого mp4)
+
+Кожен успішний крок пише знімок. Попередні `accepted = 0` після regenerate того ж кроку. Це сировина для Brand Kit, який навчається: які хуки лишили, які кадри відхилили.
+
+| Поле | Тип |
+| --- | --- |
+| id | PK |
+| project_id | FK |
+| step | idea / script / visuals / voice / captions / render |
+| payload_json | знімок |
+| accepted | 1 = поточна версія кроку |
+| generation_id | FK nullable |
+| created_at | datetime |
+
+Повноцінне «навчання» з історії — **перша фіча після стабільного mp4**, раніше YouTube / шедулера / нових форматів.
+
+### 6.10 `project_feedback`
+
+Після готового mp4: *Would you publish this Reel?* `yes` / `edits` / `no` + причини. Не блокер Download. Метрика **publishability** важливіша за «технічно коректний mp4».
+
 ---
 
 ## 7. API
@@ -506,17 +536,18 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | POST | `/projects` | так | `{ type, prompt }` → 201 `{ project }` |
 | GET | `/projects/:id` | так | проєкт + таблиця costs |
 | PATCH | `/projects/:id` | так | `{ prompt }` — змінити бриф; credits 0; щоб застосувати — regenerate idea |
-| POST | `/projects/:id/steps/:step` | так | тіло `{ regenerate?: boolean, sceneId?: number }` — `sceneId` лише для visuals, 8 credits |
+| POST | `/projects/:id/steps/:step` | так | `{ regenerate?, sceneId?, idempotencyKey? }` + заголовок `Idempotency-Key`; 20 req/хв |
+| POST | `/projects/:id/feedback` | так | `{ publishable: yes\|edits\|no, reasons[] }` після mp4 |
 | DELETE | `/auth/account` | так | спочатку Stripe `subscriptions.cancel`, потім дані |
 | GET | `/projects/:id/file` | так | mp4 після Create |
 | GET | `/projects/:id/audio` | так | mp3 після Voice |
 | GET | `/brand` | так | `{ brandKit }` |
 | PUT | `/brand` | так | зберегти kit |
 | GET | `/billing/plans` | ні | плани + packs (**провізорні**) |
-| GET | `/billing/credits` | так | balance, transactions, generations |
+| GET | `/billing/credits` | так | balance, transactions, generations, **economics** (собівартість на готовий Reel) |
 | POST | `/billing/checkout` | так | `{ planId? , packId? }` → `{ mode, url }` |
 
-Коди: 400 валідація; 401 токен; 402 credits; 404 проєкт; 409 email; 500 студія.
+Коди: 400 валідація; 401 токен; 402 credits; 404 проєкт; 409 email **або крок уже running / той самий Idempotency-Key**; 429 rate limit; 500 студія.
 
 ### 7.1 Правила пайплайну
 
@@ -670,6 +701,19 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 
 Собівартість генерації (§9.0) лишається окремим інваріантом: credits кроку ≥ 3× `actual_cost_gbp`. Це **маржа на Reel**, не заміна CAC/LTV.
 
+### 9.6 Собівартість успішного Reel (не лише готових файлів)
+
+`actual_cost_gbp` на один `status=ready` проєкт **недостатньо**. У `GET /billing/credits` → `economics`:
+
+- text / image / tts / render;
+- **failed** (виклики, що впали після провайдера);
+- **retries** (повторні виклики того ж кроку);
+- **total**;
+- `readyReels`;
+- `costPerReadyReelGbp` = total / ready (failed і regenerate входять у чисельник).
+
+На billing: «Estimated API cost to us, not the price you pay.» 150 credits — внутрішня одиниця, не «ціна Reel для людини».
+
 ---
 
 ## 10. Безпека й нефункціональні вимоги
@@ -717,6 +761,7 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
     - **Хард-гейт наступного формату** (пост/реклама): §11.11 виконано на вибірці **≥ 40** користувачів з готовим першим mp4 — не на реєстраціях без файлу, не на n=10 закритої бети.
 
 13. Регенерація Voice або Visuals доступна в UI і тарифікується; єдиний шлях «новий проєкт» **не** є прийнятим UX.
+14. Після mp4 в студії є питання *Would you publish this Reel?* (yes / edits / no). Відповідь не обов’язкова для Download, але збирається на беті. **Publishability** — окремий KPI від «файл зібрався».
 
 ---
 
@@ -732,7 +777,9 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 6. **Платний CAC-тест** — гіпотеза £25–40 / перший mp4 (§9.5).
 7. **Retention-гейт** — §11.11 на **n≥40**. Лише тоді пости / реклама як формат.
 
-Після пункту 1, паралельно з бетою (не блокер файлу): диференційований TTL (§5.3); ліміт 2 ffmpeg (§5.4); Stripe webhook; навчання Brand Kit з історії.
+Після пункту 1, паралельно з бетою (не блокер файлу): диференційований TTL (§5.3); ліміт 2 ffmpeg (§5.4); Stripe webhook **з idempotency event id**; **навчання Brand Kit з `project_step_versions`**; лог `queueWaitMs`.
+
+**Перша фіча після стабільного mp4 (раніше нових форматів):** Brand Kit, який навчається з accepted/rejected кроків.
 
 **Далі, тільки якщо є §11.11 на n≥40:**
 
@@ -777,15 +824,52 @@ cd frontend && npm install && npm run dev
 | HYPOTHESIS | CAC/LTV/churn у §9.5 — до ads-тесту |
 | Закрита бета | 5–10 інвайтів, не публічний запуск |
 | Regenerate | платний повтор; 1 Make + 2 retry за ціною кроку, далі 2× якщо користувач вибирає ще; POST без прапора — безкоштовний і без AI |
+| Publishability | чи людина виклала б цей Reel; не те саме, що «mp4 зібрався» |
+| Idempotency-Key | повтор того самого кліку не списує credits вдруге |
 
 ---
 
 ## 15. Що лишається відкритим (не стек)
 
-TTS, ffmpeg, TTL, регенерація, часткові Visuals, self-service delete, ліміт ffmpeg — **закриті**. Нижче лише чекпоінти:
+TTS, ffmpeg, TTL, регенерація, часткові Visuals, self-service delete, ліміт ffmpeg, idempotency кроків, publishability, economics на billing — **закриті в коді / ТЗ**. Нижче чекпоінти:
 
-1. Перерахунок `CREDIT_COSTS` / планів після **20–50 роликів закритої бети** (обов’язковий, не «колись»).
+1. Перерахунок `CREDIT_COSTS` / планів після **20–50 роликів закритої бети** за **cost per successful Reel** (§9.6), не лише сума succeeded.
 2. Чи scene-level captions достатні, чи після бети брати ElevenLabs заради word-timestamps.
 3. Чи гіпотеза CAC £25–40 жива після першого ads-тесту (§9.5) — якщо ні, не масштабувати рекламу.
 4. Точна дата публічного лендінгу — після бети **і** §10.1 (privacy/content + delete), не навпаки.
-5. Чи черга з 2 ffmpeg тримає бету; якщо середній wait > 30 с — винести рендер з API-процесу до публічного запуску.
+5. Чи черга з 2 ffmpeg тримає бету; якщо середній `queueWaitMs` > 30 с — винести рендер з API-процесу до публічного запуску.
+6. Три питання долі продукту: **чи публікують Reel**; **чи є другий за 14 днів (≥30%, n≥40)**; **чи додатна unit-економіка з failures+retries**. Нові формати — тільки якщо всі три не провалені.
+
+---
+
+## 16. Технічні ризики MVP (P0 / P1)
+
+Не переписувати продуктову логіку. Це контракт для розробки до закритої бети.
+
+**P0 — у бета-коді або жорстко до публічних платних:**
+
+1. Idempotency AI/credits (`Idempotency-Key`) — **є**.
+2. Резерв credits до провайдера — **є**.
+3. Статус проєкту `draft | generating | ready | expired`; крок `running` у `ai_generations` — **є**.
+4. Render не скасовується закриттям вкладки; лог `queueWaitMs` / `encodeMs` — **є**.
+5. TTL-job проміжних 7д / mp4 90д — **є**.
+6. JWT expiry (14д) + 401 не з мережі — **є**.
+7. Authorization на project/file/audio — **є**.
+8. Concurrent той самий крок — 409 — **є**.
+9. Stripe webhook idempotency — **до публічних підписок**, не блокер інвайт-бети без Stripe.
+10. Rate limit 20 POST steps / хв / юзер — **є**.
+
+**P1 — одразу після стабільного mp4, раніше нових форматів:**
+
+11. Використати `project_step_versions` для Brand learning (запис версій уже є).
+12. Beta dashboard: queue wait, cost per ready Reel, publishability %.
+13. S3.
+14. Окрема черга рендеру, якщо §5.4 червона.
+
+**P2:** ElevenLabs, Remotion, mobile, scheduler, YouTube, team, voice clone, batch, agency, crypto — заборонені, доки §11.11 на n≥40.
+
+Три питання, без яких не додавати формати:
+
+1. Люди отримують Reel, **який хочуть викласти** (publishability), не лише коректний mp4.
+2. ≥30% з першим mp4 роблять другий проєкт за 14 днів (n≥40 для хард-гейту).
+3. Собівартість **доставленого** Reel (TTS + кадри + render + failed + regenerate) лишає маржу.

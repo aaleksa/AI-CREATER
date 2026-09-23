@@ -175,9 +175,13 @@ export async function renderReel(params: {
   if (!hasVoiceFile(params.projectId)) {
     throw new Error("Generate the voice audio first.");
   }
+  const queuedAt = Date.now();
   await acquireRenderSlot();
+  const queueWaitMs = Date.now() - queuedAt;
+  const encodeStarted = Date.now();
   try {
-    return await encodeReel(params);
+    const result = await encodeReel(params);
+    return { ...result, queueWaitMs, encodeMs: Date.now() - encodeStarted };
   } finally {
     releaseRenderSlot();
   }

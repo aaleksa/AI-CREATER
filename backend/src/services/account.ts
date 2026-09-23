@@ -26,6 +26,8 @@ export async function deleteAccount(userId: string) {
   await cancelStripeSubscriptions(userId);
   const projects = db.prepare("SELECT id FROM projects WHERE user_id = ?").all(userId) as { id: string }[];
   db.transaction(() => {
+    db.prepare("DELETE FROM project_feedback WHERE user_id = ?").run(userId);
+    db.prepare("DELETE FROM project_step_versions WHERE project_id IN (SELECT id FROM projects WHERE user_id = ?)").run(userId);
     db.prepare("DELETE FROM ai_generations WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM credit_transactions WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM credit_balances WHERE user_id = ?").run(userId);

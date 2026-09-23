@@ -48,6 +48,8 @@ export type Project = {
   maxStepAttempts: number;
   maxRegenerates: number;
   extraAttemptMultiplier: number;
+  runningStep: string | null;
+  feedback: { publishable: string; reasons: string[] } | null;
   createdAt: string;
 };
 
@@ -83,10 +85,18 @@ export const api = {
     request<{ project: Project }>("/projects", { method: "POST", body: JSON.stringify({ type, prompt }) }),
   updatePrompt: (id: string, prompt: string) =>
     request<{ project: Project }>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify({ prompt }) }),
-  runStep: (id: string, step: string, regenerate = false, sceneId?: number) =>
-    request<{ project: Project }>(`/projects/${id}/steps/${step}`, {
+  runStep: (id: string, step: string, regenerate = false, sceneId?: number) => {
+    const idempotencyKey = crypto.randomUUID();
+    return request<{ project: Project }>(`/projects/${id}/steps/${step}`, {
       method: "POST",
-      body: JSON.stringify({ regenerate, sceneId }),
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ regenerate, sceneId, idempotencyKey }),
+    });
+  },
+  saveFeedback: (id: string, publishable: string, reasons: string[]) =>
+    request<{ project: Project }>(`/projects/${id}/feedback`, {
+      method: "POST",
+      body: JSON.stringify({ publishable, reasons }),
     }),
   deleteAccount: () => request<{ ok: boolean }>("/auth/account", { method: "DELETE" }),
   brand: () => request<{ brandKit: Record<string, string> | null }>("/brand"),
@@ -105,6 +115,12 @@ export const api = {
       balance: { credits: number } | null;
       transactions: { id: string; amount: number; type: string; description: string; created_at: string }[];
       generations: { id: string; type: string; provider: string; model: string; actual_cost_gbp: number; credits_used: number; status: string; created_at: string }[];
+      economics: {
+        actualCostGbp: { text: number; image: number; tts: number; render: number; failed: number; retries: number; total: number };
+        readyReels: number;
+        costPerReadyReelGbp: number;
+        note: string;
+      };
     }>("/billing/credits"),
   checkout: (body: { planId?: string; packId?: string }) =>
     request<{ url: string; mode: string }>("/billing/checkout", { method: "POST", body: JSON.stringify(body) }),

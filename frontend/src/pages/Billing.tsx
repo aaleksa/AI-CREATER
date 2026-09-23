@@ -14,6 +14,12 @@ export default function Billing() {
     balance: { credits: number } | null;
     transactions: { id: string; amount: number; description: string; created_at: string }[];
     generations: { id: string; type: string; provider: string; model: string; actual_cost_gbp: number; credits_used: number; status: string }[];
+    economics?: {
+      actualCostGbp: { text: number; image: number; tts: number; render: number; failed: number; retries: number; total: number };
+      readyReels: number;
+      costPerReadyReelGbp: number;
+      note: string;
+    };
   } | null>(null);
   const [msg, setMsg] = useState("");
 
@@ -48,6 +54,17 @@ export default function Billing() {
       <div className="credits-pill" style={{ marginTop: 20 }}>
         Balance <b>{credits?.balance?.credits ?? 0}</b>
       </div>
+      {credits?.economics && (
+        <p className="hint" style={{ marginTop: 12 }}>
+          Your Reel is 150 credits. Estimated API cost to us
+          {credits.economics.readyReels
+            ? ` is £${credits.economics.costPerReadyReelGbp.toFixed(3)} per finished Reel`
+            : ""}
+          , including failed and regenerated calls — not a price you pay. Text £{credits.economics.actualCostGbp.text.toFixed(3)} ·
+          images £{credits.economics.actualCostGbp.image.toFixed(3)} · voice £{credits.economics.actualCostGbp.tts.toFixed(3)} ·
+          render £{credits.economics.actualCostGbp.render.toFixed(3)}.
+        </p>
+      )}
       {msg && <p className="hint">{msg}</p>}
 
       <div className="list" style={{ maxWidth: 640, marginTop: 24 }}>

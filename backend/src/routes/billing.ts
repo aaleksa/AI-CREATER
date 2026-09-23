@@ -4,6 +4,7 @@ import { db } from "../db/index.js";
 import { config, CREDIT_PACKS, CREDIT_COSTS, FULL_VIDEO_COST } from "../config.js";
 import { requireAuth } from "../middleware/auth.js";
 import { grantCredits } from "../services/credits.js";
+import { unitEconomics } from "../services/economics.js";
 import { v4 as uuid } from "uuid";
 
 export const billingRouter = Router();
@@ -23,7 +24,7 @@ billingRouter.get("/credits", (req, res) => {
   const generations = db
     .prepare("SELECT * FROM ai_generations WHERE user_id = ? ORDER BY created_at DESC LIMIT 40")
     .all(req.user!.id);
-  res.json({ balance, transactions, generations });
+  res.json({ balance, transactions, generations, economics: unitEconomics(req.user!.id) });
 });
 
 billingRouter.post("/checkout", async (req, res) => {

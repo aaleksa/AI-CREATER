@@ -31,9 +31,10 @@ export default function Studio() {
   const [scene, setScene] = useState(0);
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
-
   const [brief, setBrief] = useState("");
   const [briefSaved, setBriefSaved] = useState(false);
+  const [publishable, setPublishable] = useState("");
+  const [reasons, setReasons] = useState<string[]>([]);
 
   useEffect(() => {
     if (!id) return;
@@ -137,6 +138,17 @@ export default function Studio() {
       setError(err instanceof Error ? err.message : "Step failed.");
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function sendFeedback() {
+    if (!id || !publishable) return;
+    setError("");
+    try {
+      const { project: nextProject } = await api.saveFeedback(id, publishable, reasons);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save that.");
     }
   }
 
@@ -280,6 +292,53 @@ export default function Studio() {
                 <a className="btn" style={{ marginTop: 18 }} href={videoSrc} download="reel.mp4">
                   Download mp4
                 </a>
+              )}
+              {project.feedback ? (
+                <p className="ok" style={{ marginTop: 16 }}>Thanks — that helps the next Reel.</p>
+              ) : (
+                <div style={{ marginTop: 20 }}>
+                  <p className="lede">Would you publish this Reel?</p>
+                  <div className="row" style={{ marginTop: 8 }}>
+                    {[
+                      ["yes", "Yes"],
+                      ["edits", "Yes, after minor edits"],
+                      ["no", "No"],
+                    ].map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className={`btn ${publishable === value ? "accent" : "ghost"}`}
+                        onClick={() => setPublishable(value)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {publishable && publishable !== "yes" && (
+                    <div style={{ marginTop: 12 }}>
+                      <p className="hint">What was wrong?</p>
+                      {["Voice", "Script", "Images", "Captions", "Brand style", "Too generic", "Not useful"].map((reason) => (
+                        <label key={reason} className="hint" style={{ display: "block", marginTop: 6 }}>
+                          <input
+                            type="checkbox"
+                            checked={reasons.includes(reason)}
+                            onChange={() =>
+                              setReasons((current) =>
+                                current.includes(reason) ? current.filter((item) => item !== reason) : [...current, reason]
+                              )
+                            }
+                          />{" "}
+                          {reason}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {publishable && (
+                    <button className="btn" style={{ marginTop: 12 }} type="button" onClick={sendFeedback}>
+                      Send
+                    </button>
+                  )}
+                </div>
               )}
             </>
           )}

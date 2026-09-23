@@ -22,6 +22,42 @@ function addColumn(sql: string) {
 }
 addColumn("ALTER TABLE projects ADD COLUMN audio_url TEXT NOT NULL DEFAULT ''");
 addColumn("ALTER TABLE brand_kits ADD COLUMN vertical TEXT NOT NULL DEFAULT ''");
+addColumn("ALTER TABLE ai_generations ADD COLUMN idempotency_key TEXT");
+addColumn("ALTER TABLE ai_generations ADD COLUMN started_at TEXT");
+addColumn("ALTER TABLE ai_generations ADD COLUMN finished_at TEXT");
+addColumn("ALTER TABLE ai_generations ADD COLUMN duration_ms INTEGER");
+
+try {
+  sqlite.exec(`
+CREATE TABLE IF NOT EXISTS project_step_versions (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  step TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  accepted INTEGER NOT NULL DEFAULT 1,
+  generation_id TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (project_id) REFERENCES projects(id)
+);
+CREATE TABLE IF NOT EXISTS project_feedback (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  publishable TEXT NOT NULL,
+  reasons_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (project_id) REFERENCES projects(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+`);
+  sqlite.exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_generations_idempotency
+  ON ai_generations (user_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL AND idempotency_key != '';
+`);
+} catch {
+  /* already migrated */
+}
 
 let savepoint = 0;
 

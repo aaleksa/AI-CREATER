@@ -7,6 +7,7 @@ import { authRouter } from "./routes/auth.js";
 import { projectsRouter } from "./routes/projects.js";
 import { brandRouter } from "./routes/brand.js";
 import { billingRouter } from "./routes/billing.js";
+import { cleanupExpiredMedia } from "./services/jobs.js";
 
 const app = express();
 app.use(
@@ -32,6 +33,8 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 });
 
 db.exec("SELECT 1");
+cleanupExpiredMedia();
+setInterval(cleanupExpiredMedia, 6 * 60 * 60 * 1000).unref();
 
 app.listen(config.port, () => {
   console.log(`Auteur API on http://localhost:${config.port}`);

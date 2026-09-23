@@ -2,8 +2,9 @@ import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, runStep, serializeProject } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, runStep, saveFeedback, serializeProject } from "../services/pipeline.js";
 import { hasVideoFile, hasVoiceFile, videoFile, voiceFile } from "../services/media.js";
+import { rateLimit } from "../middleware/rateLimit.js";
 
 function readPrompt(value: unknown) {
   const text = String(value || "").trim();
@@ -104,7 +105,22 @@ projectsRouter.patch("/:id", (req, res) => {
   res.json({ project: serializeProject(next) });
 });
 
-projectsRouter.post("/:id/steps/:step", async (req, res) => {
+projectsRouter.post("/:id/feedback", (req, res) => {
+  try {
+    const project = saveFeedback(
+      req.user!.id,
+      String(req.params.id),
+      String(req.body?.publishable || ""),
+      Array.isArray(req.body?.reasons) ? req.body.reasons.map(String) : []
+    );
+    res.json({ project });
+  } catch (error) {
+    const err = error as Error & { status?: number };
+    res.status(err.status || 500).json({ error: err.message || "Could not save feedback." });
+  }
+});
+
+projectsRouter.post("/:id/steps/:step", rateLimit(20, 60_000), async (req, res) => {
   const step = String(req.params.step) as keyof typeof CREDIT_COSTS;
   if (!(step in CREDIT_COSTS)) {
     res.status(400).json({ error: "Unknown step." });
@@ -114,6 +130,7 @@ projectsRouter.post("/:id/steps/:step", async (req, res) => {
     const project = await runStep(req.user!.id, String(req.params.id), step, {
       regenerate: Boolean(req.body?.regenerate),
       sceneId: req.body?.sceneId != null ? Number(req.body.sceneId) : undefined,
+      idempotencyKey: String(req.get("Idempotency-Key") || req.body?.idempotencyKey || ""),
     });
     res.json({ project });
   } catch (error) {

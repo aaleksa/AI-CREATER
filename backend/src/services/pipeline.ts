@@ -32,12 +32,14 @@ function logGeneration(params: {
   credits: number;
   status: string;
   meta?: unknown;
+  idempotencyKey?: string;
 }) {
   const id = uuid();
+  const started = new Date().toISOString();
   db.prepare(
     `INSERT INTO ai_generations
-      (id, user_id, project_id, type, provider, model, actual_cost_gbp, credits_used, status, meta_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, user_id, project_id, type, provider, model, actual_cost_gbp, credits_used, status, meta_json, idempotency_key, started_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     params.userId,
@@ -48,9 +50,42 @@ function logGeneration(params: {
     params.cost,
     params.credits,
     params.status,
-    params.meta ? JSON.stringify(params.meta) : null
+    params.meta ? JSON.stringify(params.meta) : null,
+    params.idempotencyKey || null,
+    started
   );
-  return id;
+  return { id, started };
+}
+
+function finishGeneration(
+  id: string,
+  started: string,
+  fields: { provider: string; model: string; actualCost: number; credits: number; status: string; meta?: unknown }
+) {
+  const finished = new Date().toISOString();
+  db.prepare(
+    `UPDATE ai_generations
+     SET provider = ?, model = ?, actual_cost_gbp = ?, credits_used = ?, status = ?, meta_json = ?, finished_at = ?, duration_ms = ?
+     WHERE id = ?`
+  ).run(
+    fields.provider,
+    fields.model,
+    fields.actualCost,
+    fields.credits,
+    fields.status,
+    fields.meta ? JSON.stringify(fields.meta) : null,
+    finished,
+    Date.now() - Date.parse(started),
+    id
+  );
+}
+
+function saveStepVersion(projectId: string, step: string, payload: unknown, generationId: string) {
+  db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = ?").run(projectId, step);
+  db.prepare(
+    `INSERT INTO project_step_versions (id, project_id, step, payload_json, accepted, generation_id)
+     VALUES (?, ?, ?, ?, 1, ?)`
+  ).run(uuid(), projectId, step, JSON.stringify(payload), generationId);
 }
 
 function brandFor(userId: string): BrandKit | null {
@@ -105,28 +140,52 @@ function stepAttemptCounts(projectId: string) {
 }
 
 export function serializeProject(row: Record<string, unknown>) {
+  const id = String(row.id);
+  const running = db
+    .prepare("SELECT type FROM ai_generations WHERE project_id = ? AND status = 'running' ORDER BY started_at DESC LIMIT 1")
+    .get(id) as { type: string } | undefined;
+  const feedback = db
+    .prepare(
+      "SELECT publishable, reasons_json FROM project_feedback WHERE project_id = ? ORDER BY created_at DESC LIMIT 1"
+    )
+    .get(id) as { publishable: string; reasons_json: string } | undefined;
   return {
     id: row.id,
     type: row.type,
     prompt: row.prompt,
-    status: row.status,
+    status: running ? "generating" : row.status,
     currentStep: row.current_step,
+    runningStep: running?.type || null,
     idea: parse(row.idea_json),
     script: parse(row.script_json),
     visuals: parse(row.visuals_json),
     voice: parse(row.voice_json),
     captions: parse(row.captions_json),
-    audioUrl: hasVoiceFile(String(row.id)) ? `/projects/${row.id}/audio` : null,
-    outputUrl: hasVideoFile(String(row.id)) ? `/projects/${row.id}/file` : row.output_url || null,
-    hasVideo: hasVideoFile(String(row.id)),
+    audioUrl: hasVoiceFile(id) ? `/projects/${id}/audio` : null,
+    outputUrl: hasVideoFile(id) ? `/projects/${id}/file` : row.output_url || null,
+    hasVideo: hasVideoFile(id),
     creditsUsed: row.credits_used,
-    stepAttempts: stepAttemptCounts(String(row.id)),
+    stepAttempts: stepAttemptCounts(id),
     maxStepAttempts: MAX_STEP_ATTEMPTS,
     maxRegenerates: MAX_REGENERATES_PER_STEP,
     extraAttemptMultiplier: EXTRA_ATTEMPT_MULTIPLIER,
+    feedback: feedback
+      ? { publishable: feedback.publishable, reasons: parse<string[]>(feedback.reasons_json) || [] }
+      : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+export function saveFeedback(userId: string, projectId: string, publishable: string, reasons: string[]) {
+  getProject(projectId, userId);
+  if (!["yes", "edits", "no"].includes(publishable)) {
+    throw Object.assign(new Error("Tell us if you would publish this Reel."), { status: 400 });
+  }
+  db.prepare(
+    `INSERT INTO project_feedback (id, project_id, user_id, publishable, reasons_json) VALUES (?, ?, ?, ?, ?)`
+  ).run(uuid(), projectId, userId, publishable, JSON.stringify(reasons));
+  return serializeProject(getProject(projectId, userId));
 }
 
 export function createProject(userId: string, type: FormatType, prompt: string) {
@@ -142,7 +201,7 @@ export async function runStep(
   userId: string,
   projectId: string,
   step: keyof typeof CREDIT_COSTS,
-  opts: { regenerate?: boolean; sceneId?: number } = {}
+  opts: { regenerate?: boolean; sceneId?: number; idempotencyKey?: string } = {}
 ) {
   const project = getProject(projectId, userId);
   const brand = brandFor(userId);
@@ -162,6 +221,25 @@ export async function runStep(
     (step === "captions" && Boolean(project.captions_json)) ||
     (step === "render" && hasVideoFile(projectId));
   if (alreadyDone && !regenerate) return serializeProject(project);
+
+  const idempotencyKey = String(opts.idempotencyKey || "").trim().slice(0, 80);
+  if (idempotencyKey) {
+    const prior = db
+      .prepare(
+        `SELECT status, project_id FROM ai_generations WHERE user_id = ? AND idempotency_key = ? ORDER BY created_at DESC LIMIT 1`
+      )
+      .get(userId, idempotencyKey) as { status: string; project_id: string } | undefined;
+    if (prior?.status === "succeeded") return serializeProject(getProject(projectId, userId));
+    if (prior?.status === "running") {
+      throw Object.assign(new Error("This request is already running."), { status: 409 });
+    }
+  }
+  const inflight = db
+    .prepare(`SELECT id FROM ai_generations WHERE project_id = ? AND type = ? AND status = 'running'`)
+    .get(projectId, step);
+  if (inflight) {
+    throw Object.assign(new Error("This step is already running. Wait for it to finish."), { status: 409 });
+  }
 
   const attemptsSoFar = stepAttemptCount(projectId, step);
   const multiplier = attemptsSoFar >= MAX_STEP_ATTEMPTS ? EXTRA_ATTEMPT_MULTIPLIER : 1;
@@ -188,7 +266,7 @@ export async function runStep(
     throw err;
   }
 
-  const generationId = logGeneration({
+  const logged = logGeneration({
     userId,
     projectId,
     type: step,
@@ -197,10 +275,25 @@ export async function runStep(
     cost: 0,
     credits: cost,
     status: "running",
+    idempotencyKey: idempotencyKey || undefined,
   });
+  const generationId = logged.id;
   const reserved = cost;
-  spendCredits(userId, reserved, `${regenerate ? "regenerate " : ""}${step} for ${type}`, generationId);
+  try {
+    spendCredits(userId, reserved, `${regenerate ? "regenerate " : ""}${step} for ${type}`, generationId);
+  } catch (error) {
+    finishGeneration(generationId, logged.started, {
+      provider: "pending",
+      model: "pending",
+      actualCost: 0,
+      credits: 0,
+      status: "failed",
+    });
+    throw error;
+  }
+  db.prepare("UPDATE projects SET status = 'generating', updated_at = datetime('now') WHERE id = ?").run(projectId);
   let providerTouched = false;
+  const meta: Record<string, unknown> = { startedAt: logged.started };
 
   try {
     let provider = "auteur-studio";
@@ -307,6 +400,8 @@ export async function runStep(
       provider = rendered.provider;
       model = rendered.model;
       actualCost = rendered.cost;
+      meta.queueWaitMs = rendered.queueWaitMs;
+      meta.encodeMs = rendered.encodeMs;
     }
 
     if (cost < reserved) {
@@ -320,24 +415,55 @@ export async function runStep(
       if (step === "idea" || step === "script") removeVoiceFile(projectId);
       if (step !== "render") removeVideoFile(projectId);
     }
+    if (step !== "render") {
+      updates.status = hasVideoFile(projectId) ? "ready" : "draft";
+    }
 
     const fields = Object.keys(updates)
       .map((k) => `${k} = @${k}`)
       .join(", ");
     db.prepare(`UPDATE projects SET ${fields} WHERE id = @id`).run({ ...updates, id: projectId });
 
-    db.prepare(
-      `UPDATE ai_generations SET provider = ?, model = ?, actual_cost_gbp = ?, credits_used = ?, status = 'succeeded' WHERE id = ?`
-    ).run(provider, model, actualCost, cost, generationId);
+    finishGeneration(generationId, logged.started, {
+      provider,
+      model,
+      actualCost,
+      credits: cost,
+      status: "succeeded",
+      meta,
+    });
+    const versionPayload =
+      step === "idea"
+        ? updates.idea_json
+        : step === "script"
+          ? updates.script_json
+          : step === "visuals"
+            ? updates.visuals_json
+            : step === "voice"
+              ? updates.voice_json
+              : step === "captions"
+                ? updates.captions_json
+                : updates.output_url;
+    saveStepVersion(projectId, step, versionPayload ? parse(String(versionPayload)) || versionPayload : {}, generationId);
 
     return serializeProject(getProject(projectId, userId));
   } catch (error) {
-    db.prepare(`UPDATE ai_generations SET status = 'failed' WHERE id = ?`).run(generationId);
+    finishGeneration(generationId, logged.started, {
+      provider: "pending",
+      model: "pending",
+      actualCost: 0,
+      credits: providerTouched ? reserved : 0,
+      status: "failed",
+      meta,
+    });
     if (!providerTouched) {
       refundCredits(userId, reserved, `Refund ${step} — AI was not called`);
+      db.prepare(
+        `UPDATE projects SET status = CASE WHEN status = 'generating' THEN 'draft' ELSE status END, updated_at = datetime('now') WHERE id = ?`
+      ).run(projectId);
     } else {
       db.prepare(
-        `UPDATE projects SET credits_used = credits_used + ?, updated_at = datetime('now') WHERE id = ?`
+        `UPDATE projects SET credits_used = credits_used + ?, status = CASE WHEN status = 'generating' THEN 'draft' ELSE status END, updated_at = datetime('now') WHERE id = ?`
       ).run(reserved, projectId);
     }
     throw error;
