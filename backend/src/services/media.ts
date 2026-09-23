@@ -89,6 +89,10 @@ export function stillFile(projectId: string, sceneId: number) {
   return path.join(projectMediaDir(projectId), `still-${sceneId}.jpg`);
 }
 
+export function stillBgFile(projectId: string) {
+  return path.join(projectMediaDir(projectId), "still-bg.jpg");
+}
+
 export function stillVersionFile(projectId: string, sceneId: number, versionId: string) {
   return path.join(projectMediaDir(projectId), `still-${sceneId}-${versionId}.jpg`);
 }
@@ -132,7 +136,20 @@ export function removeStillFiles(projectId: string) {
 export async function persistStills(projectId: string, visuals: Visual[]) {
   const next: Visual[] = [];
   for (const visual of visuals) {
-    if (visual.placeholder || !visual.imageUrl.startsWith("http")) {
+    if (visual.placeholder) {
+      next.push(visual);
+      continue;
+    }
+    if (visual.imageUrl.startsWith("data:image/")) {
+      const comma = visual.imageUrl.indexOf(",");
+      const buffer = Buffer.from(visual.imageUrl.slice(comma + 1), "base64");
+      if (buffer.length > 0) {
+        fs.writeFileSync(stillFile(projectId, visual.sceneId), buffer);
+        next.push({ ...visual, imageUrl: `/projects/${projectId}/image/${visual.sceneId}` });
+        continue;
+      }
+    }
+    if (!visual.imageUrl.startsWith("http")) {
       next.push(visual);
       continue;
     }
@@ -185,6 +202,14 @@ function run(bin: string, args: string[]) {
       else reject(new Error(err.slice(-1200) || `${bin} exited ${code}`));
     });
   });
+}
+
+export async function writeStillFromPng(projectId: string, sceneId: number, png: Buffer) {
+  const dir = projectMediaDir(projectId);
+  const tmp = path.join(dir, `poster-${sceneId}.png`);
+  fs.writeFileSync(tmp, png);
+  await run(ffmpegPath, ["-y", "-i", tmp, "-q:v", "2", stillFile(projectId, sceneId)]);
+  fs.rmSync(tmp, { force: true });
 }
 
 export async function synthesizeSpeech(script: string, projectId: string) {

@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS projects (
   type TEXT NOT NULL,
   prompt TEXT NOT NULL,
   image_intent TEXT NOT NULL DEFAULT '',
+  invite_json TEXT,
   status TEXT NOT NULL,
   current_step TEXT NOT NULL,
   idea_json TEXT,

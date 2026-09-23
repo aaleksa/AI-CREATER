@@ -39,6 +39,22 @@ export type Idea = {
   audience: string;
   visualDirection: string;
 };
+export type InviteItem = {
+  time: string;
+  title: string;
+  detail: string;
+};
+export type InviteCard = {
+  name: string;
+  date: string;
+  time: string;
+  place: string;
+  address?: string;
+  intro?: string;
+  closing?: string;
+  lines?: string[];
+  program?: InviteItem[];
+};
 export type ScriptScene = {
   id: number;
   time: string;
@@ -51,6 +67,7 @@ export type Project = {
   type: string;
   prompt: string;
   imageIntent?: string;
+  invite?: InviteCard | null;
   status: string;
   currentStep: string;
   idea: Idea | null;
@@ -113,6 +130,8 @@ export const api = {
     request<{ project: Project }>("/projects", { method: "POST", body: JSON.stringify({ type, prompt, imageIntent }) }),
   updatePrompt: (id: string, prompt: string) =>
     request<{ project: Project }>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify({ prompt }) }),
+  updateInvite: (id: string, invite: InviteCard) =>
+    request<{ project: Project }>(`/projects/${id}/invite`, { method: "PATCH", body: JSON.stringify({ invite }) }),
   runStep: (
     id: string,
     step: string,

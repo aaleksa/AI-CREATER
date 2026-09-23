@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, fetchMedia, refreshMe, type Project } from "../lib/api";
+import { api, fetchMedia, refreshMe, type InviteCard, type Project } from "../lib/api";
 
 const VIDEO_STEPS = [
   { id: "idea", label: "Idea", cost: 5 },
@@ -11,10 +11,34 @@ const VIDEO_STEPS = [
   { id: "render", label: "Create", cost: 55 },
 ] as const;
 
-const IMAGE_STEPS = [
-  { id: "idea", label: "Idea", cost: 5 },
-  { id: "visuals", label: "Pictures", cost: 32 },
-] as const;
+const EMPTY_INVITE: InviteCard = {
+  name: "",
+  date: "",
+  time: "",
+  place: "",
+  address: "",
+  intro: "",
+  closing: "",
+  lines: [],
+  program: [],
+};
+
+const INVITE_FIELDS: { key: "name" | "date" | "time" | "place" | "address"; label: string }[] = [
+  { key: "name", label: "Title" },
+  { key: "date", label: "Date" },
+  { key: "time", label: "Time" },
+  { key: "place", label: "Place" },
+  { key: "address", label: "Address" },
+];
+
+function draftFromInvite(invite: InviteCard): InviteCard {
+  return {
+    ...EMPTY_INVITE,
+    ...invite,
+    lines: invite.lines || [],
+    program: invite.program || [],
+  };
+}
 
 const STEP_REASONS: Record<string, { id: string; label: string }[]> = {
   idea: [
@@ -124,12 +148,15 @@ export default function Studio() {
   const [regenNote, setRegenNote] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
   const [kitHint, setKitHint] = useState("");
+  const [inviteDraft, setInviteDraft] = useState<InviteCard>(EMPTY_INVITE);
+  const [inviteSaved, setInviteSaved] = useState(false);
 
   useEffect(() => {
     if (!id) return;
     api.project(id).then((d) => {
       setProject(d.project);
       setBrief(d.project.prompt);
+      if (d.project.invite) setInviteDraft(draftFromInvite(d.project.invite));
     }).catch((e) => setError(e.message));
     api
       .brand()
@@ -211,9 +238,15 @@ export default function Studio() {
   }, [id, project?.visuals, project?.updatedAt]);
 
   const isImage = project?.type === "image_post";
-  const STEPS = isImage ? IMAGE_STEPS : VIDEO_STEPS;
-  const next = useMemo(() => STEPS.find((s) => project && !doneThrough(project, s.id)), [project, isImage]);
-  const lastDone = useMemo(() => [...STEPS].reverse().find((s) => project && doneThrough(project, s.id)), [project, isImage]);
+  const isInvite = Boolean(isImage && project?.imageIntent === "invite");
+  const STEPS = isImage
+    ? [
+        { id: "idea", label: "Idea", cost: 5 },
+        { id: "visuals", label: isInvite ? "Invitation" : "Pictures", cost: 32 },
+      ]
+    : VIDEO_STEPS;
+  const next = useMemo(() => STEPS.find((s) => project && !doneThrough(project, s.id)), [project, isImage, isInvite]);
+  const lastDone = useMemo(() => [...STEPS].reverse().find((s) => project && doneThrough(project, s.id)), [project, isImage, isInvite]);
   const extraPrice = (step: string, sceneId?: number) => {
     const base = sceneId ? 8 : STEPS.find((s) => s.id === step)?.cost ?? 0;
     const used = project?.stepAttempts?.[step] ?? 0;
@@ -221,8 +254,10 @@ export default function Studio() {
     const mult = used >= included ? (project?.extraAttemptMultiplier ?? 2) : 1;
     return { extra: used >= included, credits: base * mult };
   };
+  const rawFrame = project?.visuals?.[scene]?.imageUrl || "";
   const frame =
-    (project?.visuals?.[scene] && imageSrcs[project.visuals[scene].sceneId]) || project?.visuals?.[scene]?.imageUrl;
+    (project?.visuals?.[scene] && imageSrcs[project.visuals[scene].sceneId]) ||
+    (rawFrame.startsWith("data:") ? "" : rawFrame);
   const frameIsPlaceholder = Boolean(project?.visuals?.[scene]?.placeholder);
   const placeholderCount = project?.visuals?.filter((v) => v.placeholder).length ?? 0;
   const caption = project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title;
@@ -235,6 +270,7 @@ export default function Studio() {
       const { project: nextProject } = await api.runStep(id, step, regenerate, sceneId, feedback);
       setProject(nextProject);
       setBrief(nextProject.prompt);
+      if (nextProject.invite) setInviteDraft(draftFromInvite(nextProject.invite));
       refreshMe();
       setPendingRegen(null);
       setRegenReason("");
@@ -254,6 +290,20 @@ export default function Studio() {
         setProject(saved);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not save the brief.");
+        return;
+      }
+    }
+    if (isInvite && step === "visuals") {
+      try {
+        const filled =
+          inviteDraft.name || inviteDraft.date || inviteDraft.place || inviteDraft.time
+            ? inviteDraft
+            : project.invite || inviteDraft;
+        const { project: saved } = await api.updateInvite(id, filled);
+        setProject(saved);
+        if (saved.invite) setInviteDraft(draftFromInvite(saved.invite));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not save the invitation details.");
         return;
       }
     }
@@ -335,6 +385,23 @@ export default function Studio() {
     }
   }
 
+  async function saveInvite() {
+    if (!id) return;
+    setBusy("invite");
+    setError("");
+    try {
+      const { project: nextProject } = await api.updateInvite(id, inviteDraft);
+      setProject(nextProject);
+      if (nextProject.invite) setInviteDraft(draftFromInvite(nextProject.invite));
+      setInviteSaved(true);
+      setTimeout(() => setInviteSaved(false), 2500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the invitation.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function saveBrief() {
     if (!id) return;
     setError("");
@@ -351,7 +418,15 @@ export default function Studio() {
   if (!project) return <p className="hint">{error || "Opening the studio…"}</p>;
 
   const makingLabel =
-    busy === "render" ? "Rendering mp4…" : busy === "voice" ? "Recording voice…" : busy === "visuals" && isImage ? "Making pictures…" : "Making…";
+    busy === "render"
+      ? "Rendering mp4…"
+      : busy === "voice"
+        ? "Recording voice…"
+        : busy === "visuals" && isInvite
+          ? "Making the invitation…"
+          : busy === "visuals" && isImage
+            ? "Making pictures…"
+            : "Making…";
 
   return (
     <div>
@@ -399,7 +474,7 @@ export default function Studio() {
 
       <div className="studio">
         <div>
-          <div className={`phone${isImage ? " post" : ""}`} style={typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : undefined}>
+          <div className={`phone${isImage ? " post" : ""}${isInvite ? " invite" : ""}`} style={typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : undefined}>
             {project.hasVideo && videoSrc ? (
               <video className="phone-video" src={videoSrc} controls playsInline />
             ) : (
@@ -416,7 +491,7 @@ export default function Studio() {
                     Couldn’t generate — regenerate this picture (8cr)
                   </div>
                 )}
-                <div className="caption">{caption}</div>
+                {!isInvite && <div className="caption">{caption}</div>}
               </>
             )}
           </div>
@@ -468,7 +543,11 @@ export default function Studio() {
           <h2>{next ? `Step — ${next.label}` : "Ready"}</h2>
           {!project.idea && (
             <p className="lede">
-              {isImage ? "We’ll propose a look before making pictures." : "We’ll propose a concept before writing a word of script."}
+              {isInvite
+                ? "We’ll take title, date and place if you wrote them — the rest comes from your description."
+                : isImage
+                  ? "We’ll propose a look before making pictures."
+                  : "We’ll propose a concept before writing a word of script."}
             </p>
           )}
           {project.idea && !project.visuals && isImage && (
@@ -478,6 +557,111 @@ export default function Studio() {
               <p className="hint">{project.idea.visualDirection}</p>
               <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} />
             </>
+          )}
+          {isInvite && project.idea && (
+            <div className="invite-fields">
+              <p className="hint">Basics plus what we found in your brief. Long lines wrap — they are not cut off.</p>
+              {INVITE_FIELDS.map((field) => (
+                <div key={field.key} className="field">
+                  <label htmlFor={`invite-${field.key}`}>{field.label}</label>
+                  <input
+                    id={`invite-${field.key}`}
+                    value={inviteDraft[field.key] || ""}
+                    maxLength={field.key === "address" || field.key === "place" ? 160 : 80}
+                    onChange={(e) => setInviteDraft((current) => ({ ...current, [field.key]: e.target.value }))}
+                  />
+                </div>
+              ))}
+              <div className="field">
+                <label htmlFor="invite-intro">Opening</label>
+                <textarea
+                  id="invite-intro"
+                  value={inviteDraft.intro || ""}
+                  maxLength={280}
+                  rows={3}
+                  onChange={(e) => setInviteDraft((current) => ({ ...current, intro: e.target.value }))}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="invite-closing">Closing</label>
+                <input
+                  id="invite-closing"
+                  value={inviteDraft.closing || ""}
+                  maxLength={120}
+                  onChange={(e) => setInviteDraft((current) => ({ ...current, closing: e.target.value }))}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="invite-lines">From your brief</label>
+                <textarea
+                  id="invite-lines"
+                  value={(inviteDraft.lines || []).join("\n")}
+                  maxLength={900}
+                  rows={4}
+                  onChange={(e) =>
+                    setInviteDraft((current) => ({
+                      ...current,
+                      lines: e.target.value.split(/\n/).slice(0, 8),
+                    }))
+                  }
+                />
+              </div>
+              {(inviteDraft.program || []).map((item, index) => (
+                <div key={`prog-${index}`} className="field">
+                  <label>Programme {index + 1}</label>
+                  <input
+                    value={item.time}
+                    maxLength={20}
+                    placeholder="Time"
+                    onChange={(e) =>
+                      setInviteDraft((current) => ({
+                        ...current,
+                        program: (current.program || []).map((row, rowIndex) =>
+                          rowIndex === index ? { ...row, time: e.target.value } : row
+                        ),
+                      }))
+                    }
+                  />
+                  <input
+                    value={item.title}
+                    maxLength={100}
+                    placeholder="Title"
+                    style={{ marginTop: 6 }}
+                    onChange={(e) =>
+                      setInviteDraft((current) => ({
+                        ...current,
+                        program: (current.program || []).map((row, rowIndex) =>
+                          rowIndex === index ? { ...row, title: e.target.value } : row
+                        ),
+                      }))
+                    }
+                  />
+                  <input
+                    value={item.detail}
+                    maxLength={140}
+                    placeholder="Detail"
+                    style={{ marginTop: 6 }}
+                    onChange={(e) =>
+                      setInviteDraft((current) => ({
+                        ...current,
+                        program: (current.program || []).map((row, rowIndex) =>
+                          rowIndex === index ? { ...row, detail: e.target.value } : row
+                        ),
+                      }))
+                    }
+                  />
+                </div>
+              ))}
+              <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={saveInvite}>
+                {busy === "invite"
+                  ? "Saving…"
+                  : inviteSaved
+                    ? "Saved"
+                    : project.hasImages
+                      ? "Apply text · free"
+                      : "Save details"}
+              </button>
+            </div>
           )}
           {project.idea && !project.script && !isImage && (
             <>
@@ -510,21 +694,36 @@ export default function Studio() {
           {project.captions && !project.hasVideo && <p className="lede">Captions are timed. Create writes a 9:16 mp4 you can download.</p>}
           {project.hasImages && (
             <>
-              <p className="ok">Your pictures are ready. {project.creditsUsed} credits used.</p>
-              <p className="hint">Download the stills now. We keep them for 90 days. Recreating after that uses credits again.</p>
+              <p className="ok">
+                {isInvite ? "Your invitation is ready." : "Your pictures are ready."} {project.creditsUsed} credits used.
+              </p>
+              <p className="hint">
+                {isInvite
+                  ? "Download the invitation. We keep it for 90 days. Recreating after that uses credits again."
+                  : "Download the stills now. We keep them for 90 days. Recreating after that uses credits again."}
+              </p>
               <div className="row" style={{ marginTop: 12 }}>
                 <button className="btn ghost" type="button" onClick={sharePreview}>
                   {shareCopied ? "Preview link copied" : "Share a preview"}
                 </button>
-                {project.visuals?.map((visual, i) => {
-                  const src = imageSrcs[visual.sceneId];
-                  if (!src || visual.placeholder) return null;
-                  return (
-                    <a key={visual.sceneId} className="btn" href={src} download={`still-${i + 1}.jpg`}>
-                      Download {i + 1}
-                    </a>
-                  );
-                })}
+                {isInvite
+                  ? project.visuals
+                      ?.filter((visual) => !visual.placeholder && imageSrcs[visual.sceneId])
+                      .slice(0, 1)
+                      .map((visual) => (
+                        <a key={visual.sceneId} className="btn" href={imageSrcs[visual.sceneId]} download="invitation.jpg">
+                          Download invitation
+                        </a>
+                      ))
+                  : project.visuals?.map((visual, i) => {
+                      const src = imageSrcs[visual.sceneId];
+                      if (!src || visual.placeholder) return null;
+                      return (
+                        <a key={visual.sceneId} className="btn" href={src} download={`still-${i + 1}.jpg`}>
+                          Download {i + 1}
+                        </a>
+                      );
+                    })}
               </div>
               {project.feedback ? (
                 <p className="ok" style={{ marginTop: 16 }}>Thanks — that helps the next post.</p>
@@ -739,7 +938,8 @@ export default function Studio() {
             </p>
           )}
           <p className="hint" style={{ marginTop: 18 }}>
-            Used on this {isImage ? "post" : "Reel"}: {project.creditsUsed} credits · {isImage ? "stills 37" : "full video 150"}
+            Used on this {isInvite ? "invitation" : isImage ? "post" : "Reel"}: {project.creditsUsed} credits ·{" "}
+            {isImage ? "stills 37" : "full video 150"}
           </p>
         </div>
       </div>

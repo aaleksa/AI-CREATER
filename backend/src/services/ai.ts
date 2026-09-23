@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { config } from "../config.js";
+import { guessPoster, type InviteCard } from "./invite.js";
 
 export type LearnedSummary = {
   generatedAt: string;
@@ -157,10 +158,10 @@ async function jsonCompletion<T>(system: string, user: string, fallback: T): Pro
 }
 
 const IMAGE_KIND_GUIDE: Record<string, string> = {
-  photo: "Still photo post: one feeling, four complementary photographs. Mood, place, people — not a date card or an offer card.",
-  invite: "Event invitation: the brief should name what, when and where. Four slides that could later carry type (cover, when, place, save-the-date). Photographs themselves have no burned-in text. The concept must name the event.",
-  info: "Information post: one fact people need — hours, a change, a reminder. Four slides that support that fact. Photographs, no burned-in type.",
-  offer: "Commercial offer: the deal, when it runs, who it’s for. Four slides — the feeling, the deal, when, walk in. Photographs, no burned-in type.",
+  photo: "Still photo post: four complementary photographs from what they actually wrote. Specific objects and light, not a generic stock set.",
+  invite: "Event invitation: briefs vary. Extract name, date, time, place, and address (street or postcode) only if written. intro and closing only if they wrote a warm opening or farewell. Programme only if they listed times. Photographs from their words. No letters.",
+  info: "Information post: four photographs of the world around the fact — the closed door, the room, the return. Interesting pictures from their words, no burned-in type.",
+  offer: "Offer post: four photographs of the offer as a real moment. Use their words. No burned-in type.",
 };
 
 function mockIdea(prompt: string, type: string, brand?: BrandKit | null, imageIntent = ""): Idea {
@@ -254,16 +255,55 @@ const PLACEHOLDER_FRAMES = [
   "linear-gradient(155deg,#0c0b0a 0%,#c45c26 70%,#f7e7d4 100%)",
 ];
 
+export type IdeaResult = Idea & { invite?: InviteCard };
+
+export function stillPicturePrompt(brief: string, idea: Idea, role: string, index = 1, total = 1) {
+  const asked = brief
+    .replace(/\*\*/g, "")
+    .replace(/[_#`]/g, "")
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 900);
+  const frame =
+    total === 1
+      ? "One photograph. Use the most vivid scene from what they wrote."
+      : `Photograph ${index} of ${total}: ${role}. Pick a different moment from their words than the other frames.`;
+  return [
+    "Make a specific, interesting photograph from what they asked for — not a generic stock scene.",
+    `They wrote: ${asked}`,
+    idea.visualDirection && `Look: ${idea.visualDirection}`,
+    frame,
+    "Show real objects, people and light from their description. If they named yoga, a workshop, a salon, a retreat, a closed day — show that world.",
+    "No letters, no numbers, no logo, no UI, no poster layout.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 export async function generateIdea(prompt: string, type: string, brand?: BrandKit | null, imageIntent = "") {
-  const fallback = mockIdea(prompt, type, brand, imageIntent);
+  const fallback: IdeaResult = {
+    ...mockIdea(prompt, type, brand, imageIntent),
+    ...(imageIntent === "invite" ? { invite: guessPoster(prompt, "invite") } : {}),
+  };
   const kindGuide = type === "image_post" ? IMAGE_KIND_GUIDE[imageIntent] || IMAGE_KIND_GUIDE.photo : "";
-  return jsonCompletion<Idea>(
+  const keys =
+    imageIntent === "invite"
+      ? "title, hook, concept, audience, visualDirection, invite { name, date, time, place, address, intro, closing, lines: string[], program: [{ time, title, detail }] }"
+      : "title, hook, concept, audience, visualDirection";
+  return jsonCompletion<IdeaResult>(
     `You are the creative director of Auteur, an AI content studio. The user never chooses models or prompts. You decide the concept. ${
       type === "image_post"
-        ? "Format: still Instagram photos or a short carousel — not video, no voiceover."
+        ? imageIntent === "invite"
+          ? "Format: invitation. Photograph the scenes they named — we set the type ourselves. Never ask the image model to write words."
+          : "Format: still Instagram photos from the user’s description — not video, no voiceover. Each picture should be interesting and different."
         : "Format: vertical short-form video unless told otherwise."
     }${kindGuide ? `\n${kindGuide}` : ""}\n${brandContext(brand)}`,
-    `Content type: ${type}${imageIntent ? `\nImage kind: ${imageIntent}` : ""}\nUser request: ${prompt}\nReturn JSON with keys: title, hook, concept, audience, visualDirection.`,
+    `Content type: ${type}${imageIntent ? `\nImage kind: ${imageIntent}` : ""}\nUser request: ${prompt}\nReturn JSON with keys: ${keys}.${
+      imageIntent === "invite"
+        ? " Briefs vary. Fill name, date, time, place, address only if present — do not invent a street or postcode. intro = their opening warmth if written. closing = their farewell if written. Empty if missing. program only for timed items they listed. visualDirection names real scenes from the brief."
+        : " visualDirection must name real scenes from the request, not a generic mood."
+    }`,
     fallback
   );
 }
@@ -277,19 +317,28 @@ export async function generateScript(prompt: string, idea: Idea, brand?: BrandKi
   );
 }
 
-export async function generateVisuals(script: Script, brand?: BrandKit | null, kind: "video" | "still" = "video") {
+export async function generateVisuals(
+  script: Script,
+  brand?: BrandKit | null,
+  kind: "video" | "still" = "video",
+  persist?: (visual: Visual) => Promise<Visual>
+) {
   const openai = client();
   const visuals: Visual[] = [];
   let provider = "auteur-studio";
   let model = "preview-frames";
   let cost = 0;
   let live = 0;
+  let lastError = "";
 
   for (const scene of script.scenes) {
     const frame = await generateSceneFrame(scene, brand, kind);
-    visuals.push(frame.visual);
+    const visual =
+      persist && !frame.visual.placeholder ? await persist(frame.visual) : frame.visual;
+    visuals.push(visual);
     cost += frame.cost;
-    if (!frame.visual.placeholder) {
+    if (frame.error) lastError = frame.error;
+    if (!visual.placeholder) {
       live += 1;
       provider = frame.provider;
       model = frame.model;
@@ -297,7 +346,9 @@ export async function generateVisuals(script: Script, brand?: BrandKit | null, k
   }
 
   if (openai && live === 0) {
-    throw Object.assign(new Error("We couldn’t generate these frames. Try a simpler description."), { status: 400 });
+    throw Object.assign(new Error(lastError || "We couldn’t generate these frames. Try a simpler description."), {
+      status: 400,
+    });
   }
 
   return {
@@ -315,9 +366,31 @@ export async function generateOneVisual(scene: ScriptScene, brand?: BrandKit | n
   const openai = client();
   const frame = await generateSceneFrame(scene, brand, kind);
   if (openai && frame.visual.placeholder) {
-    throw Object.assign(new Error("We couldn’t generate this frame. Try a simpler description."), { status: 400 });
+    throw Object.assign(new Error(frame.error || "We couldn’t generate this frame. Try a simpler description."), {
+      status: 400,
+    });
   }
   return { data: frame.visual, provider: frame.provider, model: frame.model, cost: frame.cost };
+}
+
+function imageModels() {
+  const preferred = config.openaiImageModel || "gpt-image-1";
+  return [...new Set([preferred, "gpt-image-1", "dall-e-3"])];
+}
+
+function imageSize(model: string, kind: "video" | "still") {
+  if (kind === "still") return "1024x1024" as const;
+  return model === "dall-e-3" ? ("1024x1792" as const) : ("1024x1536" as const);
+}
+
+function humanImageError(message: string) {
+  if (/does not exist/i.test(message)) {
+    return "This OpenAI project has no image model. Enable gpt-image-1 in the project, or set OPENAI_IMAGE_MODEL.";
+  }
+  if (/billing|quota|insufficient/i.test(message)) {
+    return "OpenAI image billing is not enabled on this key.";
+  }
+  return "We couldn’t generate these frames. Try a simpler description.";
 }
 
 async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, kind: "video" | "still" = "video") {
@@ -326,8 +399,9 @@ async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, k
   const placeholder = {
     visual: { sceneId: scene.id, imageUrl: fallback, prompt: scene.visualPrompt, placeholder: true as const },
     provider: openai ? "openai" : "auteur-studio",
-    model: openai ? "dall-e-3-refused" : "preview-frames",
+    model: openai ? "image-refused" : "preview-frames",
     cost: 0,
+    error: "",
   };
   if (!openai) return placeholder;
 
@@ -336,36 +410,47 @@ async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, k
       ? `${scene.visualPrompt}. Square 1:1 Instagram still photograph, natural light, no text overlay, no UI chrome.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}${brand.secondary_color ? ` with ${brand.secondary_color} quiet space` : ""}.` : ""}${brand?.vertical ? ` A real ${brand.vertical}, not a stock set.` : ""}`
       : `${scene.visualPrompt}. Vertical 9:16 cinematic still, filmic, no text overlay.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}${brand.secondary_color ? ` with ${brand.secondary_color} quiet space` : ""}.` : ""}${brand?.vertical ? ` A real ${brand.vertical}, not a stock set.` : ""}`;
 
-  const once = async () => {
+  const once = async (model: string) => {
     const image = await openai.images.generate({
-      model: "dall-e-3",
-      prompt,
-      size: kind === "still" ? "1024x1024" : "1024x1792",
+      model,
+      prompt: prompt.slice(0, model === "gpt-image-1" ? 32000 : 4000),
+      size: imageSize(model, kind),
       n: 1,
+      ...(model === "gpt-image-1" ? { output_format: "jpeg", quality: "medium" } : {}),
     });
-    const url = image.data?.[0]?.url;
+    const item = image.data?.[0];
+    const url = item?.url || (item?.b64_json ? `data:image/jpeg;base64,${item.b64_json}` : "");
     if (!url) throw Object.assign(new Error("empty image"), { status: 500 });
     return {
       visual: { sceneId: scene.id, imageUrl: url, prompt: scene.visualPrompt },
       provider: "openai",
-      model: "dall-e-3",
+      model,
       cost: 0.04,
+      error: "",
     };
   };
 
-  try {
-    return await once();
-  } catch (error) {
-    const status = Number((error as { status?: number }).status);
-    if (status >= 500 && status < 600) {
-      try {
-        return await once();
-      } catch {
-        return placeholder;
+  let lastError = "";
+  for (const model of imageModels()) {
+    try {
+      return await once(model);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "image failed";
+      lastError = humanImageError(message);
+      console.error("Image frame failed", scene.id, model, message);
+      const status = Number((error as { status?: number }).status);
+      if (/does not exist/i.test(message)) continue;
+      if (status >= 500 && status < 600) {
+        try {
+          return await once(model);
+        } catch (retryError) {
+          lastError = humanImageError(retryError instanceof Error ? retryError.message : "image failed");
+          console.error("Image retry failed", scene.id, model, lastError);
+        }
       }
     }
-    return placeholder;
   }
+  return { ...placeholder, error: lastError };
 }
 
 export async function generateVoice(script: Script, brand?: BrandKit | null) {

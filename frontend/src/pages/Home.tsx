@@ -26,19 +26,19 @@ const IMAGE_KINDS = [
   {
     id: "invite",
     label: "Invitation",
-    hint: "Say what the event is, when, and where.",
+    hint: "Write the event as you would send it. We pick out title, date and place — the rest stays as you wrote it.",
     example: "Invite to Saturday 11am colour workshop at the salon. Friends welcome.",
   },
   {
     id: "info",
     label: "Information",
-    hint: "Say the fact people need — hours, a change, a reminder.",
+    hint: "Say the fact — and anything else you want in the pictures.",
     example: "We’re closed Monday 6 May. Back Tuesday 9am.",
   },
   {
     id: "offer",
     label: "Offer",
-    hint: "Say the offer, when it runs, and who it’s for.",
+    hint: "Say the offer — and the look, the place, who it’s for.",
     example: "A warm photo post for my salon’s Tuesday walk-in offer.",
   },
 ] as const;
@@ -162,8 +162,10 @@ export default function Home() {
         <div className="row">
           <span className="hint">
             {isImage
-              ? `${kind.hint} Pictures stay photos — we don’t print dates on the image yet. A sentence can be enough (up to 2,000 characters). Stills are 37 credits · Free starts with 200`
-              : "A sentence can be enough. Add more when you need to — offer, place, who it’s for (up to 2,000 characters). A Reel is 150 credits · stills are 37 · Free starts with 200"}
+              ? `${kind.hint} We make the pictures from what you wrote. ${
+                  imageIntent === "invite" ? "We set the type on the flyer. " : "No type burned into the photo. "
+                }37 credits · Free starts with 200`
+              : "A sentence can be enough. Add more when you need to — offer, place, who it’s for (up to 2,000 characters). A Reel is 150 credits · stills 37 · Free starts with 200"}
           </span>
           <button className="btn accent" onClick={start} disabled={busy}>
             {busy ? "Opening studio…" : `Continue with ${selected?.title}`}

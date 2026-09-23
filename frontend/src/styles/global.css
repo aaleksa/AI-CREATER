@@ -205,6 +205,12 @@ button { cursor: pointer; }
   aspect-ratio: 1 / 1;
   max-width: 360px;
 }
+.phone.post.invite { aspect-ratio: 4 / 5; max-width: 320px; }
+.phone.post.invite .phone-frame,
+.phone.post.poster .phone-frame { animation: none; }
+.invite-fields { margin-top: 16px; }
+.invite-fields .field { margin-bottom: 10px; }
+.invite-fields textarea { min-height: 96px; resize: vertical; }
 .phone-frame {
   position: absolute;
   inset: 0;

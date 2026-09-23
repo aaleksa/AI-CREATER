@@ -143,7 +143,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 | `video` | Video | екран є, створення заблоковане |
 | `instagram_reel` | Instagram Reel | повний пайплайн + **mp4** |
 | `tiktok` | TikTok | повний пайплайн + **mp4** |
-| `image_post` | Image / Post | Idea + **4 stills** (JPG), **37 credits**, без voice/mp4. Один формат; `image_intent` = photo / invite / info / offer |
+| `image_post` | Image / Post | Idea + **4 stills** з брифу (JPG), **37 cr**. Invite додатково складає флаєр з цих фото + наш тип |
 | `advertisement` | Advertisement | «Coming after Reels» |
 | `social_post` | Social media post | «Coming after Reels» |
 
@@ -198,14 +198,14 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
    - **Invitation** — що за івент, коли, де;
    - **Information** — факт (години, зміна, нагадування);
    - **Offer** — офер, коли діє, для кого.
-   Чип **не** новий `type`. Змінює placeholder, hint і промпт Idea/Pictures. Текст на слайдах — після n≥40 (§11.11).
-3. Пише бриф. Приклади: photo `A quiet morning table at my café.`; invite `Saturday 11am colour workshop at the salon.`; info `Closed Monday 6 May.`; offer `Tuesday walk-in offer.`
-4. Студія — **2 кроки**, не 6:
-   1. **Idea** (5 cr) — концепція каруселі під обраний kind, без скрипта й голосу;
-   2. **Pictures** (32 cr max) — **4 квадратні stills** 1:1 (DALL·E `1024x1024`), оплата live × 8, поріг ≥3/4. Ролі слайдів залежать від kind (cover / when / place / save-the-date для invite; fact / detail / why / remember для info).
-5. Разом **37 credits**. `script` / `voice` / `captions` / `render` на цьому типі — 400.
-6. JPG пишуться як `still-{sceneId}.jpg`. Прев’ю квадратне. Download кожного кадру. Питання *Would you publish this post?*
-7. Без voice, субтитрів і mp4. Готовий артефакт — картинки, не відео. Дати й ціни в бриф, не випалені на фото.
+   Чип **не** новий `type`. Промпт картинок завжди з повного брифу — не шаблон «одна атмосфера».
+3. Пише бриф. Можна довгий: що показати, яка інформація, програма. Приклади: photo `A quiet morning table at my café.`; invite повний текст івенту з годинами; info `Closed Monday 6 May.`; offer `Tuesday walk-in offer.`
+4. Студія — **2 кроки**:
+   1. **Idea** (5 cr). Для **invite** витягує основу (назва, дата, час, місце) і з брифу — address / intro / closing, якщо вони там є; програму — лише якщо є години. Нічого не вигадує.
+   2. **Pictures** (32 cr max, live × 8) — **4 stills** з брифу. Модель **не** малює літери. `composeInvitePoster` складає флаєр: текст переносить/зменшує, не обрізає; іконки з каталогу за ключовим словом. `PATCH /invite` — 0 cr.
+5. Разом **37 credits**. `script` / `voice` / `captions` / `render` — 400.
+6. JPG `still-{sceneId}.jpg`; invite: фон `still-bg.jpg`, готовий флаєр у `still-1.jpg`. *Would you publish this post?*
+7. Без voice і mp4. Текст запрошення друкуємо ми. Картинки — з опису (йога, Thermomix, танці), не одне типове спа.
 
 ---
 
@@ -239,13 +239,13 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 
 **Auth.** Ім’я (тільки signup), email, пароль. Помилки зрозумілою мовою.
 
-**Create.** Сітка 6 форматів. Reel / TikTok / Image Post — активні. Video, Ad, Social — «soon». Промпт — від 8 до 2 000 символів. Copy: речення може вистачити; якщо ні — офер, місце, для кого. Reel 150 cr · stills 37 cr.
+**Create.** Сітка 6 форматів. Reel / TikTok / Image Post — активні. Video, Ad, Social — «soon». Промпт — від 8 до 2 000 символів. Copy: речення може вистачити; якщо ні — офер, місце, для кого. Reel 150 cr · Image / Post (усі kind, включно з invitation) 37 cr.
 
 **Studio.** Reel/TikTok: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: квадратний прев’ю 1:1, кроки Idea → Pictures, без Voice/Captions/Create. Бриф зверху — textarea, `Save brief` (PATCH, 0 credits); щоб застосувати — regenerate idea. Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб кнопка лишається: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі: бейдж *Couldn’t generate — regenerate this picture (8cr)*. Після Create (Reel) — Download mp4; після Pictures — Download JPG. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
 
 **Brand Kit.** Дві групи: *How it looks & sounds* (кольори, шрифт, тон-чипси + optional note) і *About your business* (ім’я, **upload лого**, vertical, сайт, Instagram) — друге опційне. Vertical: salon / café / fitness / **other** + вільний текст; мікрокопі: лише каркас сцен, не обов’язково. Жива прев’ю-картка (CSS, 0 AI). Індикатор «Brand kit N% complete — …». Learned-картка зверху + **Reset learning** (одразу перераховує з готової історії, не чекає 3 нові Reels). Лого: `POST /brand/logo` — **max 2 MB, лише `image/png` / `image/jpeg`**, SVG заборонено; `GET /brand/logo` віддає файл з `Content-Type` png/jpeg і `X-Content-Type-Options: nosniff`, ніколи `image/svg+xml`, у UI лише `<img>`. Невалідний hex не ламає picker. Disclaimer про знаки.
 
-**Billing.** 4 плани, 3 пакети, таблиця вартості кроків (150 = повний Reel, 37 = still post), історія generation. Користувач бачить credits_used і орієнтовну £. Планові £/міс підписати **FROZEN**, доки бета не дасть логи TTS+рендеру.
+**Billing.** 4 плани, 3 пакети, таблиця вартості кроків (150 = повний Reel, 37 = Image / Post), історія generation. Користувач бачить credits_used і орієнтовну £. Планові £/міс підписати **FROZEN**, доки бета не дасть логи TTS+рендеру.
 
 **Library.** Список проєктів: промпт, тип, статус, credits, дата, наявність файлу. Якщо mp4 ще на диску — посилання в студію. Якщо термін вийшов — статус `expired` і підказка, що Create знову платний. Перед витісненням через ліміт плану — попередження, не тихе зникнення.
 
@@ -457,6 +457,7 @@ Text AI  Image AI   TTS
 | type | text | див. формати |
 | prompt | text | речення користувача |
 | image_intent | text | лише `image_post`: `photo` / `invite` / `info` / `offer`; інакше порожньо |
+| invite_json | text | поля постера для invite/info/offer (факт / офер / івент); порожньо для photo |
 | status | text | `draft` / `generating` / `ready` / `expired` |
 | current_step | text | `prompt` / `idea` / `script` / `visuals` / `voice` / `captions` / `create` |
 | idea_json | text | |
@@ -639,6 +640,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | POST | `/projects` | так | `{ type, prompt, imageIntent? }` → 201 `{ project }`; невалідний `imageIntent` → **400** |
 | GET | `/projects/:id` | так | проєкт + таблиця costs |
 | PATCH | `/projects/:id` | так | `{ prompt }` — змінити бриф; credits 0; щоб застосувати — regenerate idea |
+| PATCH | `/projects/:id/invite` | так | `{ invite }` — поля постера; 0 cr; перескласти JPG якщо фон є |
 | POST | `/projects/:id/steps/:step` | так | `{ regenerate?, sceneId?, idempotencyKey?, feedbackReason?, feedbackNote? }` + `Idempotency-Key`; 20 req/хв |
 | POST | `/projects/:id/feedback` | так | `{ publishable: yes\|edits\|no, reasons[] }` після mp4 |
 | POST | `/projects/:id/share` | так | preview-лінк, TTL 7д |
@@ -666,19 +668,20 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 
 Reel / TikTok: idea → script → visuals / voice / captions (потребують script) → render.
 
-Image / Post: idea → visuals (4 stills). `script` / `voice` / `captions` / `render` → 400.
+Image / Post: idea → visuals. photo — 4 stills. invite/info/offer — 1 постер + `invite_json`. `script` / `voice` / `captions` / `render` → 400. `PATCH /projects/:id/invite` — 0 cr.
 
 | step | credits | Що вважається успіхом |
 | --- | --- | --- |
 | idea | 5 | `idea_json` |
 | script | 10 | `script_json` (лише відео) |
-| visuals | 40 max / **32 max** на пост | кадри; оплата **live × 8**, поріг ≥3/5 відео або ≥3/4 пост (§7.3) |
+| visuals | 40 max / **32 max** photo / **8** poster | кадри; live × 8; поріг ≥3/5 відео або ≥3/4 photo; invite/info/offer — 1 кадр |
 | visuals *один кадр* | **8** | `{ regenerate: true, sceneId }` |
 | voice | 30 | `voice_json` **і** `audio_url` (TTS); немає на `image_post` |
 | captions | 10 | cues (scene-level); немає на `image_post` |
 | render | 55 | **існує mp4**, `status=ready`; немає на `image_post` |
 | **разом Reel** | **150** | |
 | **разом Image Post** | **37** | idea 5 + 4×8; `status=ready` після Pictures |
+| **разом Invitation** | **37** | idea 5 + 4×8; флаєр з фото з брифу + наш тип |
 
 Промпт: `trim`, 8–2000 символів. Одне речення — норма; абзац дозволений.
 
@@ -866,7 +869,7 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 3. Крок Voice не вважається done без аудіофайла (`audio_url`).
 4. Після повного шляху баланс = 50 (при вартості 150), у Library статус ready **і** файл.
 5. Повторний Idea **без** `regenerate` не списує 5 credits і **не викликає AI**; **з** `regenerate` — списує і каскадить; 4-та спроба Idea — **10 credits (2×)**, не 429 (§7.2).
-6. Video / Ad / Social post не створюють проєкт. **Image / Post створює** (Idea + 4 stills, 37 cr; `GET /projects/:id/image/:sceneId`).
+6. Video / Ad / Social post не створюють проєкт. **Image / Post створює** (4 stills з брифу, 37 cr; invite — флаєр; `GET /projects/:id/image/:sceneId`).
 7. Brand Kit зберігається і впливає на Idea (включно з vertical).
 8. На billing видно generation (provider, credits_used, £) **користувачу**.
 9. Без платних ключів шлях для розробки не падає; **закрита бета і зовнішнє демо — тільки з TTS+рендером** (не `say`-тиша як «голос»).
@@ -899,7 +902,7 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 
 **Після §11.11 на n≥40, за цінністю (не хронологією старого списку):**
 
-1. Image Post → карусель із текстом на слайдах (не лише 4 stills).
+1. Image Post → окремі фото на слоти програми запрошення (info/offer уже постер, як invite).
 2. Word-level captions (ElevenLabs alignment) — раніше YouTube, бо ріже publishability.
 3. Advertisement / generic Video.
 4. S3, upload лого, YouTube / презентації.

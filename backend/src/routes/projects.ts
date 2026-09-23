@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
-import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, readCreateImageIntent, restoreStepVersion, runStep, saveFeedback, serializeProject } from "../services/pipeline.js";
+import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_INVITE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
+import { FORMAT_TYPES, MVP_READY, createProject, readCreateImageIntent, restoreStepVersion, runStep, saveFeedback, serializeProject, updateInvite } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
 import { hasStillFile, hasVideoFile, hasVoiceFile, stillFile, videoFile, voiceFile } from "../services/media.js";
 import { rateLimit } from "../middleware/rateLimit.js";
@@ -30,6 +30,7 @@ projectsRouter.get("/", (req, res) => {
     costs: CREDIT_COSTS,
     fullVideoCost: FULL_VIDEO_COST,
     fullImageCost: FULL_IMAGE_COST,
+    fullInviteCost: FULL_INVITE_COST,
   });
 });
 
@@ -107,7 +108,18 @@ projectsRouter.get("/:id", (req, res) => {
     costs: CREDIT_COSTS,
     fullVideoCost: FULL_VIDEO_COST,
     fullImageCost: FULL_IMAGE_COST,
+    fullInviteCost: FULL_INVITE_COST,
   });
+});
+
+projectsRouter.patch("/:id/invite", async (req, res) => {
+  try {
+    const project = await updateInvite(req.user!.id, String(req.params.id), req.body?.invite ?? req.body);
+    res.json({ project });
+  } catch (error) {
+    const err = error as Error & { status?: number };
+    res.status(err.status || 500).json({ error: err.message || "Could not update the invitation." });
+  }
 });
 
 projectsRouter.patch("/:id", (req, res) => {

@@ -5,6 +5,7 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || "dev-secret-change-me",
   openaiKey: process.env.OPENAI_API_KEY || "",
   openaiModel: process.env.OPENAI_MODEL || "gpt-4o-mini",
+  openaiImageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
   openaiMaxInputChars: Number(process.env.OPENAI_MAX_INPUT_CHARS || 100000),
   stripeSecret: process.env.STRIPE_SECRET_KEY || "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
@@ -29,9 +30,12 @@ export const FULL_VIDEO_COST = Object.values(CREDIT_COSTS).reduce((a, b) => a + 
 /** One DALL·E frame. 40 / 5 scenes. FROZEN with the rest of §9. */
 export const VISUAL_SCENE_CREDITS = 8;
 export const IMAGE_SLIDE_COUNT = 4;
+export const INVITE_SLIDE_COUNT = IMAGE_SLIDE_COUNT;
 /** Public preview link. Not a permanent Download URL. */
 export const PREVIEW_TTL_DAYS = 7;
 export const FULL_IMAGE_COST = CREDIT_COSTS.idea + IMAGE_SLIDE_COUNT * VISUAL_SCENE_CREDITS;
+export const FULL_INVITE_COST = FULL_IMAGE_COST;
+export const FULL_POSTER_COST = FULL_IMAGE_COST;
 
 export function visualMinLive(sceneCount: number) {
   return Math.max(1, Math.ceil((sceneCount * 3) / 5));
