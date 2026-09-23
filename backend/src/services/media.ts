@@ -77,6 +77,11 @@ export function projectMediaPath(projectId: string) {
   return path.join(dataDir, "media", projectId);
 }
 
+export function removeProjectMedia(projectId: string) {
+  const dir = projectMediaPath(projectId);
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 export function voiceFile(projectId: string) {
   return path.join(projectMediaDir(projectId), "voice.mp3");
 }

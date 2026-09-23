@@ -18,6 +18,7 @@ export const ERROR_UK: Record<string, string> = {
     "Цей формат буде далі. Почніть з Reel, TikTok або картинки.",
   "Choose photo, invitation, information or offer.": "Оберіть фото, запрошення, інформацію або офер.",
   "Project not found.": "Проєкт не знайдено.",
+  "Could not delete this.": "Не вдалося видалити.",
   "Project not found": "Проєкт не знайдено.",
   "Video not ready.": "Відео ще не готове.",
   "Image not ready.": "Картинка ще не готова.",
@@ -30,6 +31,8 @@ export const ERROR_UK: Record<string, string> = {
   "This preview has expired or does not exist.": "Це прев’ю вже не діє або його немає.",
   "This preview has expired.": "Це прев’ю вже не діє.",
   "Something went wrong in the studio.": "У студії щось пішло не так.",
+  "The request is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.":
+    "Браузер не дав скопіювати. Виділіть текст і натисніть Cmd+C (або Ctrl+C).",
   "Share a preview after the pictures or Reel are ready.": "Поділитися прев’ю можна, коли картинка або Reel готові.",
   "That version is gone.": "Цього варіанта вже немає.",
   "That picture is gone.": "Цієї картинки вже немає.",

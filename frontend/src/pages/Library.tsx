@@ -5,15 +5,31 @@ import { copyText } from "../lib/copy";
 import { useLocale } from "../i18n/locale";
 
 export default function Library() {
-  const { t, locale } = useLocale();
+  const { t, te, locale } = useLocale();
   const [projects, setProjects] = useState<Project[]>([]);
   const [copiedId, setCopiedId] = useState("");
+  const [removingId, setRemovingId] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     api.projects().then((d) => setProjects(d.projects)).catch(() => setProjects([]));
   }, []);
 
   const dateLocale = locale === "uk" ? "uk-UA" : "en-GB";
+
+  async function remove(id: string) {
+    if (!window.confirm(t("library.confirmRemove"))) return;
+    setError("");
+    setRemovingId(id);
+    try {
+      await api.deleteProject(id);
+      setProjects((current) => current.filter((item) => item.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("library.failRemove"));
+    } finally {
+      setRemovingId("");
+    }
+  }
 
   if (!projects.length) {
     return (
@@ -29,6 +45,7 @@ export default function Library() {
     <div>
       <h1 className="page-title" style={{ fontSize: 48 }}>{t("library.title")}</h1>
       <p className="hint">{t("library.hint")}</p>
+      {error && <p className="err" style={{ marginTop: 12 }}>{error}</p>}
       <div className="list" style={{ marginTop: 24 }}>
         {projects.map((p) => (
           <div key={p.id} className="list-row">
@@ -43,18 +60,28 @@ export default function Library() {
               </span>
               <span className="hint">{new Date(p.createdAt).toLocaleString(dateLocale)}</span>
             </Link>
-            <button
-              className="btn ghost"
-              type="button"
-              onClick={async () => {
-                if (await copyText(p.prompt)) {
-                  setCopiedId(p.id);
-                  setTimeout(() => setCopiedId(""), 2500);
-                }
-              }}
-            >
-              {copiedId === p.id ? t("library.copied") : t("library.copyBrief")}
-            </button>
+            <div className="list-actions">
+              <button
+                className="btn ghost"
+                type="button"
+                onClick={async () => {
+                  if (await copyText(p.prompt)) {
+                    setCopiedId(p.id);
+                    setTimeout(() => setCopiedId(""), 2500);
+                  }
+                }}
+              >
+                {copiedId === p.id ? t("library.copied") : t("library.copyBrief")}
+              </button>
+              <button
+                className="btn ghost"
+                type="button"
+                disabled={removingId === p.id}
+                onClick={() => remove(p.id)}
+              >
+                {removingId === p.id ? t("library.removing") : t("library.remove")}
+              </button>
+            </div>
           </div>
         ))}
       </div>

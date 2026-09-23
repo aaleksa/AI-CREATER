@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api, fetchMedia, refreshMe, type BrandKitRow, type InviteCard, type Project } from "../lib/api";
 import { copyText } from "../lib/copy";
 import BrandToggle from "../components/BrandToggle";
-import { formatBrandHint, useLocale } from "../i18n/locale";
+import { useLocale } from "../i18n/locale";
 
 const VIDEO_STEPS = [
   { id: "idea", cost: 5 },
@@ -13,6 +13,9 @@ const VIDEO_STEPS = [
   { id: "captions", cost: 10 },
   { id: "render", cost: 55 },
 ] as const;
+
+/** Closed until we need a public preview link and a publishability metric. */
+const SHOW_SHARE_AND_PUBLISH = false;
 
 const EMPTY_INVITE: InviteCard = {
   name: "",
@@ -215,7 +218,6 @@ export default function Studio() {
   const [regenReason, setRegenReason] = useState("");
   const [regenNote, setRegenNote] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
-  const [kitHint, setKitHint] = useState("");
   const [kit, setKit] = useState<BrandKitRow | null>(null);
   const [inviteDraft, setInviteDraft] = useState<InviteCard>(EMPTY_INVITE);
   const [inviteSaved, setInviteSaved] = useState(false);
@@ -242,12 +244,9 @@ export default function Studio() {
       .brand()
       .then((d) => {
         setKit(d.brandKit);
-        const progress = d.brandKit?.completeness;
-        setKitHint(progress && progress.percent < 70 ? formatBrandHint(t, progress) : "");
       })
       .catch(() => {
         setKit(null);
-        setKitHint("");
       });
   }, [t]);
 
@@ -487,9 +486,12 @@ export default function Studio() {
     setError("");
     try {
       const { url } = await api.sharePreview(id);
-      await navigator.clipboard.writeText(url);
-      setShareCopied(true);
-      setTimeout(() => setShareCopied(false), 2500);
+      if (await copyText(url)) {
+        setShareCopied(true);
+        setTimeout(() => setShareCopied(false), 2500);
+        return;
+      }
+      setError(`${t("studio.copyFail")} ${url}`);
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("studio.failShare"));
     }
@@ -569,20 +571,6 @@ export default function Studio() {
 
   return (
     <div>
-      <p className="hint">
-        {project.type.replaceAll("_", " ")}
-        {isImage && project.imageIntent
-          ? ` · ${
-              { photo: t("studio.intentPhoto"), invite: t("studio.intentInvite"), info: t("studio.intentInfo"), offer: t("studio.intentOffer") }[project.imageIntent] ||
-              project.imageIntent
-            }`
-          : ""}
-      </p>
-      {kitHint && (project.useBrand ?? true) && (
-        <p className="hint">
-          {kitHint}. <Link to="/app/brand">{t("studio.brandKit")}</Link>
-        </p>
-      )}
       <div className="field">
         <label htmlFor="brief">{t("studio.briefLabel")}</label>
         <textarea
@@ -606,7 +594,12 @@ export default function Studio() {
             if (await copyText(brief)) {
               setBriefCopied(true);
               setTimeout(() => setBriefCopied(false), 2500);
+              return;
             }
+            const box = document.getElementById("brief") as HTMLTextAreaElement | null;
+            box?.focus();
+            box?.select();
+            setError(t("studio.copyFail"));
           }}
         >
           {briefCopied ? t("studio.briefCopied") : t("studio.copyBrief")}
@@ -642,7 +635,7 @@ export default function Studio() {
         })}
       </div>
 
-      <div className="studio">
+      <div className={`studio${isImage ? " image" : ""}`}>
         <div>
           <div className={`phone${isImage ? " post" : ""}${isPoster ? " poster" : ""}${isInvite ? " invite" : ""}`} style={typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : undefined}>
             {project.hasVideo && videoSrc ? (
@@ -724,7 +717,7 @@ export default function Studio() {
               <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} t={t} />
             </>
           )}
-          {isInvite && project.idea && (
+          {isInvite && project.idea && !project.hasImages && (
             <p className="hint">{t("studio.inviteHint")}</p>
           )}
           {project.idea && !project.script && !isImage && (
@@ -758,56 +751,60 @@ export default function Studio() {
           {project.captions && !project.hasVideo && <p className="lede">{t("studio.captionsReady")}</p>}
           {project.hasImages && (
             <>
-              <p className="ok">
-                {t(isInvite ? "studio.inviteReady" : "studio.pictureReady", { credits: project.creditsUsed })}
-              </p>
-              <p className="hint">{t(isInvite ? "studio.inviteKeep" : "studio.pictureKeep")}</p>
-              {(project.versions?.visuals || []).length < 2 ? (
-                <p className="hint" style={{ marginTop: 12 }}>
-                  {t("studio.compareHint")}
+              <div className="ready-block">
+                <p className="ok">
+                  {t(isInvite ? "studio.inviteReady" : "studio.pictureReady", { credits: project.creditsUsed })}
                 </p>
-              ) : (
-                <PictureCompare
-                  versions={project.versions?.visuals || []}
-                  srcs={versionSrcs}
-                  liveSrc={imageSrcs[project.visuals?.[0]?.sceneId ?? 1]}
-                  previewId={previewVersionId}
-                  busy={Boolean(busy)}
-                  poster={isPoster}
-                  onPreview={setPreviewVersionId}
-                  onRestore={(versionId) => restore("visuals", versionId)}
-                  t={t}
-                />
-              )}
-              <div className="row" style={{ marginTop: 12 }}>
-                <button className="btn ghost" type="button" onClick={sharePreview}>
-                  {shareCopied ? t("studio.shareCopied") : t("studio.share")}
-                </button>
-                {isInvite
-                  ? project.visuals
-                      ?.filter((visual) => !visual.placeholder && imageSrcs[visual.sceneId])
-                      .slice(0, 1)
-                      .map((visual) => (
-                        <a key={visual.sceneId} className="btn" href={imageSrcs[visual.sceneId]} download="invitation.jpg">
-                          {t("studio.downloadInvite")}
-                        </a>
-                      ))
-                  : project.visuals?.map((visual, i) => {
-                      const src = imageSrcs[visual.sceneId];
-                      if (!src || visual.placeholder) return null;
-                      return (
-                        <a key={visual.sceneId} className="btn" href={src} download={`still-${i + 1}.jpg`}>
-                          {t("studio.downloadN", { n: i + 1 })}
-                        </a>
-                      );
-                    })}
+                <p className="hint">{t(isInvite ? "studio.inviteKeep" : "studio.pictureKeep")}</p>
+                <div className="action-row">
+                  {isInvite
+                    ? project.visuals
+                        ?.filter((visual) => !visual.placeholder && imageSrcs[visual.sceneId])
+                        .slice(0, 1)
+                        .map((visual) => (
+                          <a key={visual.sceneId} className="btn accent" href={imageSrcs[visual.sceneId]} download="invitation.jpg">
+                            {t("studio.downloadInvite")}
+                          </a>
+                        ))
+                    : project.visuals?.map((visual, i) => {
+                        const src = imageSrcs[visual.sceneId];
+                        if (!src || visual.placeholder) return null;
+                        return (
+                          <a key={visual.sceneId} className="btn accent" href={src} download={`still-${i + 1}.jpg`}>
+                            {t("studio.downloadN", { n: i + 1 })}
+                          </a>
+                        );
+                      })}
+                  {SHOW_SHARE_AND_PUBLISH && (
+                    <button className="btn ghost" type="button" onClick={sharePreview}>
+                      {shareCopied ? t("studio.shareCopied") : t("studio.share")}
+                    </button>
+                  )}
+                </div>
               </div>
-              {project.feedback ? (
+              <div className="ready-block">
+                {(project.versions?.visuals || []).length < 2 ? (
+                  <p className="hint">{t("studio.compareHint")}</p>
+                ) : (
+                  <PictureCompare
+                    versions={project.versions?.visuals || []}
+                    srcs={versionSrcs}
+                    liveSrc={imageSrcs[project.visuals?.[0]?.sceneId ?? 1]}
+                    previewId={previewVersionId}
+                    busy={Boolean(busy)}
+                    poster={isPoster}
+                    onPreview={setPreviewVersionId}
+                    onRestore={(versionId) => restore("visuals", versionId)}
+                    t={t}
+                  />
+                )}
+              </div>
+              {SHOW_SHARE_AND_PUBLISH && (project.feedback ? (
                 <p className="ok" style={{ marginTop: 16 }}>{t("studio.thanksPost")}</p>
               ) : (
-                <div style={{ marginTop: 20 }}>
-                  <p className="lede">{t("studio.publishPost")}</p>
-                  <div className="row" style={{ marginTop: 8 }}>
+                <div className="ready-block">
+                  <p className="hint">{t("studio.publishPost")}</p>
+                  <div className="choice-row tones">
                     {[
                       ["yes", "studio.yes"],
                       ["edits", "studio.edits"],
@@ -816,15 +813,15 @@ export default function Studio() {
                       <button
                         key={value}
                         type="button"
-                        className={`btn ${publishable === value ? "accent" : "ghost"}`}
+                        className={`choice ${publishable === value ? "on" : ""}`}
                         onClick={() => setPublishable(value)}
                       >
-                        {t(label)}
+                        <b>{t(label)}</b>
                       </button>
                     ))}
                   </div>
                   {publishable && publishable !== "yes" && (
-                    <div style={{ marginTop: 12 }}>
+                    <div>
                       <p className="hint">{t("studio.whatWrong")}</p>
                       {[
                         ["Images", "studio.fbImages"],
@@ -849,12 +846,12 @@ export default function Studio() {
                     </div>
                   )}
                   {publishable && (
-                    <button className="btn" style={{ marginTop: 12 }} type="button" onClick={sendFeedback}>
+                    <button className="btn" type="button" onClick={sendFeedback}>
                       {t("studio.send")}
                     </button>
                   )}
                 </div>
-              )}
+              ))}
             </>
           )}
           {project.hasVideo && (
@@ -867,11 +864,13 @@ export default function Studio() {
                     {t("studio.downloadMp4")}
                   </a>
                 )}
-                <button className="btn ghost" type="button" onClick={sharePreview}>
-                  {shareCopied ? t("studio.shareCopied") : t("studio.share")}
-                </button>
+                {SHOW_SHARE_AND_PUBLISH && (
+                  <button className="btn ghost" type="button" onClick={sharePreview}>
+                    {shareCopied ? t("studio.shareCopied") : t("studio.share")}
+                  </button>
+                )}
               </div>
-              {project.feedback ? (
+              {SHOW_SHARE_AND_PUBLISH && (project.feedback ? (
                 <p className="ok" style={{ marginTop: 16 }}>{t("studio.thanksReel")}</p>
               ) : (
                 <div style={{ marginTop: 20 }}>
@@ -925,7 +924,7 @@ export default function Studio() {
                     </button>
                   )}
                 </div>
-              )}
+              ))}
             </>
           )}
 
@@ -977,7 +976,7 @@ export default function Studio() {
               </div>
             </div>
           )}
-          {lastDone && (
+          {lastDone && !project.hasImages && !project.hasVideo && (
             <button
               className="btn ghost"
               style={{ marginTop: 10 }}

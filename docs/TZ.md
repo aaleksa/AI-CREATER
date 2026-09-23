@@ -204,7 +204,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
    1. **Idea** (5 cr). Для **invite** витягує основу (назва, дата, час, місце) і з брифу — address / intro / closing, якщо вони там є; програму — лише якщо є години. Нічого не вигадує.
    2. **Pictures** (**8 cr**) — **одна** готова картинка з повного брифу в OpenAI. Не збираємо постер. Можна перезняти цей кадр.
 5. Разом **13 credits**. `script` / `voice` / `captions` / `render` — 400.
-6. JPG `still-{sceneId}.jpg`; invite: фон `still-bg.jpg`, готовий флаєр у `still-1.jpg`. *Would you publish this post?*
+6. JPG `still-{sceneId}.jpg`; invite: фон `still-bg.jpg`, готовий флаєр у `still-1.jpg`. *Would you publish this post?* і *Share a preview* у UI **сховані**, доки не знадобляться на беті.
 7. Без voice і mp4. Текст запрошення друкуємо ми. Картинки — з опису (йога, Thermomix, танці), не одне типове спа.
 
 ---
@@ -617,7 +617,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 - `preview_token` — **криптографічно випадковий, 32 байти** (`crypto.randomBytes(32).toString('hex')`, 64 hex). Не UUID v1 і не обрізаний UUID. Публічний, без auth — ентропія обов’язкова.
 - Сторінка `/preview/:token` (без логіну). Медіа: `GET /share/:token/file` і `/share/:token/image/:sceneId`.
 - `GET /projects/:id/preview?token=` — той самий JSON без auth.
-- Не постійний Download URL і не S3. Після TTL — 404. Кнопка в студії: *Share a preview*.
+- Не постійний Download URL і не S3. Після TTL — 404. Кнопка *Share a preview* у студії **схована** (`SHOW_SHARE_AND_PUBLISH`), ендпоінт лишається.
 
 Порівняння версій Idea/Script/**Visuals**: `GET` проєкту віддає **усі** знімки кроку в `versions`; `POST /projects/:id/versions/{idea|script|visuals}/:versionId/restore` ставить обрану `accepted=1`, **0 credits**. Idea/script — каскад як regenerate. Visuals — за `{ sceneId }` відкочує один кадр з файлового знімка `still-{sceneId}-{versionId}.jpg` (mp4 скидається). Image / Post показує всі takes; `GET /projects/:id/image/:sceneId/versions/:versionId` віддає знімок.
 
@@ -639,6 +639,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | GET | `/projects` | так | список + `fullVideoCost` + `fullImageCost` |
 | POST | `/projects` | так | `{ type, prompt, imageIntent? }` → 201 `{ project }`; невалідний `imageIntent` → **400** |
 | GET | `/projects/:id` | так | проєкт + таблиця costs |
+| DELETE | `/projects/:id` | так | стерти проєкт, версії й файли з бібліотеки; кредити не повертаються |
 | PATCH | `/projects/:id` | так | `{ prompt }` — змінити бриф; credits 0; щоб застосувати — regenerate idea |
 | PATCH | `/projects/:id/invite` | так | `{ invite }` — поля постера; 0 cr; перескласти JPG якщо фон є |
 | POST | `/projects/:id/steps/:step` | так | `{ regenerate?, sceneId?, idempotencyKey?, feedbackReason?, feedbackNote? }` + `Idempotency-Key`; 20 req/хв |

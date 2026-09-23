@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { api, type BrandKitRow, type Project } from "../lib/api";
 import BrandToggle from "../components/BrandToggle";
-import { detectLocale, formatBrandHint, translate, useLocale } from "../i18n/locale";
+import { detectLocale, translate, useLocale } from "../i18n/locale";
 
 const FORMAT_IDS = ["video", "instagram_reel", "tiktok", "image_post", "advertisement", "social_post"] as const;
 const READY = new Set(["instagram_reel", "tiktok", "image_post"]);
@@ -24,7 +24,6 @@ export default function Home() {
   const [prompt, setPrompt] = useState(() => translate(detectLocale(), "examples.instagram_reel"));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [kitHint, setKitHint] = useState("");
   const [kit, setKit] = useState<BrandKitRow | null>(null);
   const [useBrand, setUseBrand] = useState(true);
   const [recentBriefs, setRecentBriefs] = useState<string[]>([]);
@@ -74,12 +73,9 @@ export default function Home() {
       .brand()
       .then((d) => {
         setKit(d.brandKit);
-        const progress = d.brandKit?.completeness;
-        setKitHint(progress && progress.percent < 70 ? formatBrandHint(t, progress) : "");
       })
       .catch(() => {
         setKit(null);
-        setKitHint("");
       });
   }, [t, locale]);
 
@@ -105,11 +101,6 @@ export default function Home() {
       <p className="hint">{t("home.kicker")}</p>
       <h1 style={{ fontSize: "clamp(40px, 6vw, 64px)" }}>{t("home.title")}</h1>
       <p className="lede">{t("home.lede")}</p>
-      {kitHint && useBrand && (
-        <p className="hint">
-          {kitHint}. <Link to="/app/brand">{t("home.openKit")}</Link>
-        </p>
-      )}
 
       <div className="format-grid">
         {FORMAT_IDS.map((id) => {

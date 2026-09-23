@@ -35,12 +35,15 @@ export default function AppLayout() {
           <NavLink to="/app/billing">{t("nav.credits")}</NavLink>
         </nav>
         <div className="side-foot">
+          <NavLink to="/app/billing" className="credits-pill">
+            {t("nav.creditsLabel")}
+            <b>{me?.credits ?? "—"}</b>
+          </NavLink>
           <LanguageSwitch compact />
-          <div className="credits-pill">
-            {t("nav.creditsLabel")} <b>{me?.credits ?? "—"}</b>
+          <div className="side-account">
+            <b>{me?.user.name}</b>
+            <span>{t("nav.plan", { name: me?.subscription?.plan_name || "Free" })}</span>
           </div>
-          <div>{me?.user.name}</div>
-          <div>{t("nav.plan", { name: me?.subscription?.plan_name || "Free" })}</div>
           <button
             type="button"
             className="ghost-link"

@@ -138,6 +138,7 @@ export const api = {
   project: (id: string) => request<{ project: Project; costs: Record<string, number>; fullVideoCost: number }>(`/projects/${id}`),
   createProject: (type: string, prompt: string, imageIntent?: string, useBrand = true) =>
     request<{ project: Project }>("/projects", { method: "POST", body: JSON.stringify({ type, prompt, imageIntent, useBrand }) }),
+  deleteProject: (id: string) => request<{ ok: boolean }>(`/projects/${id}`, { method: "DELETE" }),
   updatePrompt: (id: string, prompt: string) =>
     request<{ project: Project }>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify({ prompt }) }),
   updateUseBrand: (id: string, useBrand: boolean) =>
