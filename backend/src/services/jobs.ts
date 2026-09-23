@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { db } from "../db/index.js";
 import { hasStillFiles, hasVideoFile, projectMediaPath, removeStillFiles, removeVoiceFile, removeVideoFile } from "./media.js";
+import { refreshDueLearnedSummaries } from "./learning.js";
+import { expirePreviewTokens } from "./share.js";
 
 function ageDays(iso: string) {
   const t = Date.parse(iso);
@@ -17,6 +19,12 @@ function removeIntermediates(projectId: string) {
     if (name === "reel.mp4" || name.startsWith("still-")) continue;
     fs.rmSync(path.join(dir, name), { force: true });
   }
+}
+
+export function runMaintenance() {
+  cleanupExpiredMedia();
+  expirePreviewTokens();
+  refreshDueLearnedSummaries();
 }
 
 export function cleanupExpiredMedia() {

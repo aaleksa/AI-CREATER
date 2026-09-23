@@ -11,6 +11,7 @@ export default defineConfig({
       "/brand": "http://localhost:4000",
       "/billing": "http://localhost:4000",
       "/health": "http://localhost:4000",
+      "/share": "http://localhost:4000",
     },
   },
 });

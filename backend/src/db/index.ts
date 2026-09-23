@@ -26,6 +26,11 @@ addColumn("ALTER TABLE ai_generations ADD COLUMN idempotency_key TEXT");
 addColumn("ALTER TABLE ai_generations ADD COLUMN started_at TEXT");
 addColumn("ALTER TABLE ai_generations ADD COLUMN finished_at TEXT");
 addColumn("ALTER TABLE ai_generations ADD COLUMN duration_ms INTEGER");
+addColumn("ALTER TABLE project_step_versions ADD COLUMN scene_id INTEGER");
+addColumn("ALTER TABLE project_step_versions ADD COLUMN rejection_reason TEXT");
+addColumn("ALTER TABLE brand_kits ADD COLUMN learned_summary_json TEXT");
+addColumn("ALTER TABLE projects ADD COLUMN preview_token TEXT");
+addColumn("ALTER TABLE projects ADD COLUMN preview_expires_at TEXT");
 
 try {
   sqlite.exec(`
@@ -48,6 +53,17 @@ CREATE TABLE IF NOT EXISTS project_feedback (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (project_id) REFERENCES projects(id),
   FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS step_feedback (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  step TEXT NOT NULL,
+  scene_id INTEGER,
+  version_id TEXT,
+  reason TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (project_id) REFERENCES projects(id)
 );
 `);
   sqlite.exec(`

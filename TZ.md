@@ -2,7 +2,7 @@
 
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
-**Версія документа:** 1.9  
+**Версія документа:** 1.11  
 **Мова інтерфейсу першої версії:** English  
 **Валюта:** GBP (£)
 
@@ -435,6 +435,7 @@ Text AI  Image AI   TTS
 | website | text | |
 | instagram | text | |
 | vertical | text nullable | `salon` / `cafe` / `fitness` — ніша для каркасів |
+| learned_summary_json | text nullable | агрегат §6.9.1; порожньо, поки < 3 ready |
 | updated_at | datetime | |
 
 Далі (не блокер першого mp4, але рів): таблиця/поля історії прийнятих роликів для «навчання» Kit.
@@ -457,6 +458,8 @@ Text AI  Image AI   TTS
 | captions_json | text | |
 | output_url | text | **шлях/URL mp4**; прев’ю без файлу ≠ ready для прийняття |
 | credits_used | integer | |
+| preview_token | text nullable | публічний прев’ю, не постійний Download |
+| preview_expires_at | datetime nullable | TTL **7 днів** від останнього Share |
 | created_at, updated_at | datetime | |
 
 Поля `idea_json`…`output_url` — **поточна** версія. Історія для навчання Kit — `project_step_versions` (§6.9).
@@ -511,25 +514,101 @@ JSON-контракти:
 
 MVP-вирівнювання: **не word-level**. Cues будуються зі сцен скрипта (частки 30 с або фактична тривалість аудіо, пропорційно). Спалити в mp4 через ffmpeg `subtitles=`. Це свідомий компроміс: OpenAI `tts-1` не дає таймкодів слів. Точне «слово = кадр» — post-MVP (ElevenLabs / whisper alignment), не блокер першого файлу і не блокер бети, якщо текст читається.
 
-### 6.9 `project_step_versions` (закладаємо зараз, навчання Kit — одразу після першого mp4)
+### 6.9 `project_step_versions` — з причиною відхилення
 
-Кожен успішний крок пише знімок. Попередні `accepted = 0` після regenerate того ж кроку. Це сировина для Brand Kit, який навчається: які хуки лишили, які кадри відхилили.
+Кожен успішний крок пише знімок. Попередні `accepted = 0` після regenerate того ж кроку. Без **чому** версію відхилили навчання Kit неможливе.
 
-| Поле | Тип |
-| --- | --- |
-| id | PK |
-| project_id | FK |
-| step | idea / script / visuals / voice / captions / render |
-| payload_json | знімок |
-| accepted | 1 = поточна версія кроку |
-| generation_id | FK nullable |
-| created_at | datetime |
+| Поле | Тип | Опис |
+| --- | --- | --- |
+| id | PK | |
+| project_id | FK | |
+| step | text | idea / script / visuals / voice / captions / render |
+| scene_id | integer nullable | лише для visuals, коли regenerate одного кадру |
+| payload_json | text | знімок |
+| accepted | integer | 1 = поточна версія |
+| rejection_reason | text nullable | див. §6.11; коли `accepted` переходить у 0 через `regenerate` |
+| generation_id | FK nullable | |
+| created_at | datetime | |
 
-Повноцінне «навчання» з історії — **перша фіча після стабільного mp4**, раніше YouTube / шедулера / нових форматів.
+### 6.9.1 Brand Kit Learning — правило-базований v1 (не ML)
+
+Не тренувати модель. Агрегувати accepted vs rejected + причину в `brand_kits.learned_summary_json` і підмішувати в system prompt як текстові підказки.
+
+**Тригер.** Після кожного **третього** `ready`/`expired` проєкту цього Brand Kit — фонова джоба. Не рахувати живцем на кожен запит. Поки < 3 ready — не рахувати (шум). `other` + note **не** парсити в v1; зберігати для ручного перегляду.
+
+| Крок | Сигнал | Приклад у `learned_summary_json` |
+| --- | --- | --- |
+| idea | Найчастіша причина відхилення (≥50%) | `"avoid": ["too_salesy"]` |
+| script | Медіанна довжина voiceover у accepted vs rejected | `"preferredPace": "concise"` |
+| visuals | Частотні слова `prompt` accepted vs rejected | `"visualNotes": "warm natural light, avoid stock-photo look"` |
+| voice | `voicePreset` ≥2 ready поспіль без reject | `"preferredVoice": "warm_british_female"` |
+
+```json
+{
+  "generatedAt": "2026-09-23T12:00:00Z",
+  "basedOnProjects": 4,
+  "avoid": ["too_salesy"],
+  "preferredPace": "concise",
+  "preferredVoice": "warm_british_female",
+  "visualNotes": "warm natural light, avoid stock-photo look"
+}
+```
+
+У промпті після статичних полів Kit: блок *Patterns that worked for this business before* — **підказка**, не жорстке правило. У Brand Kit UI: *Auteur has learned from N of your Reels* (`basedOnProjects`).
 
 ### 6.10 `project_feedback`
 
 Після готового mp4: *Would you publish this Reel?* `yes` / `edits` / `no` + причини. Не блокер Download. Метрика **publishability** важливіша за «технічно коректний mp4».
+
+### 6.11 Feedback на рівні кроку
+
+Коли користувач тисне *Not this {step}? Try again*, фіксуємо **чому** — сировина для §6.9.1 і продуктових рішень.
+
+#### 6.11.1 `step_feedback`
+
+| Поле | Тип | Опис |
+| --- | --- | --- |
+| id | PK | |
+| project_id | FK | |
+| step | text | |
+| scene_id | integer nullable | |
+| version_id | FK → project_step_versions | яку версію відхилили |
+| reason | text | код причини |
+| note | text nullable | вільний текст; обов’язковий лише для `other` |
+| created_at | datetime | |
+
+#### 6.11.2 Причини (dropdown)
+
+| Крок | Причини |
+| --- | --- |
+| idea | `wrong_angle` / `too_salesy` / `not_our_audience` / `boring_hook` / `other` |
+| script | `too_long_short` / `wrong_tone` / `weak_cta` / `not_our_voice` / `other` |
+| visuals | `wrong_style` / `wrong_colors` / `doesnt_match_brand` / `low_quality` / `other` |
+| voice | `wrong_pace` / `wrong_tone` / `sounds_robotic` / `wrong_gender_accent` / `other` |
+| captions | `bad_timing` / `hard_to_read` / `other` |
+
+`other` вимагає `note`. UI з’являється **опційно** після Regenerate, не блокує дію (Skip).
+
+#### 6.11.3 API
+
+Те саме `POST /projects/:id/steps/:step`:
+
+```json
+{ "regenerate": true, "sceneId": 3, "feedbackReason": "wrong_colors", "feedbackNote": "хочемо тепліші тони" }
+```
+
+`feedbackReason` необов’язковий. Якщо є — перед регенерацією рядок у `step_feedback` і `rejection_reason` на попередній версії. Окремий ендпоінт не потрібен.
+
+### 6.12 Публічний preview-лінк (не шедулер, не соцмережа)
+
+Власник хоче показати Reel партнеру / бариста / дружині **до** викладу. Це не публікація.
+
+- `POST /projects/:id/share` (JWT) — токен + TTL 7 днів; повторний Share оновлює expiry.
+- Сторінка `/preview/:token` (без логіну). Медіа: `GET /share/:token/file` і `/share/:token/image/:sceneId`.
+- `GET /projects/:id/preview?token=` — той самий JSON без auth.
+- Не постійний Download URL і не S3. Після TTL — 404. Кнопка в студії: *Share a preview*.
+
+Порівняння версій Idea/Script: `GET` проєкту віддає дві останні в `versions`; `POST /projects/:id/versions/{idea|script}/:versionId/restore` ставить обрану `accepted=1`, **0 credits**, каскад як regenerate.
 
 ---
 
@@ -550,8 +629,14 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | POST | `/projects` | так | `{ type, prompt }` → 201 `{ project }` |
 | GET | `/projects/:id` | так | проєкт + таблиця costs |
 | PATCH | `/projects/:id` | так | `{ prompt }` — змінити бриф; credits 0; щоб застосувати — regenerate idea |
-| POST | `/projects/:id/steps/:step` | так | `{ regenerate?, sceneId?, idempotencyKey? }` + заголовок `Idempotency-Key`; 20 req/хв |
+| POST | `/projects/:id/steps/:step` | так | `{ regenerate?, sceneId?, idempotencyKey?, feedbackReason?, feedbackNote? }` + `Idempotency-Key`; 20 req/хв |
 | POST | `/projects/:id/feedback` | так | `{ publishable: yes\|edits\|no, reasons[] }` після mp4 |
+| POST | `/projects/:id/share` | так | preview-лінк, TTL 7д |
+| GET | `/projects/:id/preview` | ні | `?token=` — JSON прев’ю |
+| GET | `/share/:token` | ні | JSON прев’ю |
+| GET | `/share/:token/file` | ні | mp4 прев’ю |
+| GET | `/share/:token/image/:sceneId` | ні | JPG прев’ю |
+| POST | `/projects/:id/versions/:step/:versionId/restore` | так | idea/script, 0 credits |
 | DELETE | `/auth/account` | так | спочатку Stripe `subscriptions.cancel`, потім дані |
 | GET | `/projects/:id/file` | так | mp4 після Create |
 | GET | `/projects/:id/image/:sceneId` | так | JPG still після Pictures |
@@ -785,29 +870,25 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 
 ## 12. Дорожня карта
 
-Порядок **не** «спочатку все, дата з’явиться потім». Зафіксований стек (§1.4) уже в коді: OpenAI TTS + ffmpeg. Далі — етапи доступу, не вибір рендерера.
+Документ дисциплінує себе: **нові формати чекають retention-гейт n≥40**. Нижче — що вже в скоупі бети vs що за гейтом.
 
-1. **Внутрішній файл** — команда проходить 6 кроків, є mp4, credits, Brand Kit, regenerate.
-2. **Закрита бета** — 5–10 інвайтів (§1.5). Зібрати 20–50 роликів собівартості + якісний фідбек. Публічний лендінг і ads вимкнені.
-3. **Чекпоінт собівартості** — перерахунок або свідоме залишення FROZEN після реальних інвойсів TTS+рендеру.
-4. **Privacy / content policy (§10.1)** — DALL·E-refusal UX, disclaimer Brand Kit, GDPR-текст, **self-service delete**. **Обов’язково перед публічним лендінгом.**
-5. **Публічний лендінг** — copy «готовий Reel» дозволений.
-6. **Платний CAC-тест** — гіпотеза £25–40 / перший mp4 (§9.5).
-7. **Retention-гейт** — §11.11 на **n≥40**. Лише тоді advertisement / generic video / captions-only. `image_post` уже відкритий (виняток, §2.3).
+**Уже зараз (без нового формату; підсилює retention і publishability):**
 
-Після пункту 1, паралельно з бетою (не блокер файлу): диференційований TTL (§5.3); ліміт 2 ffmpeg (§5.4); Stripe webhook **з idempotency event id**; **навчання Brand Kit з `project_step_versions`**; лог `queueWaitMs`.
+1. Brand Kit learning (§6.9.1) — **є**.
+2. Feedback на рівні кроку (§6.11) — **є**.
+3. Публічний preview-лінк (§6.12) — **є** (показати партнеру, не викласти).
+4. Порівняння двох останніх Idea/Script і restore без credits — **є**.
 
-**Перша фіча після стабільного mp4 (раніше нових форматів):** Brand Kit, який навчається з accepted/rejected кроків.
+**Етапи доступу (як було):** закрита бета 5–10 → чекпоінт собівартості → privacy/delete → публічний лендінг → CAC-тест → гейт §11.11.
 
-**Далі, тільки якщо є §11.11 на n≥40:**
+**Після §11.11 на n≥40, за цінністю (не хронологією старого списку):**
 
-- advertisement, captions-only post, generic Video;
-- S3 + постійний Download + вища якість;
-- word-level captions (ElevenLabs), якщо сцена-рівень ріже якість;
-- upload лого;
-- YouTube / презентації;
-- шедулер — лише за запитом існуючих користувачів;
-- агентство / соло-креатор — окремі персони, не розмивати v1.
+1. Image Post → карусель із текстом на слайдах (не лише 4 stills).
+2. Word-level captions (ElevenLabs alignment) — раніше YouTube, бо ріже publishability.
+3. Advertisement / generic Video.
+4. S3, upload лого, YouTube / презентації.
+
+**Не в скоупі зараз:** шедулер публікації. Окрема дешева перевірка пізніше — **нагадування створити** наступний Reel (email/push), не шедулер викладу; атакує гіпотезу 4 Reels/міс (§9.5).
 
 ---
 
@@ -879,7 +960,7 @@ TTS, ffmpeg, TTL, регенерація, часткові Visuals, self-service
 
 **P1 — одразу після стабільного mp4, раніше нових форматів:**
 
-11. Використати `project_step_versions` для Brand learning (запис версій уже є).
+11. Brand learning з `project_step_versions` + `step_feedback` + `learned_summary_json` — **є** (§6.9.1, §6.11).
 12. Beta dashboard: queue wait, cost per ready Reel, publishability %.
 13. S3.
 14. Окрема черга рендеру, якщо §5.4 червона.

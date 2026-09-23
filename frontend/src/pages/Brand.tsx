@@ -17,6 +17,7 @@ export default function Brand() {
   const [form, setForm] = useState(empty);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [learnedFrom, setLearnedFrom] = useState(0);
 
   useEffect(() => {
     api.brand().then((d) => {
@@ -35,6 +36,7 @@ export default function Brand() {
         instagram: kit.instagram || "",
         vertical: kit.vertical || "",
       });
+      setLearnedFrom(kit.learned_summary?.basedOnProjects || 0);
     });
   }, []);
 
@@ -73,6 +75,11 @@ export default function Brand() {
         Set this once. Then write “Create a Reel promoting my coffee shop” —
         Auteur already knows the colours, type, tone, and whether you are a salon, café or gym.
       </p>
+      {learnedFrom >= 3 && (
+        <p className="ok" style={{ marginTop: 12 }}>
+          Auteur has learned from {learnedFrom} of your Reels.
+        </p>
+      )}
       <form className="panel" style={{ maxWidth: 640, marginTop: 28 }} onSubmit={onSubmit}>
         <div className="field">
           <label>Business name</label>

@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS brand_kits (
   website TEXT NOT NULL DEFAULT '',
   instagram TEXT NOT NULL DEFAULT '',
   vertical TEXT NOT NULL DEFAULT '',
+  learned_summary_json TEXT,
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
@@ -77,6 +78,8 @@ CREATE TABLE IF NOT EXISTS projects (
   audio_url TEXT NOT NULL DEFAULT '',
   output_url TEXT,
   credits_used INTEGER NOT NULL DEFAULT 0,
+  preview_token TEXT,
+  preview_expires_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (user_id) REFERENCES users(id)

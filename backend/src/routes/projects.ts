@@ -2,7 +2,8 @@ import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, runStep, saveFeedback, serializeProject } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, restoreStepVersion, runStep, saveFeedback, serializeProject } from "../services/pipeline.js";
+import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
 import { hasStillFile, hasVideoFile, hasVoiceFile, stillFile, videoFile, voiceFile } from "../services/media.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 
@@ -127,6 +128,31 @@ projectsRouter.patch("/:id", (req, res) => {
   res.json({ project: serializeProject(next) });
 });
 
+projectsRouter.post("/:id/share", (req, res) => {
+  try {
+    const link = createPreviewLink(req.user!.id, String(req.params.id));
+    res.json(link);
+  } catch (error) {
+    const err = error as Error & { status?: number };
+    res.status(err.status || 500).json({ error: err.message || "Could not create a preview link." });
+  }
+});
+
+projectsRouter.post("/:id/versions/:step/:versionId/restore", (req, res) => {
+  const step = String(req.params.step);
+  if (step !== "idea" && step !== "script") {
+    res.status(400).json({ error: "Only idea and script versions can be compared." });
+    return;
+  }
+  try {
+    const project = restoreStepVersion(req.user!.id, String(req.params.id), step, String(req.params.versionId));
+    res.json({ project });
+  } catch (error) {
+    const err = error as Error & { status?: number };
+    res.status(err.status || 500).json({ error: err.message || "Could not restore that version." });
+  }
+});
+
 projectsRouter.post("/:id/feedback", (req, res) => {
   try {
     const project = saveFeedback(
@@ -153,6 +179,8 @@ projectsRouter.post("/:id/steps/:step", rateLimit(20, 60_000), async (req, res) 
       regenerate: Boolean(req.body?.regenerate),
       sceneId: req.body?.sceneId != null ? Number(req.body.sceneId) : undefined,
       idempotencyKey: String(req.get("Idempotency-Key") || req.body?.idempotencyKey || ""),
+      feedbackReason: req.body?.feedbackReason,
+      feedbackNote: req.body?.feedbackNote,
     });
     res.json({ project });
   } catch (error) {

@@ -16,6 +16,42 @@ const IMAGE_STEPS = [
   { id: "visuals", label: "Pictures", cost: 32 },
 ] as const;
 
+const STEP_REASONS: Record<string, { id: string; label: string }[]> = {
+  idea: [
+    { id: "wrong_angle", label: "Wrong angle" },
+    { id: "too_salesy", label: "Too salesy" },
+    { id: "not_our_audience", label: "Not our audience" },
+    { id: "boring_hook", label: "Boring hook" },
+    { id: "other", label: "Something else" },
+  ],
+  script: [
+    { id: "too_long_short", label: "Too long or too short" },
+    { id: "wrong_tone", label: "Wrong tone" },
+    { id: "weak_cta", label: "Weak CTA" },
+    { id: "not_our_voice", label: "Not our voice" },
+    { id: "other", label: "Something else" },
+  ],
+  visuals: [
+    { id: "wrong_style", label: "Wrong style" },
+    { id: "wrong_colors", label: "Wrong colours" },
+    { id: "doesnt_match_brand", label: "Doesn’t match the brand" },
+    { id: "low_quality", label: "Low quality" },
+    { id: "other", label: "Something else" },
+  ],
+  voice: [
+    { id: "wrong_pace", label: "Wrong pace" },
+    { id: "wrong_tone", label: "Wrong tone" },
+    { id: "sounds_robotic", label: "Sounds robotic" },
+    { id: "wrong_gender_accent", label: "Wrong voice or accent" },
+    { id: "other", label: "Something else" },
+  ],
+  captions: [
+    { id: "bad_timing", label: "Bad timing" },
+    { id: "hard_to_read", label: "Hard to read" },
+    { id: "other", label: "Something else" },
+  ],
+};
+
 function doneThrough(project: Project, step: string) {
   const map: Record<string, unknown> = {
     idea: project.idea,
@@ -26,6 +62,48 @@ function doneThrough(project: Project, step: string) {
     render: project.hasVideo,
   };
   return Boolean(map[step]);
+}
+
+function VersionCompare({
+  step,
+  versions,
+  onRestore,
+  busy,
+}: {
+  step: "idea" | "script";
+  versions: { id: string; accepted: boolean; payload: { title?: string; concept?: string; hook?: string; cta?: string; scenes?: { id: number; voiceover: string }[] } | null }[];
+  onRestore: (step: "idea" | "script", id: string) => void;
+  busy: boolean;
+}) {
+  if (versions.length < 2) return null;
+  return (
+    <div style={{ marginTop: 16 }}>
+      <p className="hint">Compare the last two. Using an older one is free and clears what follows.</p>
+      <div className="compare-grid">
+        {versions.map((version) => (
+          <div key={version.id} className={`compare-card${version.accepted ? " on" : ""}`}>
+            <p className="hint">{version.accepted ? "Current" : "Previous"}</p>
+            {step === "idea" ? (
+              <>
+                <p><b>{version.payload?.title}</b></p>
+                <p className="hint">{version.payload?.hook || version.payload?.concept}</p>
+              </>
+            ) : (
+              <>
+                <p className="hint">{version.payload?.cta}</p>
+                <p className="hint">{version.payload?.scenes?.[0]?.voiceover}</p>
+              </>
+            )}
+            {!version.accepted && (
+              <button className="btn ghost" type="button" disabled={busy} onClick={() => onRestore(step, version.id)}>
+                Use this version
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function Studio() {
@@ -41,6 +119,10 @@ export default function Studio() {
   const [publishable, setPublishable] = useState("");
   const [reasons, setReasons] = useState<string[]>([]);
   const [imageSrcs, setImageSrcs] = useState<Record<number, string>>({});
+  const [pendingRegen, setPendingRegen] = useState<{ step: string; sceneId?: number } | null>(null);
+  const [regenReason, setRegenReason] = useState("");
+  const [regenNote, setRegenNote] = useState("");
+  const [shareCopied, setShareCopied] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -137,6 +219,25 @@ export default function Studio() {
   const placeholderCount = project?.visuals?.filter((v) => v.placeholder).length ?? 0;
   const caption = project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title;
 
+  async function execute(step: string, regenerate = false, sceneId?: number, feedback?: { reason?: string; note?: string }) {
+    if (!id) return;
+    setBusy(sceneId ? `visual-${sceneId}` : step);
+    setError("");
+    try {
+      const { project: nextProject } = await api.runStep(id, step, regenerate, sceneId, feedback);
+      setProject(nextProject);
+      setBrief(nextProject.prompt);
+      refreshMe();
+      setPendingRegen(null);
+      setRegenReason("");
+      setRegenNote("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Step failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function run(step: string, regenerate = false, sceneId?: number) {
     if (!id || !project) return;
     if (regenerate && !sceneId && step === "idea" && brief.trim() !== project.prompt) {
@@ -162,17 +263,54 @@ export default function Studio() {
       );
       if (!ok) return;
     }
-    setBusy(sceneId ? `visual-${sceneId}` : step);
+    if (regenerate && STEP_REASONS[step]) {
+      setPendingRegen({ step, sceneId });
+      setRegenReason("");
+      setRegenNote("");
+      return;
+    }
+    await execute(step, regenerate, sceneId);
+  }
+
+  async function goRegen(withReason: boolean) {
+    if (!pendingRegen) return;
+    if (withReason && regenReason === "other" && regenNote.trim().length < 2) {
+      setError("Say what was wrong — a few words is enough.");
+      return;
+    }
+    await execute(pendingRegen.step, true, pendingRegen.sceneId, withReason && regenReason ? { reason: regenReason, note: regenNote } : undefined);
+  }
+
+  async function restore(step: "idea" | "script", versionId: string) {
+    if (!id) return;
+    const ok = window.confirm(
+      step === "idea"
+        ? "Use this idea? It clears what follows. Free — you already paid for this version."
+        : "Use this script? It clears frames, voice and video. Free — you already paid for this version."
+    );
+    if (!ok) return;
+    setBusy(`restore-${step}`);
     setError("");
     try {
-      const { project: nextProject } = await api.runStep(id, step, regenerate, sceneId);
+      const { project: nextProject } = await api.restoreVersion(id, step, versionId);
       setProject(nextProject);
-      setBrief(nextProject.prompt);
-      refreshMe();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Step failed.");
+      setError(err instanceof Error ? err.message : "Could not restore that version.");
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function sharePreview() {
+    if (!id) return;
+    setError("");
+    try {
+      const { url } = await api.sharePreview(id);
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create a preview link.");
     }
   }
 
@@ -274,7 +412,7 @@ export default function Studio() {
                       )}
                       <button
                         className="btn ghost"
-                        disabled={Boolean(busy)}
+                        disabled={Boolean(busy) || Boolean(pendingRegen)}
                         onClick={() => run("visuals", true, s.id)}
                       >
                         {busy === `visual-${s.id}`
@@ -303,6 +441,7 @@ export default function Studio() {
               <p><b>{project.idea.title}</b></p>
               <p className="lede">{project.idea.concept}</p>
               <p className="hint">{project.idea.visualDirection}</p>
+              <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} />
             </>
           )}
           {project.idea && !project.script && !isImage && (
@@ -310,9 +449,15 @@ export default function Studio() {
               <p><b>{project.idea.title}</b></p>
               <p className="lede">{project.idea.concept}</p>
               <p className="hint">{project.idea.visualDirection}</p>
+              <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} />
             </>
           )}
-          {!isImage && project.script && !project.visuals && <p className="lede">A 30-second voiceover, already broken into scenes.</p>}
+          {!isImage && project.script && !project.visuals && (
+            <>
+              <p className="lede">A 30-second voiceover, already broken into scenes.</p>
+              <VersionCompare step="script" versions={project.versions?.script || []} onRestore={restore} busy={Boolean(busy)} />
+            </>
+          )}
           {!isImage && project.visuals && !project.audioUrl && (
             <p className="lede">
               {placeholderCount
@@ -333,6 +478,9 @@ export default function Studio() {
               <p className="ok">Your pictures are ready. {project.creditsUsed} credits used.</p>
               <p className="hint">Download the stills now. We keep them for 90 days. Recreating after that uses credits again.</p>
               <div className="row" style={{ marginTop: 12 }}>
+                <button className="btn ghost" type="button" onClick={sharePreview}>
+                  {shareCopied ? "Preview link copied" : "Share a preview"}
+                </button>
                 {project.visuals?.map((visual, i) => {
                   const src = imageSrcs[visual.sceneId];
                   if (!src || visual.placeholder) return null;
@@ -399,11 +547,16 @@ export default function Studio() {
                 Download this Reel now. We keep the mp4 for 90 days. Voice and frames may be cleared after 7 days.
                 Recreating after that uses credits again.
               </p>
-              {videoSrc && (
-                <a className="btn" style={{ marginTop: 18 }} href={videoSrc} download="reel.mp4">
-                  Download mp4
-                </a>
-              )}
+              <div className="row" style={{ marginTop: 18 }}>
+                {videoSrc && (
+                  <a className="btn" href={videoSrc} download="reel.mp4">
+                    Download mp4
+                  </a>
+                )}
+                <button className="btn ghost" type="button" onClick={sharePreview}>
+                  {shareCopied ? "Preview link copied" : "Share a preview"}
+                </button>
+              </div>
               {project.feedback ? (
                 <p className="ok" style={{ marginTop: 16 }}>Thanks — that helps the next Reel.</p>
               ) : (
@@ -455,7 +608,7 @@ export default function Studio() {
           )}
 
           {next && (
-            <button className="btn accent" style={{ marginTop: 18 }} disabled={Boolean(busy)} onClick={() => run(next.id)}>
+            <button className="btn accent" style={{ marginTop: 18 }} disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => run(next.id)}>
               {busy && busy === next.id
                 ? makingLabel
                 : extraPrice(next.id).extra
@@ -463,11 +616,50 @@ export default function Studio() {
                   : `Make ${next.label.toLowerCase()} · ${extraPrice(next.id).credits} credits`}
             </button>
           )}
+          {pendingRegen && STEP_REASONS[pendingRegen.step] && (
+            <div style={{ marginTop: 16 }}>
+              <p className="lede">Why didn’t this work? Optional — skip if you’d rather just try again.</p>
+              <div className="field" style={{ marginTop: 8 }}>
+                <select value={regenReason} onChange={(e) => setRegenReason(e.target.value)}>
+                  <option value="">Choose a reason</option>
+                  {STEP_REASONS[pendingRegen.step].map((reason) => (
+                    <option key={reason.id} value={reason.id}>
+                      {reason.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {regenReason === "other" && (
+                <div className="field">
+                  <textarea
+                    value={regenNote}
+                    onChange={(e) => setRegenNote(e.target.value)}
+                    maxLength={500}
+                    rows={2}
+                    placeholder="A few words is enough"
+                  />
+                </div>
+              )}
+              <div className="row" style={{ marginTop: 8 }}>
+                <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => goRegen(false)}>
+                  Skip
+                </button>
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={Boolean(busy) || (regenReason === "other" && regenNote.trim().length < 2)}
+                  onClick={() => goRegen(Boolean(regenReason))}
+                >
+                  Try again
+                </button>
+              </div>
+            </div>
+          )}
           {lastDone && (
             <button
               className="btn ghost"
               style={{ marginTop: 10 }}
-              disabled={Boolean(busy)}
+              disabled={Boolean(busy) || Boolean(pendingRegen)}
               onClick={() => run(lastDone.id, true)}
             >
               {busy === lastDone.id
@@ -488,7 +680,7 @@ export default function Studio() {
                   key={`regen-${s.id}`}
                   className="btn ghost"
                   style={{ marginTop: 8, marginRight: 8 }}
-                  disabled={Boolean(busy)}
+                  disabled={Boolean(busy) || Boolean(pendingRegen)}
                   onClick={() => run(s.id, true)}
                 >
                   {busy === s.id

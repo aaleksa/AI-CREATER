@@ -1,6 +1,15 @@
 import OpenAI from "openai";
 import { config } from "../config.js";
 
+export type LearnedSummary = {
+  generatedAt: string;
+  basedOnProjects: number;
+  avoid?: string[];
+  preferredPace?: string;
+  preferredVoice?: string;
+  visualNotes?: string;
+};
+
 export type BrandKit = {
   business_name: string;
   logo_url: string;
@@ -11,6 +20,7 @@ export type BrandKit = {
   website: string;
   instagram: string;
   vertical?: string;
+  learned_summary_json?: string | null;
 };
 
 export type Idea = {
@@ -55,9 +65,19 @@ export type CaptionCue = {
   text: string;
 };
 
+function parseLearned(value?: string | null): LearnedSummary | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as LearnedSummary;
+  } catch {
+    return null;
+  }
+}
+
 function brandContext(brand?: BrandKit | null) {
   if (!brand?.business_name) return "No brand kit yet. Keep the look cinematic and premium.";
-  return [
+  const learned = parseLearned(brand.learned_summary_json);
+  const lines = [
     `Brand: ${brand.business_name}`,
     brand.tone_of_voice && `Tone of voice: ${brand.tone_of_voice}`,
     brand.primary_color && `Primary colour: ${brand.primary_color}`,
@@ -65,9 +85,22 @@ function brandContext(brand?: BrandKit | null) {
     brand.instagram && `Instagram: ${brand.instagram}`,
     brand.website && `Website: ${brand.website}`,
     brand.vertical && `Business vertical: ${brand.vertical}. Use the pacing and details a ${brand.vertical} would actually post.`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  ].filter(Boolean) as string[];
+  if (learned && learned.basedOnProjects >= 3) {
+    const avoidCopy: Record<string, string> = {
+      too_salesy: "overly salesy hooks",
+      wrong_angle: "the same rejected angle",
+      not_our_audience: "hooks that miss this audience",
+      boring_hook: "flat or boring hooks",
+    };
+    lines.push("Patterns that worked for this business before:");
+    if (learned.avoid?.length) lines.push(`- Avoid: ${learned.avoid.map((code) => avoidCopy[code] || code).join("; ")}`);
+    if (learned.preferredPace === "concise") lines.push("- Keep voiceover concise");
+    if (learned.preferredVoice) lines.push(`- Preferred voice: ${learned.preferredVoice.replaceAll("_", " ")}`);
+    if (learned.visualNotes) lines.push(`- Visual style: ${learned.visualNotes}`);
+    lines.push("These are hints, not hard rules. Follow the user's request if it conflicts.");
+  }
+  return lines.join("\n");
 }
 
 function client() {

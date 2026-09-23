@@ -8,12 +8,23 @@ function hex(value: unknown, fallback: string) {
   return /^#[0-9A-Fa-f]{6}$/.test(text) ? text : fallback;
 }
 
+function serializeBrand(row: Record<string, unknown> | undefined) {
+  if (!row) return null;
+  let learned_summary = null;
+  try {
+    learned_summary = row.learned_summary_json ? JSON.parse(String(row.learned_summary_json)) : null;
+  } catch {
+    learned_summary = null;
+  }
+  return { ...row, learned_summary };
+}
+
 export const brandRouter = Router();
 brandRouter.use(requireAuth);
 
 brandRouter.get("/", (req, res) => {
-  const kit = db.prepare("SELECT * FROM brand_kits WHERE user_id = ?").get(req.user!.id);
-  res.json({ brandKit: kit ?? null });
+  const kit = db.prepare("SELECT * FROM brand_kits WHERE user_id = ?").get(req.user!.id) as Record<string, unknown> | undefined;
+  res.json({ brandKit: serializeBrand(kit) });
 });
 
 brandRouter.put("/", (req, res) => {
@@ -44,6 +55,6 @@ brandRouter.put("/", (req, res) => {
        VALUES (@id, @user_id, @business_name, @logo_url, @primary_color, @secondary_color, @font, @tone_of_voice, @website, @instagram, @vertical)`
     ).run({ id: uuid(), user_id: req.user!.id, ...fields });
   }
-  const kit = db.prepare("SELECT * FROM brand_kits WHERE user_id = ?").get(req.user!.id);
-  res.json({ brandKit: kit });
+  const kit = db.prepare("SELECT * FROM brand_kits WHERE user_id = ?").get(req.user!.id) as Record<string, unknown> | undefined;
+  res.json({ brandKit: serializeBrand(kit) });
 });

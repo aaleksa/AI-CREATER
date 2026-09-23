@@ -8,6 +8,7 @@ import Studio from "./pages/Studio";
 import Brand from "./pages/Brand";
 import Billing from "./pages/Billing";
 import Library from "./pages/Library";
+import Preview from "./pages/Preview";
 import { hasSession } from "./lib/api";
 
 function Private({ children }: { children: ReactNode }) {
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Auth mode="login" />} />
         <Route path="/signup" element={<Auth mode="signup" />} />
+        <Route path="/preview/:token" element={<Preview />} />
         <Route
           path="/app"
           element={

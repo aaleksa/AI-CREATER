@@ -15,6 +15,15 @@ export class ApiError extends Error {
   }
 }
 
+export type LearnedSummary = {
+  generatedAt: string;
+  basedOnProjects: number;
+  avoid?: string[];
+  preferredPace?: string;
+  preferredVoice?: string;
+  visualNotes?: string;
+};
+export type BrandKitRow = Record<string, string> & { learned_summary?: LearnedSummary | null };
 export type Idea = {
   title: string;
   hook: string;
@@ -51,8 +60,15 @@ export type Project = {
   extraAttemptMultiplier: number;
   runningStep: string | null;
   feedback: { publishable: string; reasons: string[] } | null;
+  versions: {
+    idea: StepVersion<Idea>[];
+    script: StepVersion<{ durationSec: number; cta: string; scenes: ScriptScene[] }>[];
+  };
+  previewUrl: string | null;
+  previewExpiresAt: string | null;
   createdAt: string;
 };
+export type StepVersion<T> = { id: string; accepted: boolean; createdAt: string; payload: T | null };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = localStorage.getItem(TOKEN);
@@ -86,12 +102,24 @@ export const api = {
     request<{ project: Project }>("/projects", { method: "POST", body: JSON.stringify({ type, prompt }) }),
   updatePrompt: (id: string, prompt: string) =>
     request<{ project: Project }>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify({ prompt }) }),
-  runStep: (id: string, step: string, regenerate = false, sceneId?: number) => {
+  runStep: (
+    id: string,
+    step: string,
+    regenerate = false,
+    sceneId?: number,
+    feedback?: { reason?: string; note?: string }
+  ) => {
     const idempotencyKey = crypto.randomUUID();
     return request<{ project: Project }>(`/projects/${id}/steps/${step}`, {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
-      body: JSON.stringify({ regenerate, sceneId, idempotencyKey }),
+      body: JSON.stringify({
+        regenerate,
+        sceneId,
+        idempotencyKey,
+        feedbackReason: feedback?.reason || undefined,
+        feedbackNote: feedback?.note || undefined,
+      }),
     });
   },
   saveFeedback: (id: string, publishable: string, reasons: string[]) =>
@@ -99,10 +127,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ publishable, reasons }),
     }),
+  sharePreview: (id: string) => request<{ url: string; expiresAt: string }>(`/projects/${id}/share`, { method: "POST" }),
+  restoreVersion: (id: string, step: "idea" | "script", versionId: string) =>
+    request<{ project: Project }>(`/projects/${id}/versions/${step}/${versionId}/restore`, { method: "POST" }),
   deleteAccount: () => request<{ ok: boolean }>("/auth/account", { method: "DELETE" }),
-  brand: () => request<{ brandKit: Record<string, string> | null }>("/brand"),
+  brand: () => request<{ brandKit: BrandKitRow | null }>("/brand"),
   saveBrand: (body: Record<string, string>) =>
-    request<{ brandKit: Record<string, string> }>("/brand", { method: "PUT", body: JSON.stringify(body) }),
+    request<{ brandKit: BrandKitRow }>("/brand", { method: "PUT", body: JSON.stringify(body) }),
   plans: () =>
     request<{
       plans: { id: string; name: string; price_gbp: number; monthly_credits: number; description: string }[];

@@ -16,6 +16,9 @@ import {
   type Visual,
 } from "./ai.js";
 import { hasVideoFile, hasVoiceFile, persistStills, removeVideoFile, removeVoiceFile, renderReel, synthesizeSpeech } from "./media.js";
+import { parseStepFeedback, recordStepRejection } from "./feedback.js";
+import { maybeRefreshLearnedSummary } from "./learning.js";
+import { previewState } from "./share.js";
 
 export const FORMAT_TYPES = ["video", "instagram_reel", "tiktok", "image_post", "advertisement", "social_post"] as const;
 export type FormatType = (typeof FORMAT_TYPES)[number];
@@ -101,12 +104,20 @@ function finishGeneration(
   );
 }
 
-function saveStepVersion(projectId: string, step: string, payload: unknown, generationId: string) {
-  db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = ?").run(projectId, step);
+function saveStepVersion(projectId: string, step: string, payload: unknown, generationId: string, sceneId?: number) {
+  if (sceneId) {
+    db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = ? AND scene_id = ?").run(
+      projectId,
+      step,
+      sceneId
+    );
+  } else {
+    db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = ?").run(projectId, step);
+  }
   db.prepare(
-    `INSERT INTO project_step_versions (id, project_id, step, payload_json, accepted, generation_id)
-     VALUES (?, ?, ?, ?, 1, ?)`
-  ).run(uuid(), projectId, step, JSON.stringify(payload), generationId);
+    `INSERT INTO project_step_versions (id, project_id, step, scene_id, payload_json, accepted, generation_id)
+     VALUES (?, ?, ?, ?, ?, 1, ?)`
+  ).run(uuid(), projectId, step, sceneId ?? null, JSON.stringify(payload), generationId);
 }
 
 function brandFor(userId: string): BrandKit | null {
@@ -160,6 +171,24 @@ function stepAttemptCounts(projectId: string) {
   return counts;
 }
 
+function lastVersions(projectId: string, step: string) {
+  const rows = db
+    .prepare(
+      `SELECT id, payload_json, accepted, created_at FROM project_step_versions
+       WHERE project_id = ? AND step = ? ORDER BY created_at DESC LIMIT 2`
+    )
+    .all(projectId, step) as { id: string; payload_json: string; accepted: number; created_at: string }[];
+  return rows
+    .slice()
+    .reverse()
+    .map((row) => ({
+      id: row.id,
+      accepted: Number(row.accepted) === 1,
+      createdAt: row.created_at,
+      payload: parse(row.payload_json),
+    }));
+}
+
 export function serializeProject(row: Record<string, unknown>) {
   const id = String(row.id);
   const running = db
@@ -194,9 +223,41 @@ export function serializeProject(row: Record<string, unknown>) {
     feedback: feedback
       ? { publishable: feedback.publishable, reasons: parse<string[]>(feedback.reasons_json) || [] }
       : null,
+    versions: {
+      idea: lastVersions(id, "idea"),
+      script: lastVersions(id, "script"),
+    },
+    ...previewState(row),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+export function restoreStepVersion(userId: string, projectId: string, step: "idea" | "script", versionId: string) {
+  const project = getProject(projectId, userId);
+  const version = db
+    .prepare("SELECT id, payload_json, accepted FROM project_step_versions WHERE id = ? AND project_id = ? AND step = ?")
+    .get(versionId, projectId, step) as { id: string; payload_json: string; accepted: number } | undefined;
+  if (!version) throw Object.assign(new Error("That version is gone."), { status: 404 });
+  if (Number(version.accepted) === 1) return serializeProject(project);
+  db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = ?").run(projectId, step);
+  db.prepare("UPDATE project_step_versions SET accepted = 1 WHERE id = ?").run(version.id);
+  const field = step === "idea" ? "idea_json" : "script_json";
+  const wipe = downstreamWipe(step);
+  const updates = {
+    [field]: version.payload_json,
+    ...wipe,
+    updated_at: new Date().toISOString(),
+  };
+  if (step === "idea" || step === "script") {
+    removeVoiceFile(projectId);
+    removeVideoFile(projectId);
+  }
+  const fields = Object.keys(updates)
+    .map((key) => `${key} = @${key}`)
+    .join(", ");
+  db.prepare(`UPDATE projects SET ${fields} WHERE id = @id`).run({ ...updates, id: projectId });
+  return serializeProject(getProject(projectId, userId));
 }
 
 export function saveFeedback(userId: string, projectId: string, publishable: string, reasons: string[]) {
@@ -223,7 +284,13 @@ export async function runStep(
   userId: string,
   projectId: string,
   step: keyof typeof CREDIT_COSTS,
-  opts: { regenerate?: boolean; sceneId?: number; idempotencyKey?: string } = {}
+  opts: {
+    regenerate?: boolean;
+    sceneId?: number;
+    idempotencyKey?: string;
+    feedbackReason?: unknown;
+    feedbackNote?: unknown;
+  } = {}
 ) {
   const project = getProject(projectId, userId);
   const brand = brandFor(userId);
@@ -246,6 +313,7 @@ export async function runStep(
     throw Object.assign(new Error("This is a still post — pictures only, no voice or video."), { status: 400 });
   }
   if (alreadyDone && !regenerate) return serializeProject(project);
+  const feedback = regenerate ? parseStepFeedback(step, opts.feedbackReason, opts.feedbackNote) : { reason: "", note: "" };
 
   const idempotencyKey = String(opts.idempotencyKey || "").trim().slice(0, 80);
   if (idempotencyKey) {
@@ -325,6 +393,15 @@ export async function runStep(
       status: "failed",
     });
     throw error;
+  }
+  if (alreadyDone && regenerate) {
+    recordStepRejection({
+      projectId,
+      step,
+      sceneId,
+      reason: feedback.reason,
+      note: feedback.note,
+    });
   }
   db.prepare("UPDATE projects SET status = 'generating', updated_at = datetime('now') WHERE id = ?").run(projectId);
   let providerTouched = false;
@@ -492,7 +569,14 @@ export async function runStep(
               : step === "captions"
                 ? updates.captions_json
                 : updates.output_url;
-    saveStepVersion(projectId, step, versionPayload ? parse(String(versionPayload)) || versionPayload : {}, generationId);
+    saveStepVersion(
+      projectId,
+      step,
+      versionPayload ? parse(String(versionPayload)) || versionPayload : {},
+      generationId,
+      sceneId
+    );
+    if (String(updates.status || "") === "ready") maybeRefreshLearnedSummary(userId);
 
     return serializeProject(getProject(projectId, userId));
   } catch (error) {

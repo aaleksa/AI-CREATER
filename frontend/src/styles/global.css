@@ -267,6 +267,22 @@ button { cursor: pointer; }
 .price { font-size: 28px; font-family: var(--serif); }
 .err { color: var(--danger); font-size: 14px; }
 .ok { color: var(--ok); }
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+.compare-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: #12100e;
+}
+.compare-card.on { border-color: var(--accent-2); }
+@media (max-width: 700px) {
+  .compare-grid { grid-template-columns: 1fr; }
+}
 
 .landing {
   position: relative;
