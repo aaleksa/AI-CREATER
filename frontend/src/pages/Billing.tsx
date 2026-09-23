@@ -19,6 +19,7 @@ export default function Billing() {
   const { t, te, locale } = useLocale();
   const [plans, setPlans] = useState<{ id: string; name: string; price_gbp: number; monthly_credits: number; description: string }[]>([]);
   const [packs, setPacks] = useState<{ id: string; credits: number; price_gbp: number; label: string }[]>([]);
+  const [checkoutEnabled, setCheckoutEnabled] = useState(false);
   const [credits, setCredits] = useState<{
     balance: { credits: number } | null;
     transactions: { id: string; amount: number; description: string; created_at: string }[];
@@ -36,6 +37,7 @@ export default function Billing() {
     const [p, c] = await Promise.all([api.plans(), api.credits()]);
     setPlans(p.plans);
     setPacks(p.packs);
+    setCheckoutEnabled(Boolean(p.checkoutEnabled));
     setCredits(c);
   }
 
@@ -114,7 +116,7 @@ export default function Billing() {
             <div className="price">{plan.price_gbp === 0 ? "£0" : gbp(plan.price_gbp, locale)}</div>
             <p className="hint">{t("billing.perMonth", { n: plan.monthly_credits.toLocaleString(locale === "uk" ? "uk-UA" : "en-GB") })}</p>
             <p>{PLAN_DESC[plan.id] ? t(PLAN_DESC[plan.id]) : plan.description}</p>
-            {plan.id !== "free" && (
+            {checkoutEnabled && plan.id !== "free" && (
               <button className="btn" style={{ marginTop: 16 }} onClick={() => buy({ planId: plan.id })}>
                 {t("billing.choose", { name: plan.name })}
               </button>
@@ -122,6 +124,7 @@ export default function Billing() {
           </div>
         ))}
       </div>
+      {!checkoutEnabled && <p className="hint" style={{ marginTop: 16 }}>{t("billing.checkoutClosed")}</p>}
 
       <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>{t("billing.buyTitle")}</h2>
       <p className="hint">{t("billing.buyHint")}</p>
@@ -129,9 +132,13 @@ export default function Billing() {
         {packs.map((pack) => (
           <div className="item" key={pack.id}>
             <span>{t("billing.pack", { n: pack.credits.toLocaleString(locale === "uk" ? "uk-UA" : "en-GB") })}</span>
-            <button className="btn ghost" onClick={() => buy({ packId: pack.id })}>
-              {gbp(pack.price_gbp, locale)}
-            </button>
+            {checkoutEnabled ? (
+              <button className="btn ghost" onClick={() => buy({ packId: pack.id })}>
+                {gbp(pack.price_gbp, locale)}
+              </button>
+            ) : (
+              <span className="hint">{gbp(pack.price_gbp, locale)}</span>
+            )}
           </div>
         ))}
       </div>

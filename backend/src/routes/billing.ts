@@ -3,15 +3,20 @@ import Stripe from "stripe";
 import { db } from "../db/index.js";
 import { config, CREDIT_PACKS, CREDIT_COSTS, FULL_VIDEO_COST } from "../config.js";
 import { requireAuth } from "../middleware/auth.js";
-import { grantCredits } from "../services/credits.js";
 import { unitEconomics } from "../services/economics.js";
-import { v4 as uuid } from "uuid";
 
 export const billingRouter = Router();
 
 billingRouter.get("/plans", (_req, res) => {
   const plans = db.prepare("SELECT * FROM plans ORDER BY price_gbp ASC").all();
-  res.json({ plans, packs: CREDIT_PACKS, frozenPrices: true, costs: CREDIT_COSTS, fullVideoCost: FULL_VIDEO_COST });
+  res.json({
+    plans,
+    packs: CREDIT_PACKS,
+    frozenPrices: true,
+    checkoutEnabled: Boolean(config.stripeSecret),
+    costs: CREDIT_COSTS,
+    fullVideoCost: FULL_VIDEO_COST,
+  });
 });
 
 billingRouter.use(requireAuth);
@@ -42,19 +47,9 @@ billingRouter.post("/checkout", async (req, res) => {
   }
 
   if (!config.stripeSecret) {
-    if (plan && plan.id !== "free") {
-      db.prepare("UPDATE subscriptions SET status = 'canceled' WHERE user_id = ? AND status = 'active'").run(req.user!.id);
-      db.prepare("INSERT INTO subscriptions (id, user_id, plan_id, status) VALUES (?, ?, ?, 'active')").run(
-        uuid(),
-        req.user!.id,
-        plan.id
-      );
-      grantCredits(req.user!.id, plan.monthly_credits, "grant", `${plan.name} plan credits (studio mode)`);
-    }
-    if (pack) {
-      grantCredits(req.user!.id, pack.credits, "purchase", `Bought ${pack.label} (studio mode)`);
-    }
-    res.json({ mode: "studio", url: `${config.appUrl}/billing?success=1` });
+    res.status(403).json({
+      error: "Checkout is closed for the closed beta. Stay on Free — we add credits by hand if you need them.",
+    });
     return;
   }
 

@@ -56,6 +56,8 @@ export const ERROR_UK: Record<string, string> = {
   "Unknown reason for this step.": "Невідома причина для цього кроку.",
   "Say what was wrong — a few words is enough.": "Напишіть, що не так — кількох слів досить.",
   "Choose a plan or a credit pack.": "Оберіть план або пакет кредитів.",
+  "Checkout is closed for the closed beta. Stay on Free — we add credits by hand if you need them.":
+    "Оплата закрита на беті. Лишайтесь на Free — якщо треба, кредити додамо вручну.",
   "We couldn’t generate these frames. Try a simpler description.":
     "Не вдалося згенерувати кадри. Спробуйте простіший опис.",
   "We couldn’t generate this frame. Try a simpler description.":

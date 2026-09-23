@@ -340,6 +340,7 @@ export const en = {
     imagePost: "Image / Post (photo, invitation, information, offer)",
     perMonth: "{n} credits / month",
     choose: "Choose {name}",
+    checkoutClosed: "Prices are frozen. Checkout opens after the closed beta — stay on Free. If you run out, tell us and we add credits.",
     buyTitle: "Buy credits",
     buyHint: "A pack is cheaper per Reel than a subscription. Subscribe if you publish every week; buy a pack if you only make a few.",
     pack: "{n} credits",

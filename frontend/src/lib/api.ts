@@ -204,6 +204,7 @@ export const api = {
       plans: { id: string; name: string; price_gbp: number; monthly_credits: number; description: string }[];
       packs: { id: string; credits: number; price_gbp: number; label: string }[];
       frozenPrices: boolean;
+      checkoutEnabled?: boolean;
       costs: Record<string, number>;
       fullVideoCost: number;
     }>("/billing/plans"),
