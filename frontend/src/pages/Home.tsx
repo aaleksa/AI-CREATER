@@ -20,13 +20,13 @@ const IMAGE_KINDS = [
   {
     id: "photo",
     label: "Just a photo",
-    hint: "Say the mood, the place, or who is in the picture.",
+    hint: "Say what should be in the picture — we’ll add a bit of life around it.",
     example: "A quiet morning table at my café — steam, warm light, one empty chair.",
   },
   {
     id: "invite",
     label: "Invitation",
-    hint: "Write the event as you would send it. We pick out title, date and place — the rest stays as you wrote it.",
+    hint: "Write the event as you would send it. We keep your words and make interesting pictures from them.",
     example: "Invite to Saturday 11am colour workshop at the salon. Friends welcome.",
   },
   {
@@ -162,10 +162,8 @@ export default function Home() {
         <div className="row">
           <span className="hint">
             {isImage
-              ? `${kind.hint} We make the pictures from what you wrote. ${
-                  imageIntent === "invite" ? "We set the type on the flyer. " : "No type burned into the photo. "
-                }37 credits · Free starts with 200`
-              : "A sentence can be enough. Add more when you need to — offer, place, who it’s for (up to 2,000 characters). A Reel is 150 credits · stills 37 · Free starts with 200"}
+              ? `${kind.hint} We send the whole brief to OpenAI and get one finished picture. 13 credits · Free starts with 200`
+              : "A sentence can be enough. Add more when you need to — offer, place, who it’s for (up to 2,000 characters). A Reel is 150 credits · image 13 · Free starts with 200"}
           </span>
           <button className="btn accent" onClick={start} disabled={busy}>
             {busy ? "Opening studio…" : `Continue with ${selected?.title}`}

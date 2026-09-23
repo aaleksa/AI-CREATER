@@ -259,6 +259,36 @@ export function guessPoster(prompt: string, kind = "invite"): InviteCard {
   return guessInvite(prompt);
 }
 
+function driftedFromBrief(value: string, prompt: string) {
+  const brief = stripDecor(prompt);
+  if (!value) return true;
+  if (/[А-Яа-яІіЇїЄєҐґ]/.test(brief) && /[A-Za-z]{4}/.test(value) && !/[А-Яа-яІіЇїЄєҐґ]/.test(value)) return true;
+  if (/[a-z][A-Z]|[а-яіїєґ][А-ЯІЇЄҐ]/.test(value.replace(/\s+/g, " "))) return true;
+  return false;
+}
+
+function pickFromBrief(primary: string, guessed: string, prompt: string) {
+  if (guessed && driftedFromBrief(primary, prompt)) return guessed;
+  return primary || guessed;
+}
+
+/** Idea may translate or glue words. Facts on the flyer stay as written in the brief. */
+export function preferBriefInvite(raw: unknown, prompt: string, kind = "invite"): InviteCard {
+  const guessed = guessPoster(prompt, kind);
+  const fromAi = parseInvite(raw);
+  return parseInvite({
+    name: pickFromBrief(fromAi.name, guessed.name, prompt),
+    date: guessed.date || fromAi.date,
+    time: guessed.time || fromAi.time,
+    place: guessed.place || fromAi.place,
+    address: guessed.address || fromAi.address,
+    intro: pickFromBrief(fromAi.intro, guessed.intro, prompt),
+    closing: pickFromBrief(fromAi.closing, guessed.closing, prompt),
+    lines: guessed.lines.length ? guessed.lines : fromAi.lines,
+    program: guessed.program.length ? guessed.program : fromAi.program,
+  });
+}
+
 export function inviteFrom(raw: unknown, prompt: string, previous?: unknown, kind = "invite"): InviteCard {
   return fillInvite(fillInvite(parseInvite(raw), parseInvite(previous)), guessPoster(prompt, kind));
 }

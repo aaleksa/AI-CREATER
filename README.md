@@ -6,7 +6,7 @@ Auteur is not a Canva clone. It is a simple AI content studio: the user never ch
 
 Full specification (current build + future expansion): [docs/TZ.md](docs/TZ.md).
 
-The first studio is **Instagram Reels, TikTok, and still Image / Posts**. A Reel is 150 credits; a still post is 37 (idea + four pictures). Ads and YouTube stay later.
+The first studio is **Instagram Reels, TikTok, and still Image / Posts**. A Reel is 150 credits; a still post is 13 (idea + one picture). Ads and YouTube stay later.
 
 ## Product
 
@@ -20,7 +20,7 @@ The first studio is **Instagram Reels, TikTok, and still Image / Posts**. A Reel
 | Credits | Plans, extra packs, real AI cost log |
 | Library | Every project |
 
-A finished Reel costs **150 credits** (5 + 10 + 40 + 30 + 10 + 55). A still post costs **37** (5 + 4×8).
+A finished Reel costs **150 credits** (5 + 10 + 40 + 30 + 10 + 55). A still post costs **13** (5 + 8).
 
 Plans (provisional until real unit cost is measured):
 

@@ -143,7 +143,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 | `video` | Video | екран є, створення заблоковане |
 | `instagram_reel` | Instagram Reel | повний пайплайн + **mp4** |
 | `tiktok` | TikTok | повний пайплайн + **mp4** |
-| `image_post` | Image / Post | Idea + **4 stills** з брифу (JPG), **37 cr**. Invite додатково складає флаєр з цих фото + наш тип |
+| `image_post` | Image / Post | Idea + **1 готова картинка** з повного брифу (JPG), **13 cr** |
 | `advertisement` | Advertisement | «Coming after Reels» |
 | `social_post` | Social media post | «Coming after Reels» |
 
@@ -202,8 +202,8 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 3. Пише бриф. Можна довгий: що показати, яка інформація, програма. Приклади: photo `A quiet morning table at my café.`; invite повний текст івенту з годинами; info `Closed Monday 6 May.`; offer `Tuesday walk-in offer.`
 4. Студія — **2 кроки**:
    1. **Idea** (5 cr). Для **invite** витягує основу (назва, дата, час, місце) і з брифу — address / intro / closing, якщо вони там є; програму — лише якщо є години. Нічого не вигадує.
-   2. **Pictures** (32 cr max, live × 8) — **4 stills** з брифу. Модель **не** малює літери. `composeInvitePoster` складає флаєр: текст переносить/зменшує, не обрізає; іконки з каталогу за ключовим словом. `PATCH /invite` — 0 cr.
-5. Разом **37 credits**. `script` / `voice` / `captions` / `render` — 400.
+   2. **Pictures** (**8 cr**) — **одна** готова картинка з повного брифу в OpenAI. Не збираємо постер. Можна перезняти цей кадр.
+5. Разом **13 credits**. `script` / `voice` / `captions` / `render` — 400.
 6. JPG `still-{sceneId}.jpg`; invite: фон `still-bg.jpg`, готовий флаєр у `still-1.jpg`. *Would you publish this post?*
 7. Без voice і mp4. Текст запрошення друкуємо ми. Картинки — з опису (йога, Thermomix, танці), не одне типове спа.
 
@@ -239,13 +239,13 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 
 **Auth.** Ім’я (тільки signup), email, пароль. Помилки зрозумілою мовою.
 
-**Create.** Сітка 6 форматів. Reel / TikTok / Image Post — активні. Video, Ad, Social — «soon». Промпт — від 8 до 2 000 символів. Copy: речення може вистачити; якщо ні — офер, місце, для кого. Reel 150 cr · Image / Post (усі kind, включно з invitation) 37 cr.
+**Create.** Сітка 6 форматів. Reel / TikTok / Image Post — активні. Video, Ad, Social — «soon». Промпт — від 8 до 2 000 символів. Copy: речення може вистачити; якщо ні — офер, місце, для кого. Reel 150 cr · Image / Post 13 cr.
 
 **Studio.** Reel/TikTok: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: квадратний прев’ю 1:1, кроки Idea → Pictures, без Voice/Captions/Create. Бриф зверху — textarea, `Save brief` (PATCH, 0 credits); щоб застосувати — regenerate idea. Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб кнопка лишається: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі: бейдж *Couldn’t generate — regenerate this picture (8cr)*. Після Create (Reel) — Download mp4; після Pictures — Download JPG. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
 
 **Brand Kit.** Дві групи: *How it looks & sounds* (кольори, шрифт, тон-чипси + optional note) і *About your business* (ім’я, **upload лого**, vertical, сайт, Instagram) — друге опційне. Vertical: salon / café / fitness / **other** + вільний текст; мікрокопі: лише каркас сцен, не обов’язково. Жива прев’ю-картка (CSS, 0 AI). Індикатор «Brand kit N% complete — …». Learned-картка зверху + **Reset learning** (одразу перераховує з готової історії, не чекає 3 нові Reels). Лого: `POST /brand/logo` — **max 2 MB, лише `image/png` / `image/jpeg`**, SVG заборонено; `GET /brand/logo` віддає файл з `Content-Type` png/jpeg і `X-Content-Type-Options: nosniff`, ніколи `image/svg+xml`, у UI лише `<img>`. Невалідний hex не ламає picker. Disclaimer про знаки.
 
-**Billing.** 4 плани, 3 пакети, таблиця вартості кроків (150 = повний Reel, 37 = Image / Post), історія generation. Користувач бачить credits_used і орієнтовну £. Планові £/міс підписати **FROZEN**, доки бета не дасть логи TTS+рендеру.
+**Billing.** 4 плани, 3 пакети, таблиця вартості кроків (150 = повний Reel, 13 = Image / Post), історія generation. Користувач бачить credits_used і орієнтовну £. Планові £/міс підписати **FROZEN**, доки бета не дасть логи TTS+рендеру.
 
 **Library.** Список проєктів: промпт, тип, статус, credits, дата, наявність файлу. Якщо mp4 ще на диску — посилання в студію. Якщо термін вийшов — статус `expired` і підказка, що Create знову платний. Перед витісненням через ліміт плану — попередження, не тихе зникнення.
 
@@ -668,7 +668,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 
 Reel / TikTok: idea → script → visuals / voice / captions (потребують script) → render.
 
-Image / Post: idea → visuals. photo — 4 stills. invite/info/offer — 1 постер + `invite_json`. `script` / `voice` / `captions` / `render` → 400. `PATCH /projects/:id/invite` — 0 cr.
+Image / Post: idea → visuals (**1** картинка з брифу). `PATCH /projects/:id/invite` — 0 cr.
 
 | step | credits | Що вважається успіхом |
 | --- | --- | --- |
@@ -680,8 +680,7 @@ Image / Post: idea → visuals. photo — 4 stills. invite/info/offer — 1 по
 | captions | 10 | cues (scene-level); немає на `image_post` |
 | render | 55 | **існує mp4**, `status=ready`; немає на `image_post` |
 | **разом Reel** | **150** | |
-| **разом Image Post** | **37** | idea 5 + 4×8; `status=ready` після Pictures |
-| **разом Invitation** | **37** | idea 5 + 4×8; флаєр з фото з брифу + наш тип |
+| **разом Image Post** | **13** | idea 5 + 1×8; `status=ready` після Pictures |
 
 Промпт: `trim`, 8–2000 символів. Одне речення — норма; абзац дозволений.
 
@@ -869,7 +868,7 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 3. Крок Voice не вважається done без аудіофайла (`audio_url`).
 4. Після повного шляху баланс = 50 (при вартості 150), у Library статус ready **і** файл.
 5. Повторний Idea **без** `regenerate` не списує 5 credits і **не викликає AI**; **з** `regenerate` — списує і каскадить; 4-та спроба Idea — **10 credits (2×)**, не 429 (§7.2).
-6. Video / Ad / Social post не створюють проєкт. **Image / Post створює** (4 stills з брифу, 37 cr; invite — флаєр; `GET /projects/:id/image/:sceneId`).
+6. Video / Ad / Social post не створюють проєкт. **Image / Post створює** (1 картинка з брифу, 13 cr; `GET /projects/:id/image/:sceneId`).
 7. Brand Kit зберігається і впливає на Idea (включно з vertical).
 8. На billing видно generation (provider, credits_used, £) **користувачу**.
 9. Без платних ключів шлях для розробки не падає; **закрита бета і зовнішнє демо — тільки з TTS+рендером** (не `say`-тиша як «голос»).

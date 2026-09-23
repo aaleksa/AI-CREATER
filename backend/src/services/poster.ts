@@ -110,9 +110,9 @@ function stillDataUrl(projectId: string, sceneId: number) {
 function programShot(cx: number, cy: number, ink: string, photo: string, kind: string) {
   if (photo) {
     const clip = `shot-${Math.round(cx)}-${Math.round(cy)}`;
-    return `<defs><clipPath id="${clip}"><circle cx="${cx}" cy="${cy}" r="40"/></clipPath></defs>
-      <image href="${photo}" x="${cx - 40}" y="${cy - 40}" width="80" height="80" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clip})"/>
-      <circle cx="${cx}" cy="${cy}" r="40" fill="none" stroke="${ink}" stroke-opacity="0.12"/>`;
+    return `<defs><clipPath id="${clip}"><circle cx="${cx}" cy="${cy}" r="52"/></clipPath></defs>
+      <image href="${photo}" x="${cx - 52}" y="${cy - 52}" width="104" height="104" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clip})"/>
+      <circle cx="${cx}" cy="${cy}" r="52" fill="none" stroke="${ink}" stroke-opacity="0.14"/>`;
   }
   return programIcon(kind, cx, cy, ink);
 }
@@ -144,143 +144,136 @@ function programIcon(kind: string, cx: number, cy: number, ink: string) {
 }
 
 function ornaments(accent: string) {
-  return `<g fill="none" stroke="${accent}" stroke-opacity="0.32" stroke-width="1.5" stroke-linecap="round">
-    <path d="M70 42 c22 6 34 26 12 46 c-6-18-22-26-12-46z"/><path d="M92 58 c10 4 8 16 -2 18"/>
-    <path d="M1010 46 c-24 8-34 28-12 48 c7-18 22-26 12-48z"/><path d="M988 62 c-10 4-8 16 2 18"/>
-    <circle cx="540" cy="48" r="3" fill="${accent}" stroke="none" opacity="0.35"/>
-    <circle cx="556" cy="48" r="2" fill="${accent}" stroke="none" opacity="0.22"/>
-    <circle cx="524" cy="48" r="2" fill="${accent}" stroke="none" opacity="0.22"/>
+  return `<g fill="none" stroke="${accent}" stroke-opacity="0.28" stroke-width="1.5" stroke-linecap="round">
+    <path d="M48 36 c28 8 42 32 14 58 c-8-22-28-32-14-58z"/><path d="M78 58 c14 6 12 20 -2 24"/>
+    <path d="M36 86 c18 4 16 22 -4 20"/>
+    <path d="M1034 40 c-30 10-44 34-16 58 c9-22 28-32 16-58z"/><path d="M1002 64 c-14 6-12 20 2 24"/>
+    <path d="M70 1280 c20 -18 36 2 18 22 c-4-12-16-16-18-22z"/>
+    <path d="M1010 1274 c-18 -12 -28 8 -10 22"/>
+    <circle cx="540" cy="46" r="3.5" fill="${accent}" stroke="none" opacity="0.32"/>
+    <circle cx="558" cy="46" r="2.2" fill="${accent}" stroke="none" opacity="0.2"/>
+    <circle cx="522" cy="46" r="2.2" fill="${accent}" stroke="none" opacity="0.2"/>
   </g>`;
+}
+
+function photoGround(background: string | undefined, paper: string) {
+  if (!background) return `<rect width="1080" height="1350" fill="${paper}"/>`;
+  return `<image href="${background}" x="0" y="0" width="1080" height="1350" preserveAspectRatio="xMidYMid slice"/>
+    <rect width="1080" height="1350" fill="${paper}" fill-opacity="0.42"/>
+    <defs>
+      <linearGradient id="read" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="${paper}" stop-opacity="0.55"/>
+        <stop offset="0.38" stop-color="${paper}" stop-opacity="0.12"/>
+        <stop offset="0.78" stop-color="${paper}" stop-opacity="0.18"/>
+        <stop offset="1" stop-color="${paper}" stop-opacity="0.62"/>
+      </linearGradient>
+    </defs>
+    <rect width="1080" height="1350" fill="url(#read)"/>`;
 }
 
 function buildFlyer(invite: InviteCard, brand?: BrandKit | null, background?: string, shots: string[] = []) {
   const ink = "#2C382C";
-  const mute = "#6B7468";
+  const mute = "#3F463C";
   const paper = hexLum(brand?.secondary_color || "") > 0.75 ? brand!.secondary_color : "#F6F1E8";
   const accent = brand?.primary_color || "#3D5A40";
   const cyr = hasCyrillic(invite.name, invite.intro, invite.closing, invite.address, ...invite.program.map((item) => item.title + item.detail));
   const programme = cyr ? "У програмі" : "Programme";
   const brandName = brand?.business_name || "";
-  const title = fit(invite.name, 460, 50, 3);
-  let cursor = 108;
-  const titleSvg = lineBlock(title.lines, 64, cursor, title.size, ink, 650);
-  cursor += title.lines.length * (title.size + 10) + 12;
-  const introText = invite.intro || invite.lines[0] || "";
-  const intro = fit(introText, 460, 18, 5);
-  const introSvg = lineBlock(intro.lines, 64, cursor, intro.size, mute, 500);
-  cursor += intro.lines.length * (intro.size + 8) + 16;
-  const photoY = Math.min(Math.max(cursor, 560), 760);
-  const photoH = Math.max(220, 1188 - photoY - 8);
-  const photo = background
-    ? `<defs><clipPath id="shot"><rect x="64" y="${photoY}" width="430" height="${photoH}" rx="28"/></clipPath></defs>
-       <image href="${background}" x="64" y="${photoY}" width="430" height="${photoH}" preserveAspectRatio="xMidYMid slice" clip-path="url(#shot)"/>`
-    : `<rect x="64" y="${photoY}" width="430" height="${photoH}" rx="28" fill="${accent}" opacity="0.2"/>`;
+  const title = fit(invite.name, 500, 52, 3);
+  const lede = fit(invite.lines[0] || (invite.intro || "").split(/[.!?]/)[0] || "", 500, 20, 2);
+  const intro = fit(invite.intro || "", 500, 17, 4);
+  let y = 96;
+  const titleSvg = lineBlock(title.lines, 56, y, title.size, ink, 650);
+  y += title.lines.length * (title.size + 8) + 10;
+  const ledeSvg = lineBlock(lede.lines, 56, y, lede.size, mute, 500);
+  y += lede.lines.length * (lede.size + 8) + 10;
+  const introSvg = lineBlock(intro.lines, 56, y, intro.size, ink, 500);
 
-  const metaLines = [
-    [invite.date, invite.time].filter(Boolean).join("  ·  "),
-    invite.place,
-    invite.address,
-    invite.closing,
-  ].filter(Boolean);
-  let metaY = 1234;
-  const meta = metaLines
-    .map((line, index) => {
-      const block = fit(line, 460, index === metaLines.length - 1 && invite.closing ? 16 : 18, 2);
-      const svg = lineBlock(block.lines, 64, metaY, block.size, index === 0 || line === invite.place ? ink : mute, 500);
-      metaY += block.lines.length * (block.size + 6);
-      return svg;
+  const textX = 560;
+  let itemY = 108;
+  const head = `<text x="${textX}" y="${itemY}" font-size="18" font-weight="600" fill="${ink}">${escapeXml(programme)}</text>`;
+  itemY += 46;
+  const items = invite.program
+    .map((item: InviteItem, index) => {
+      const titleFit = fit(item.title, 340, 19, 2);
+      const detailFit = fit(item.detail, 340, 14, 2);
+      const timeW = Math.max(86, item.time.length * 9 + 24);
+      const shot = programShot(textX + 32, itemY + 20, ink, shots[index] || "", iconKind(item.title));
+      const time = item.time
+        ? `<rect x="${textX + 96}" y="${itemY - 12}" width="${timeW}" height="24" rx="12" fill="${paper}" fill-opacity="0.86"/><text x="${textX + 96 + timeW / 2}" y="${itemY + 5}" text-anchor="middle" font-size="13" font-weight="650" fill="${accent}">${escapeXml(item.time)}</text>`
+        : "";
+      const copyX = textX + 96;
+      const headY = itemY + (item.time ? 28 : 6);
+      const names = lineBlock(titleFit.lines, copyX, headY, titleFit.size, ink, 600);
+      const details = lineBlock(detailFit.lines, copyX, headY + titleFit.lines.length * (titleFit.size + 5) + 4, detailFit.size, mute, 500);
+      const height = Math.max(88, 20 + (item.time ? 26 : 0) + titleFit.lines.length * (titleFit.size + 5) + detailFit.lines.length * (detailFit.size + 5) + 16);
+      itemY += height;
+      return `${shot}${time}${names}${details}`;
     })
     .join("");
 
-  const textX = 650;
-  const textW = 390;
-  let itemY = 158;
-  const items = invite.program
-    .map((item: InviteItem, index) => {
-      const titleFit = fit(item.title, textW, 20, 3);
-      const detailFit = fit(item.detail, textW, 15, 3);
-      const timeW = Math.max(88, item.time.length * 9 + 28);
-      const time = item.time
-        ? `<rect x="${textX}" y="${itemY - 16}" width="${timeW}" height="26" rx="13" fill="#F4E0E4"/><text x="${textX + timeW / 2}" y="${itemY + 2}" text-anchor="middle" font-size="14" font-weight="650" fill="${accent}">${escapeXml(item.time)}</text>`
-        : "";
-      const headY = itemY + (item.time ? 28 : 0);
-      const head = lineBlock(titleFit.lines, textX, headY, titleFit.size, ink, 600);
-      const detailY = headY + titleFit.lines.length * (titleFit.size + 6) + 6;
-      const details = lineBlock(detailFit.lines, textX, detailY, detailFit.size, mute, 500);
-      const iconY = itemY + Math.max(18, (titleFit.lines.length * titleFit.size) / 2);
-      const icon = programShot(596, iconY, ink, shots[index] || "", iconKind(item.title));
-      const height = (item.time ? 34 : 8) + titleFit.lines.length * (titleFit.size + 6) + (detailFit.lines.length ? detailFit.lines.length * (detailFit.size + 6) + 8 : 8) + 18;
-      const block = `${icon}${time}${head}${details}`;
-      itemY += height;
-      return block;
-    })
+  const footBits = [
+    [invite.date, invite.time].filter(Boolean).join("  ·  "),
+    [invite.place, invite.address].filter(Boolean).join("  ·  "),
+    invite.closing,
+  ].filter(Boolean);
+  const foot = footBits
+    .map((line, index) => lineBlock(fit(line, 960, 16, 1).lines, 56, 1284 + index * 20, 16, index === 2 ? mute : ink, 500))
     .join("");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
-  <rect width="1080" height="1350" fill="${paper}"/>
+  ${photoGround(background, paper)}
   ${ornaments(accent)}
   ${titleSvg}
+  ${ledeSvg}
   ${introSvg}
-  ${photo}
-  ${meta}
-  <text x="562" y="118" font-size="20" font-weight="600" fill="${ink}">${escapeXml(programme)}</text>
+  ${head}
   ${items}
-  ${brandName ? `<text x="1016" y="1334" text-anchor="end" font-size="15" fill="${accent}">${escapeXml(brandName)}</text>` : ""}
+  ${foot}
+  ${brandName ? `<text x="1024" y="1334" text-anchor="end" font-size="14" fill="${accent}">${escapeXml(brandName)}</text>` : ""}
 </svg>`;
 }
 
 function buildCard(invite: InviteCard, brand?: BrandKit | null, background?: string) {
   const ink = "#2C382C";
-  const mute = "#6B7468";
+  const mute = "#3F463C";
   const paper = hexLum(brand?.secondary_color || "") > 0.75 ? brand!.secondary_color : "#F6F1E8";
   const accent = brand?.primary_color || "#3D5A40";
   const brandName = brand?.business_name || "";
-  const title = fit(invite.name, 950, 50, 3);
-  let cursor = 110;
-  const titleSvg = lineBlock(title.lines, 64, cursor, title.size, ink, 650);
-  cursor += title.lines.length * (title.size + 10) + 14;
-  const intro = fit(invite.intro || invite.lines[0] || "", 950, 20, 4);
-  const introSvg = lineBlock(intro.lines, 64, cursor, intro.size, mute, 500);
-  cursor += intro.lines.length * (intro.size + 8) + 12;
+  const title = fit(invite.name, 960, 52, 3);
+  let cursor = 100;
+  const titleSvg = lineBlock(title.lines, 56, cursor, title.size, ink, 650);
+  cursor += title.lines.length * (title.size + 10) + 12;
+  const intro = fit(invite.intro || invite.lines[0] || "", 960, 20, 4);
+  const introSvg = lineBlock(intro.lines, 56, cursor, intro.size, mute, 500);
+  cursor += intro.lines.length * (intro.size + 8) + 8;
   const extra = invite.lines
-    .slice(invite.intro ? 0 : 1, 4)
+    .slice(invite.intro ? 0 : 1, 3)
     .map((line) => {
-      const rows = fit(line, 950, 18, 2);
-      const svg = lineBlock(rows.lines, 64, cursor, rows.size, mute, 500);
-      cursor += rows.lines.length * (rows.size + 8) + 8;
+      const rows = fit(line, 960, 18, 2);
+      const svg = lineBlock(rows.lines, 56, cursor, rows.size, mute, 500);
+      cursor += rows.lines.length * (rows.size + 8) + 6;
       return svg;
     })
     .join("");
-  const photoY = Math.min(cursor + 8, 640);
-  const photo = background
-    ? `<defs><clipPath id="shot"><rect x="64" y="${photoY}" width="952" height="${1168 - photoY}" rx="28"/></clipPath></defs>
-       <image href="${background}" x="64" y="${photoY}" width="952" height="${1168 - photoY}" preserveAspectRatio="xMidYMid slice" clip-path="url(#shot)"/>`
-    : `<rect x="64" y="${photoY}" width="952" height="${1168 - photoY}" rx="28" fill="${accent}" opacity="0.2"/>`;
   const foot = [
     [invite.date, invite.time].filter(Boolean).join("  ·  "),
     [invite.place, invite.address].filter(Boolean).join(" · "),
     invite.closing,
   ].filter(Boolean);
-  let footY = 1280;
   const footer = foot
-    .map((line) => {
-      const block = fit(line, 900, 18, 2);
-      const svg = lineBlock(block.lines, 64, footY, block.size, ink, 500);
-      footY += block.lines.length * (block.size + 6);
-      return svg;
-    })
+    .map((line, index) => lineBlock(fit(line, 960, 16, 1).lines, 56, 1284 + index * 20, 16, ink, 500))
     .join("");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
-  <rect width="1080" height="1350" fill="${paper}"/>
+  ${photoGround(background, paper)}
   ${ornaments(accent)}
   ${titleSvg}
   ${introSvg}
   ${extra}
-  ${photo}
   ${footer}
-  ${brandName ? `<text x="1016" y="1334" text-anchor="end" font-size="15" fill="${accent}">${escapeXml(brandName)}</text>` : ""}
+  ${brandName ? `<text x="1024" y="1334" text-anchor="end" font-size="14" fill="${accent}">${escapeXml(brandName)}</text>` : ""}
 </svg>`;
 }
 

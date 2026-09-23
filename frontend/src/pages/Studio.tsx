@@ -242,7 +242,7 @@ export default function Studio() {
   const STEPS = isImage
     ? [
         { id: "idea", label: "Idea", cost: 5 },
-        { id: "visuals", label: isInvite ? "Invitation" : "Pictures", cost: 32 },
+        { id: "visuals", label: isInvite ? "Invitation" : "Pictures", cost: 8 },
       ]
     : VIDEO_STEPS;
   const next = useMemo(() => STEPS.find((s) => project && !doneThrough(project, s.id)), [project, isImage, isInvite]);
@@ -544,7 +544,7 @@ export default function Studio() {
           {!project.idea && (
             <p className="lede">
               {isInvite
-                ? "We’ll take title, date and place if you wrote them — the rest comes from your description."
+                ? "We’ll send your whole brief to OpenAI and get one finished picture. Redo it if you want another take."
                 : isImage
                   ? "We’ll propose a look before making pictures."
                   : "We’ll propose a concept before writing a word of script."}
@@ -559,109 +559,7 @@ export default function Studio() {
             </>
           )}
           {isInvite && project.idea && (
-            <div className="invite-fields">
-              <p className="hint">Basics plus what we found in your brief. Long lines wrap — they are not cut off.</p>
-              {INVITE_FIELDS.map((field) => (
-                <div key={field.key} className="field">
-                  <label htmlFor={`invite-${field.key}`}>{field.label}</label>
-                  <input
-                    id={`invite-${field.key}`}
-                    value={inviteDraft[field.key] || ""}
-                    maxLength={field.key === "address" || field.key === "place" ? 160 : 80}
-                    onChange={(e) => setInviteDraft((current) => ({ ...current, [field.key]: e.target.value }))}
-                  />
-                </div>
-              ))}
-              <div className="field">
-                <label htmlFor="invite-intro">Opening</label>
-                <textarea
-                  id="invite-intro"
-                  value={inviteDraft.intro || ""}
-                  maxLength={280}
-                  rows={3}
-                  onChange={(e) => setInviteDraft((current) => ({ ...current, intro: e.target.value }))}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="invite-closing">Closing</label>
-                <input
-                  id="invite-closing"
-                  value={inviteDraft.closing || ""}
-                  maxLength={120}
-                  onChange={(e) => setInviteDraft((current) => ({ ...current, closing: e.target.value }))}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="invite-lines">From your brief</label>
-                <textarea
-                  id="invite-lines"
-                  value={(inviteDraft.lines || []).join("\n")}
-                  maxLength={900}
-                  rows={4}
-                  onChange={(e) =>
-                    setInviteDraft((current) => ({
-                      ...current,
-                      lines: e.target.value.split(/\n/).slice(0, 8),
-                    }))
-                  }
-                />
-              </div>
-              {(inviteDraft.program || []).map((item, index) => (
-                <div key={`prog-${index}`} className="field">
-                  <label>Programme {index + 1}</label>
-                  <input
-                    value={item.time}
-                    maxLength={20}
-                    placeholder="Time"
-                    onChange={(e) =>
-                      setInviteDraft((current) => ({
-                        ...current,
-                        program: (current.program || []).map((row, rowIndex) =>
-                          rowIndex === index ? { ...row, time: e.target.value } : row
-                        ),
-                      }))
-                    }
-                  />
-                  <input
-                    value={item.title}
-                    maxLength={100}
-                    placeholder="Title"
-                    style={{ marginTop: 6 }}
-                    onChange={(e) =>
-                      setInviteDraft((current) => ({
-                        ...current,
-                        program: (current.program || []).map((row, rowIndex) =>
-                          rowIndex === index ? { ...row, title: e.target.value } : row
-                        ),
-                      }))
-                    }
-                  />
-                  <input
-                    value={item.detail}
-                    maxLength={140}
-                    placeholder="Detail"
-                    style={{ marginTop: 6 }}
-                    onChange={(e) =>
-                      setInviteDraft((current) => ({
-                        ...current,
-                        program: (current.program || []).map((row, rowIndex) =>
-                          rowIndex === index ? { ...row, detail: e.target.value } : row
-                        ),
-                      }))
-                    }
-                  />
-                </div>
-              ))}
-              <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={saveInvite}>
-                {busy === "invite"
-                  ? "Saving…"
-                  : inviteSaved
-                    ? "Saved"
-                    : project.hasImages
-                      ? "Apply text · free"
-                      : "Save details"}
-              </button>
-            </div>
+            <p className="hint">Pictures sends your whole brief to OpenAI as one prompt and returns one picture. Redo that picture if you want another take.</p>
           )}
           {project.idea && !project.script && !isImage && (
             <>
@@ -939,7 +837,7 @@ export default function Studio() {
           )}
           <p className="hint" style={{ marginTop: 18 }}>
             Used on this {isInvite ? "invitation" : isImage ? "post" : "Reel"}: {project.creditsUsed} credits ·{" "}
-            {isImage ? "stills 37" : "full video 150"}
+            {isImage ? "image 13" : "full video 150"}
           </p>
         </div>
       </div>

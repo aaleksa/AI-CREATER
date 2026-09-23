@@ -158,10 +158,10 @@ async function jsonCompletion<T>(system: string, user: string, fallback: T): Pro
 }
 
 const IMAGE_KIND_GUIDE: Record<string, string> = {
-  photo: "Still photo post: four complementary photographs from what they actually wrote. Specific objects and light, not a generic stock set.",
-  invite: "Event invitation: briefs vary. Extract name, date, time, place, and address (street or postcode) only if written. intro and closing only if they wrote a warm opening or farewell. Programme only if they listed times. Photographs from their words. No letters.",
-  info: "Information post: four photographs of the world around the fact — the closed door, the room, the return. Interesting pictures from their words, no burned-in type.",
-  offer: "Offer post: four photographs of the offer as a real moment. Use their words. No burned-in type.",
+  photo: "Still photo post: the facts they wrote, plus something interesting to look at. Four specific photographs from their words — not a beige empty room.",
+  invite: "Finished invitation image from the whole brief. Words and picture are one design. Same language as the brief.",
+  info: "Information post: the fact they wrote, shown as an interesting real photograph — the closed door, the room, the return. No burned-in type.",
+  offer: "Offer post: the offer as a tempting real moment from their words, not a price card. No burned-in type.",
 };
 
 function mockIdea(prompt: string, type: string, brand?: BrandKit | null, imageIntent = ""): Idea {
@@ -186,9 +186,11 @@ function mockIdea(prompt: string, type: string, brand?: BrandKit | null, imageIn
     audience: still
       ? "People scrolling the feed who will stop for a strong photo."
       : "People scrolling fast who will stop for a strong first frame and a human voice.",
-    visualDirection: brand?.primary_color
-      ? `Warm practical light, ${brand.primary_color} accents, generous negative space, ${brand.font} titles.`
-      : "Warm practical light, terracotta accents, generous negative space, serif titles over handheld texture.",
+    visualDirection: still
+      ? `Four concrete shots from “${prompt.slice(0, 120)}”: a close still life, the activity itself, a named object, and leftover light. No empty showroom.`
+      : brand?.primary_color
+        ? `Warm practical light, ${brand.primary_color} accents, generous negative space, ${brand.font} titles.`
+        : "Warm practical light, terracotta accents, generous negative space, serif titles over handheld texture.",
   };
 }
 
@@ -257,25 +259,26 @@ const PLACEHOLDER_FRAMES = [
 
 export type IdeaResult = Idea & { invite?: InviteCard };
 
-export function stillPicturePrompt(brief: string, idea: Idea, role: string, index = 1, total = 1) {
+export function stillPicturePrompt(brief: string, idea: Idea, role: string, index = 1, total = 1, kind = "photo") {
   const asked = brief
     .replace(/\*\*/g, "")
     .replace(/[_#`]/g, "")
     .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, " ")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 900);
-  const frame =
-    total === 1
-      ? "One photograph. Use the most vivid scene from what they wrote."
-      : `Photograph ${index} of ${total}: ${role}. Pick a different moment from their words than the other frames.`;
+    .slice(0, 1800);
+  const withCopy = kind === "invite" || kind === "info" || kind === "offer";
   return [
-    "Make a specific, interesting photograph from what they asked for — not a generic stock scene.",
-    `They wrote: ${asked}`,
-    idea.visualDirection && `Look: ${idea.visualDirection}`,
-    frame,
-    "Show real objects, people and light from their description. If they named yoga, a workshop, a salon, a retreat, a closed day — show that world.",
-    "No letters, no numbers, no logo, no UI, no poster layout.",
+    withCopy
+      ? "One finished designed post. The photograph and the words are the same picture — not a photo beside a text card, not pieces glued together."
+      : "One finished interesting photograph from their brief. Not a collage of separate parts.",
+    `Their whole brief:\n${asked}`,
+    withCopy &&
+      "Write the key facts from that brief onto the image, in the same language, with normal spaces between words: title, date, place, programme if they listed it.",
+    withCopy && "Type sits in the scene (on a table, in the light, on the wall) as one poster. Clear, readable letters.",
+    `Variation ${index} of ${total}: ${role}.`,
+    idea.visualDirection && `Mood from the idea: ${idea.visualDirection}`,
+    "No app UI, no watermark, no browser chrome.",
   ]
     .filter(Boolean)
     .join(" ");
@@ -294,15 +297,13 @@ export async function generateIdea(prompt: string, type: string, brand?: BrandKi
   return jsonCompletion<IdeaResult>(
     `You are the creative director of Auteur, an AI content studio. The user never chooses models or prompts. You decide the concept. ${
       type === "image_post"
-        ? imageIntent === "invite"
-          ? "Format: invitation. Photograph the scenes they named — we set the type ourselves. Never ask the image model to write words."
-          : "Format: still Instagram photos from the user’s description — not video, no voiceover. Each picture should be interesting and different."
+        ? "Format: still Instagram images. OpenAI gets the whole brief and returns a finished picture. We do not assemble pieces afterwards."
         : "Format: vertical short-form video unless told otherwise."
     }${kindGuide ? `\n${kindGuide}` : ""}\n${brandContext(brand)}`,
     `Content type: ${type}${imageIntent ? `\nImage kind: ${imageIntent}` : ""}\nUser request: ${prompt}\nReturn JSON with keys: ${keys}.${
       imageIntent === "invite"
-        ? " Briefs vary. Fill name, date, time, place, address only if present — do not invent a street or postcode. intro = their opening warmth if written. closing = their farewell if written. Empty if missing. program only for timed items they listed. visualDirection names real scenes from the brief."
-        : " visualDirection must name real scenes from the request, not a generic mood."
+        ? " Never translate. Copy name, dates, place and programme titles exactly, including spaces. intro/closing only if they wrote them. program only if they listed times. visualDirection = one concrete photograph from their words (objects, people, light), not mood adjectives."
+        : " visualDirection = one concrete photograph from their words, not a generic mood. Do not invent a different story."
     }`,
     fallback
   );
@@ -407,7 +408,7 @@ async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, k
 
   const prompt =
     kind === "still"
-      ? `${scene.visualPrompt}. Square 1:1 Instagram still photograph, natural light, no text overlay, no UI chrome.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}${brand.secondary_color ? ` with ${brand.secondary_color} quiet space` : ""}.` : ""}${brand?.vertical ? ` A real ${brand.vertical}, not a stock set.` : ""}`
+      ? `${scene.visualPrompt}. Square 1:1 finished image.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}${brand.secondary_color ? ` with ${brand.secondary_color} quiet space` : ""}.` : ""}${brand?.vertical ? ` A real ${brand.vertical}.` : ""}`
       : `${scene.visualPrompt}. Vertical 9:16 cinematic still, filmic, no text overlay.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}${brand.secondary_color ? ` with ${brand.secondary_color} quiet space` : ""}.` : ""}${brand?.vertical ? ` A real ${brand.vertical}, not a stock set.` : ""}`;
 
   const once = async (model: string) => {

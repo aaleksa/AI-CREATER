@@ -17,9 +17,8 @@ import {
   type Script,
   type Visual,
 } from "./ai.js";
-import { hasStillFile, hasVideoFile, hasVoiceFile, persistStills, removeVideoFile, removeVoiceFile, renderReel, restoreStillSnapshot, snapshotStills, stillBgFile, synthesizeSpeech } from "./media.js";
-import { captureInviteBackground, composeInvitePoster } from "./poster.js";
-import { inviteFrom, parseInvite, type InviteCard } from "./invite.js";
+import { hasStillFile, hasVideoFile, hasVoiceFile, persistStills, removeVideoFile, removeVoiceFile, renderReel, restoreStillSnapshot, snapshotStills, synthesizeSpeech } from "./media.js";
+import { inviteFrom, parseInvite, preferBriefInvite } from "./invite.js";
 import { parseStepFeedback, recordStepRejection } from "./feedback.js";
 import { maybeRefreshLearnedSummary } from "./learning.js";
 import { previewState } from "./share.js";
@@ -35,13 +34,6 @@ export function isImagePost(type: string) {
 
 export const IMAGE_INTENTS = ["photo", "invite", "info", "offer"] as const;
 export type ImageIntent = (typeof IMAGE_INTENTS)[number];
-
-const IMAGE_SLIDE_ROLES: Record<ImageIntent, string[]> = {
-  photo: ["the first glance", "the place", "a quiet detail", "the feeling you leave with"],
-  invite: ["the invitation cover", "when it happens", "where it happens", "save this date"],
-  info: ["the fact at a glance", "the detail they need", "why it matters", "remember this"],
-  offer: ["the offer at a glance", "what they get", "when it runs", "walk in"],
-};
 
 export function isInvitePoster(type: string, intent: string) {
   return isImagePost(type) && intent === "invite";
@@ -68,49 +60,20 @@ export function readCreateImageIntent(type: string, raw: unknown): { intent: Ima
   return { error: "Choose photo, invitation, information or offer." };
 }
 
-function imageCarousel(prompt: string, idea: Idea, intent: ImageIntent | "" = "photo", invite?: InviteCard | null): Script {
+function imageCarousel(prompt: string, idea: Idea, intent: ImageIntent | "" = "photo"): Script {
   const kind = intent || "photo";
-  if (kind === "invite") {
-    const card = invite || inviteFrom(undefined, prompt);
-    const roles = card.program.length
-      ? [
-          "cover still-life from their words — a quiet object or place they described, not a poster",
-          ...card.program.map((item) => `photograph this session as a real moment: ${item.title}. ${item.detail}`),
-        ]
-      : [
-          "the most vivid scene from their words",
-          "a second different moment they described",
-          "a detail or object they named",
-          "the place or people they mentioned",
-        ];
-    while (roles.length < IMAGE_SLIDE_COUNT) roles.push("another lived-in moment from their description");
-    return {
-      durationSec: 0,
-      cta: idea.title,
-      scenes: roles.slice(0, IMAGE_SLIDE_COUNT).map((role, index) => ({
-        id: index + 1,
-        time: index === 0 ? "Cover" : card.program[index - 1]?.time || `Slide ${index + 1}`,
-        onScreen: index === 0 ? "Cover" : card.program[index - 1]?.title || "Still",
-        voiceover: "",
-        visualPrompt: stillPicturePrompt(prompt, idea, role, index + 1, IMAGE_SLIDE_COUNT),
-      })),
-    };
-  }
-  const roles = IMAGE_SLIDE_ROLES[kind] || IMAGE_SLIDE_ROLES.photo;
   return {
     durationSec: 0,
     cta: idea.title,
-    scenes: Array.from({ length: IMAGE_SLIDE_COUNT }, (_, index) => {
-      const id = index + 1;
-      const role = roles[index] || `still ${id}`;
-      return {
-        id,
-        time: `Slide ${id}`,
-        onScreen: role,
+    scenes: [
+      {
+        id: 1,
+        time: "Picture",
+        onScreen: "Finished picture",
         voiceover: "",
-        visualPrompt: stillPicturePrompt(prompt, idea, role, id, IMAGE_SLIDE_COUNT),
-      };
-    }),
+        visualPrompt: stillPicturePrompt(prompt, idea, "one finished picture from the whole brief", 1, 1, kind),
+      },
+    ],
   };
 }
 
@@ -387,19 +350,6 @@ function pickIdea(data: Idea & { invite?: unknown }): Idea {
   };
 }
 
-async function paintInvite(
-  projectId: string,
-  inviteRaw: unknown,
-  brand: BrandKit | null,
-  captureBg: boolean,
-  prompt = "",
-  kind = "invite"
-) {
-  if (captureBg) captureInviteBackground(projectId);
-  if (!hasStillFile(projectId, 1) && !fs.existsSync(stillBgFile(projectId))) return;
-  await composeInvitePoster(projectId, inviteFrom(inviteRaw, prompt, inviteRaw, kind), brand);
-}
-
 export async function updateInvite(userId: string, projectId: string, raw: unknown) {
   const project = getProject(projectId, userId);
   const type = String(project.type);
@@ -407,9 +357,12 @@ export async function updateInvite(userId: string, projectId: string, raw: unkno
   if (!isInvitePoster(type, imageIntent)) {
     throw Object.assign(new Error("This post is not an invitation."), { status: 400 });
   }
-  const invite = inviteFrom(raw, String(project.prompt), project.invite_json, imageIntent);
+  const invite = preferBriefInvite(
+    inviteFrom(raw, String(project.prompt), project.invite_json, imageIntent),
+    String(project.prompt),
+    imageIntent
+  );
   db.prepare("UPDATE projects SET invite_json = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(invite), projectId);
-  await paintInvite(projectId, invite, brandFor(userId), false, String(project.prompt), imageIntent);
   return serializeProject(getProject(projectId, userId));
 }
 
@@ -512,13 +465,7 @@ export async function runStep(
   if ((step === "visuals" || step === "voice" || step === "captions" || step === "render") && !script && !isImagePost(type)) {
     throw Object.assign(new Error("Generate the script first."), { status: 400 });
   }
-  const poster = isInvitePoster(type, imageIntent) ? inviteFrom(project.invite_json, prompt, undefined, "invite") : null;
-  const imageScript =
-    isImagePost(type) && idea
-      ? poster
-        ? imageCarousel(prompt, idea, imageIntent, poster)
-        : script || imageCarousel(prompt, idea, imageIntent)
-      : script;
+  const imageScript = isImagePost(type) && idea ? imageCarousel(prompt, idea, imageIntent) : script;
   if (step === "visuals" && sceneId && imageScript && !imageScript.scenes.find((item) => item.id === sceneId)) {
     throw Object.assign(new Error("Unknown scene."), { status: 400 });
   }
@@ -583,7 +530,7 @@ export async function runStep(
       const result = await generateIdea(prompt, type, brand, imageIntent);
       updates.idea_json = JSON.stringify(pickIdea(result.data));
       if (isInvitePoster(type, imageIntent)) {
-        updates.invite_json = JSON.stringify(inviteFrom(result.data.invite, prompt, undefined, "invite"));
+        updates.invite_json = JSON.stringify(preferBriefInvite(result.data.invite, prompt, "invite"));
       }
       updates.current_step = "idea";
       provider = result.provider;
@@ -618,9 +565,6 @@ export async function runStep(
         provider = one.provider;
         model = one.model;
         actualCost = one.cost;
-        if (isInvitePoster(type, imageIntent) && hasStillFile(projectId, 1)) {
-          await paintInvite(projectId, project.invite_json, brand, sceneId === 1, prompt, "invite");
-        }
       } else {
         const result = await generateVisuals(imageScript, brand, kind, async (visual) => {
           const [saved] = await persistStills(projectId, [visual]);
@@ -642,9 +586,6 @@ export async function runStep(
         model = result.model;
         actualCost = result.cost;
         if (result.usedOpenAI) cost = result.live * VISUAL_SCENE_CREDITS * multiplier;
-        if (isInvitePoster(type, imageIntent) && hasStillFile(projectId, 1)) {
-          await paintInvite(projectId, project.invite_json, brand, true, prompt, "invite");
-        }
       }
     } else if (step === "voice" && script) {
       providerTouched = true;
