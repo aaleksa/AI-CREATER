@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, fetchMedia, refreshMe, type InviteCard, type Project } from "../lib/api";
+import { api, fetchMedia, refreshMe, type BrandKitRow, type InviteCard, type Project } from "../lib/api";
+import { copyText } from "../lib/copy";
 import BrandToggle from "../components/BrandToggle";
 import { formatBrandHint, useLocale } from "../i18n/locale";
 
@@ -203,6 +204,7 @@ export default function Studio() {
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [brief, setBrief] = useState("");
   const [briefSaved, setBriefSaved] = useState(false);
+  const [briefCopied, setBriefCopied] = useState(false);
   const [briefSaving, setBriefSaving] = useState(false);
   const [publishable, setPublishable] = useState("");
   const [reasons, setReasons] = useState<string[]>([]);
@@ -214,6 +216,7 @@ export default function Studio() {
   const [regenNote, setRegenNote] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
   const [kitHint, setKitHint] = useState("");
+  const [kit, setKit] = useState<BrandKitRow | null>(null);
   const [inviteDraft, setInviteDraft] = useState<InviteCard>(EMPTY_INVITE);
   const [inviteSaved, setInviteSaved] = useState(false);
   const [brandSaved, setBrandSaved] = useState(false);
@@ -238,10 +241,14 @@ export default function Studio() {
     api
       .brand()
       .then((d) => {
+        setKit(d.brandKit);
         const progress = d.brandKit?.completeness;
         setKitHint(progress && progress.percent < 70 ? formatBrandHint(t, progress) : "");
       })
-      .catch(() => setKitHint(""));
+      .catch(() => {
+        setKit(null);
+        setKitHint("");
+      });
   }, [t]);
 
   useEffect(() => {
@@ -580,15 +587,29 @@ export default function Studio() {
         <label htmlFor="brief">{t("studio.briefLabel")}</label>
         <textarea
           id="brief"
+          className="brief-box"
           value={brief}
           onChange={(e) => setBrief(e.target.value)}
           maxLength={2000}
-          rows={3}
+          rows={10}
         />
       </div>
       <div className="row" style={{ marginBottom: 20 }}>
         <button className="btn ghost" type="button" disabled={briefSaving} onClick={saveBrief}>
           {briefSaving ? t("studio.savingBrief") : t("studio.saveBrief")}
+        </button>
+        <button
+          className="btn ghost"
+          type="button"
+          disabled={!brief.trim()}
+          onClick={async () => {
+            if (await copyText(brief)) {
+              setBriefCopied(true);
+              setTimeout(() => setBriefCopied(false), 2500);
+            }
+          }}
+        >
+          {briefCopied ? t("studio.briefCopied") : t("studio.copyBrief")}
         </button>
         {briefSaved && <span className="ok">{t("studio.briefSaved")}</span>}
       </div>
@@ -605,6 +626,8 @@ export default function Studio() {
         onHint={t("home.useBrandHint")}
         offLabel={t("studio.useBrandOff")}
         offHint={t("home.skipBrandHint")}
+        usingLabel={t("studio.brandUsing")}
+        kit={kit}
       />
       {brandSaved && <p className="ok">{t("studio.brandToggleSaved")}</p>}
       <div className="steps">

@@ -61,7 +61,13 @@ export function readCreateImageIntent(type: string, raw: unknown): { intent: Ima
   return { error: "Choose photo, invitation, information or offer." };
 }
 
-function imageCarousel(prompt: string, idea: Idea, intent: ImageIntent | "" = "photo", feedback?: { reason?: string; note?: string }): Script {
+function imageCarousel(
+  prompt: string,
+  idea: Idea,
+  intent: ImageIntent | "" = "photo",
+  feedback?: { reason?: string; note?: string },
+  brand?: BrandKit | null
+): Script {
   const kind = intent || "photo";
   return {
     durationSec: 0,
@@ -72,7 +78,7 @@ function imageCarousel(prompt: string, idea: Idea, intent: ImageIntent | "" = "p
         time: "Picture",
         onScreen: "Finished picture",
         voiceover: "",
-        visualPrompt: stillPicturePrompt(prompt, idea, "one finished picture from the whole brief", 1, 1, kind, feedback),
+        visualPrompt: stillPicturePrompt(prompt, idea, "one finished picture from the whole brief", 1, 1, kind, feedback, brand),
       },
     ],
   };
@@ -471,7 +477,7 @@ export async function runStep(
   if ((step === "visuals" || step === "voice" || step === "captions" || step === "render") && !script && !isImagePost(type)) {
     throw Object.assign(new Error("Generate the script first."), { status: 400 });
   }
-  const imageScript = isImagePost(type) && idea ? imageCarousel(prompt, idea, imageIntent, feedback) : script;
+  const imageScript = isImagePost(type) && idea ? imageCarousel(prompt, idea, imageIntent, feedback, brand) : script;
   if (step === "visuals" && sceneId && imageScript && !imageScript.scenes.find((item) => item.id === sceneId)) {
     throw Object.assign(new Error("Unknown scene."), { status: 400 });
   }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "../lib/api";
+import { api, type BrandKitRow, type Project } from "../lib/api";
 import BrandToggle from "../components/BrandToggle";
 import { detectLocale, formatBrandHint, translate, useLocale } from "../i18n/locale";
 
@@ -25,7 +25,9 @@ export default function Home() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [kitHint, setKitHint] = useState("");
+  const [kit, setKit] = useState<BrandKitRow | null>(null);
   const [useBrand, setUseBrand] = useState(true);
+  const [recentBriefs, setRecentBriefs] = useState<string[]>([]);
   const isImage = type === "image_post";
   const selectedReady = READY.has(type);
   const selectedTitle = t(`formats.${type}.title`);
@@ -51,12 +53,34 @@ export default function Home() {
 
   useEffect(() => {
     api
+      .projects()
+      .then((d) => {
+        const seen = new Set<string>();
+        const briefs: string[] = [];
+        for (const project of d.projects as Project[]) {
+          const text = (project.prompt || "").trim();
+          if (!text || seen.has(text)) continue;
+          seen.add(text);
+          briefs.push(text);
+          if (briefs.length >= 6) break;
+        }
+        setRecentBriefs(briefs);
+      })
+      .catch(() => setRecentBriefs([]));
+  }, []);
+
+  useEffect(() => {
+    api
       .brand()
       .then((d) => {
+        setKit(d.brandKit);
         const progress = d.brandKit?.completeness;
         setKitHint(progress && progress.percent < 70 ? formatBrandHint(t, progress) : "");
       })
-      .catch(() => setKitHint(""));
+      .catch(() => {
+        setKit(null);
+        setKitHint("");
+      });
   }, [t, locale]);
 
   async function start() {
@@ -148,7 +172,28 @@ export default function Home() {
         onHint={t("home.useBrandHint")}
         offLabel={t("home.skipBrand")}
         offHint={t("home.skipBrandHint")}
+        usingLabel={t("home.brandUsing")}
+        kit={kit}
       />
+
+      {recentBriefs.length > 0 && (
+        <div className="recent-briefs">
+          <p className="hint">{t("home.recentBriefs")}</p>
+          <div className="recent-briefs-list">
+            {recentBriefs.map((text) => (
+              <button
+                key={text.slice(0, 80)}
+                type="button"
+                className="recent-brief"
+                onClick={() => setPrompt(text)}
+              >
+                {text.replace(/\s+/g, " ").slice(0, 140)}
+                {text.length > 140 ? "…" : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="prompt-stage">
         <textarea

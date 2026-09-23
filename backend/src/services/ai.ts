@@ -110,6 +110,40 @@ function parseLearned(value?: string | null): LearnedSummary | null {
   }
 }
 
+export function brandLook(brand?: BrandKit | null) {
+  if (!brand) return "";
+  const niche =
+    brand.vertical === "salon"
+      ? "This is a salon. Real chair, cut, quiet — not stock hair or a generic spa."
+      : brand.vertical === "cafe"
+        ? "This is a café. Real pour, room, regulars — not a latte cliché."
+        : brand.vertical === "fitness"
+          ? "This is a fitness studio. Real floor and breath — not a gym advert."
+          : brand.vertical === "other" && brand.vertical_note
+            ? `This is a ${brand.vertical_note}. Use real details of that trade.`
+            : "";
+  return [
+    "Use this brand kit on the picture. The request is the content; the kit is the look. Do not invent another business.",
+    brand.business_name &&
+      `Business name: ${brand.business_name}. If a name appears, use this spelling. Do not invent a logo they did not give.`,
+    brand.primary_color && `Primary colour ${brand.primary_color} — accents, type, small details.`,
+    brand.secondary_color && `Secondary colour ${brand.secondary_color} — paper, background, quiet space.`,
+    brand.font && `Type should feel like ${brand.font}.`,
+    brand.tone_of_voice && `Mood: ${brand.tone_of_voice}.`,
+    brand.tone_note && `Owner note on tone: ${brand.tone_note}`,
+    niche,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function withBrandLook(base: string, brand?: BrandKit | null) {
+  const look = brandLook(brand);
+  if (!look) return base;
+  if (base.includes("Use this brand kit")) return base;
+  return `${base}\n\n${look}`;
+}
+
 function brandContext(brand?: BrandKit | null) {
   if (!brand) return "No brand kit yet. Keep the look cinematic and premium. Do not invent a fake business name.";
   const learned = parseLearned(brand.learned_summary_json);
@@ -420,7 +454,8 @@ export function stillPicturePrompt(
   index = 1,
   total = 1,
   kind = "photo",
-  feedback?: RegenNote
+  feedback?: RegenNote,
+  brand?: BrandKit | null
 ) {
   const asked = brief
     .replace(/\*\*/g, "")
@@ -435,6 +470,7 @@ export function stillPicturePrompt(
       ? "Create one finished designed picture from this request. Do what they asked — layout, words and photograph together."
       : "Create one finished photograph from this request.",
     asked,
+    brandLook(brand),
     withCopy &&
       "Fill the whole canvas edge to edge. Keep a clear empty margin at the bottom so the last line is fully visible. If a line does not fit, wrap it or move it — never clip, crop or run words off the edge. Same language as the request. Proofread. No app UI, no watermark.",
     regenInstruction(feedback),
@@ -576,12 +612,14 @@ async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, k
   };
   if (!openai) return placeholder;
 
-  const prompt =
+  const prompt = withBrandLook(
     kind === "poster"
       ? scene.visualPrompt
       : kind === "still"
-      ? `${scene.visualPrompt}. Square 1:1 finished image.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}${brand.secondary_color ? ` with ${brand.secondary_color} quiet space` : ""}.` : ""}${brand?.vertical ? ` A real ${brand.vertical}.` : ""}`
-      : `${scene.visualPrompt}. Vertical 9:16 cinematic still, filmic, no text overlay.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}${brand.secondary_color ? ` with ${brand.secondary_color} quiet space` : ""}.` : ""}${brand?.vertical ? ` A real ${brand.vertical}, not a stock set.` : ""}`;
+        ? `${scene.visualPrompt}. Square 1:1 finished image.`
+        : `${scene.visualPrompt}. Vertical 9:16 cinematic still, filmic, no text overlay.`,
+    brand
+  );
 
   const once = async (model: string) => {
     const gptImage = /^gpt-image/i.test(model);
