@@ -2,7 +2,8 @@ import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { v4 as uuid } from "uuid";
-import { brandLogoPath, hasBrandLogo, writeBrandLogo } from "../services/media.js";
+import { brandLogoType, hasBrandLogo, logoKindFromBytes, writeBrandLogo } from "../services/media.js";
+import { maybeRefreshLearnedSummary, readyCount } from "../services/learning.js";
 
 function hex(value: unknown, fallback: string) {
   const text = String(value || "");
@@ -68,6 +69,7 @@ function serializeBrand(row: Record<string, unknown> | undefined, userId: string
     learned_summary,
     learned_lines,
     completeness: progress,
+    ready_projects: readyCount(userId),
     ready: progress.percent >= 50,
   };
 }
@@ -84,34 +86,42 @@ brandRouter.get("/", (req, res) => {
 });
 
 brandRouter.get("/logo", (req, res) => {
-  const file = brandLogoPath(req.user!.id);
-  if (!file) {
+  const logo = brandLogoType(req.user!.id);
+  if (!logo) {
     res.status(404).json({ error: "No logo yet." });
     return;
   }
-  res.sendFile(file);
+  res.type(logo.type);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.sendFile(logo.file);
 });
 
 brandRouter.post("/logo", (req, res) => {
   const raw = String(req.body?.image || "");
-  const match = raw.match(/^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/i);
+  const match = raw.match(/^data:image\/(png|jpeg|jpg);base64,(.+)$/i);
   if (!match) {
-    res.status(400).json({ error: "Use a PNG, JPG or WebP under 2 MB." });
+    res.status(400).json({ error: "Use a PNG or JPG under 2 MB. SVG is not allowed." });
     return;
   }
-  const ext = match[1].toLowerCase() === "jpeg" ? "jpg" : match[1].toLowerCase();
+  const declared = match[1].toLowerCase() === "jpeg" ? "jpg" : match[1].toLowerCase();
   const buffer = Buffer.from(match[2], "base64");
   if (buffer.length > 2 * 1024 * 1024) {
     res.status(400).json({ error: "That file is too large. Keep it under 2 MB." });
     return;
   }
-  writeBrandLogo(req.user!.id, buffer, ext);
+  const kind = logoKindFromBytes(buffer);
+  if (!kind || (declared === "png" && kind !== "png") || (declared === "jpg" && kind !== "jpg")) {
+    res.status(400).json({ error: "Use a PNG or JPG under 2 MB. SVG is not allowed." });
+    return;
+  }
+  writeBrandLogo(req.user!.id, buffer, kind);
   db.prepare("UPDATE brand_kits SET logo_url = '/brand/logo', updated_at = datetime('now') WHERE user_id = ?").run(req.user!.id);
   res.json({ brandKit: serializeBrand(kitOf(req.user!.id), req.user!.id) });
 });
 
 brandRouter.post("/learning/reset", (req, res) => {
   db.prepare("UPDATE brand_kits SET learned_summary_json = NULL, updated_at = datetime('now') WHERE user_id = ?").run(req.user!.id);
+  maybeRefreshLearnedSummary(req.user!.id, true);
   res.json({ brandKit: serializeBrand(kitOf(req.user!.id), req.user!.id) });
 });
 

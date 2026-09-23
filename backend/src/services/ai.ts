@@ -123,18 +123,24 @@ function client() {
   return new OpenAI({ apiKey: config.openaiKey });
 }
 
+function clipInput(text: string) {
+  const max = Math.max(1000, config.openaiMaxInputChars || 100000);
+  return text.length > max ? text.slice(0, max) : text;
+}
+
 async function jsonCompletion<T>(system: string, user: string, fallback: T): Promise<{ data: T; provider: string; model: string; cost: number }> {
   const openai = client();
+  const model = config.openaiModel || "gpt-4o-mini";
   if (!openai) {
     return { data: fallback, provider: "auteur-studio", model: "preview", cost: 0 };
   }
   const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model,
     temperature: 0.8,
     response_format: { type: "json_object" },
     messages: [
-      { role: "system", content: system + "\nAlways reply with valid JSON." },
-      { role: "user", content: user },
+      { role: "system", content: clipInput(system + "\nAlways reply with valid JSON.") },
+      { role: "user", content: clipInput(user) },
     ],
   });
   const text = response.choices[0]?.message?.content || "{}";
@@ -142,11 +148,11 @@ async function jsonCompletion<T>(system: string, user: string, fallback: T): Pro
     return {
       data: { ...fallback, ...JSON.parse(text) } as T,
       provider: "openai",
-      model: "gpt-4o-mini",
+      model,
       cost: 0.002,
     };
   } catch {
-    return { data: fallback, provider: "openai", model: "gpt-4o-mini", cost: 0.002 };
+    return { data: fallback, provider: "openai", model, cost: 0.002 };
   }
 }
 

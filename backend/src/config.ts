@@ -4,6 +4,8 @@ export const config = {
   port: Number(process.env.PORT || 4000),
   jwtSecret: process.env.JWT_SECRET || "dev-secret-change-me",
   openaiKey: process.env.OPENAI_API_KEY || "",
+  openaiModel: process.env.OPENAI_MODEL || "gpt-4o-mini",
+  openaiMaxInputChars: Number(process.env.OPENAI_MAX_INPUT_CHARS || 100000),
   stripeSecret: process.env.STRIPE_SECRET_KEY || "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
   appUrl: process.env.APP_URL || "http://localhost:5173",

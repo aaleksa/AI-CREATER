@@ -1,4 +1,4 @@
-import { v4 as uuid } from "uuid";
+import { randomBytes } from "node:crypto";
 import { db } from "../db/index.js";
 import { config, PREVIEW_TTL_DAYS } from "../config.js";
 import { hasStillFile, hasVideoFile } from "./media.js";
@@ -37,7 +37,7 @@ export function createPreviewLink(userId: string, projectId: string) {
     preview_token: (row.preview_token as string) || null,
     preview_expires_at: (row.preview_expires_at as string) || null,
   });
-  const token = existing || uuid().replaceAll("-", "").slice(0, 22);
+  const token = existing || randomBytes(32).toString("hex");
   const until = expiresAt();
   db.prepare("UPDATE projects SET preview_token = ?, preview_expires_at = ?, updated_at = datetime('now') WHERE id = ?").run(
     token,

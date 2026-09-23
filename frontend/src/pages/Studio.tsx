@@ -208,7 +208,7 @@ export default function Studio() {
       cancelled = true;
       created.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [id, project?.visuals]);
+  }, [id, project?.visuals, project?.updatedAt]);
 
   const isImage = project?.type === "image_post";
   const STEPS = isImage ? IMAGE_STEPS : VIDEO_STEPS;
@@ -289,18 +289,20 @@ export default function Studio() {
     await execute(pendingRegen.step, true, pendingRegen.sceneId, withReason && regenReason ? { reason: regenReason, note: regenNote } : undefined);
   }
 
-  async function restore(step: "idea" | "script", versionId: string) {
+  async function restore(step: "idea" | "script" | "visuals", versionId: string, sceneId?: number) {
     if (!id) return;
     const ok = window.confirm(
       step === "idea"
         ? "Use this idea? It clears what follows. Free — you already paid for this version."
-        : "Use this script? It clears frames, voice and video. Free — you already paid for this version."
+        : step === "visuals"
+          ? "Use the previous picture? Free — you already paid for it. The video will need Create again."
+          : "Use this script? It clears frames, voice and video. Free — you already paid for this version."
     );
     if (!ok) return;
-    setBusy(`restore-${step}`);
+    setBusy(sceneId ? `restore-visual-${sceneId}` : `restore-${step}`);
     setError("");
     try {
-      const { project: nextProject } = await api.restoreVersion(id, step, versionId);
+      const { project: nextProject } = await api.restoreVersion(id, step, versionId, sceneId);
       setProject(nextProject);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not restore that version.");
@@ -442,6 +444,18 @@ export default function Studio() {
                             ? `Another try · ${extraPrice("visuals", s.id).credits} credits (2×)`
                             : `Regenerate this picture · ${extraPrice("visuals", s.id).credits} credits`}
                       </button>
+                      {project.versions?.visuals?.find((version) => !version.accepted) && (
+                        <button
+                          className="btn ghost"
+                          disabled={Boolean(busy) || Boolean(pendingRegen)}
+                          onClick={() => {
+                            const previous = project.versions?.visuals?.find((version) => !version.accepted);
+                            if (previous) restore("visuals", previous.id, s.id);
+                          }}
+                        >
+                          {busy === `restore-visual-${s.id}` ? "Restoring…" : "Use previous picture · free"}
+                        </button>
+                      )}
                     </>
                   )}
                 </div>

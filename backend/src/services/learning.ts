@@ -44,7 +44,7 @@ function words(text: string) {
     .filter((word) => word.length >= 4 && !STOP.has(word));
 }
 
-function readyCount(userId: string) {
+export function readyCount(userId: string) {
   const row = db
     .prepare(`SELECT COUNT(*) AS n FROM projects WHERE user_id = ? AND status IN ('ready', 'expired')`)
     .get(userId) as { n: number } | undefined;

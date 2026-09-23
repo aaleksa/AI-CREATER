@@ -21,8 +21,28 @@ export function brandLogoDir(userId: string) {
 export function brandLogoPath(userId: string) {
   const dir = path.join(dataDir, "media", "brand", userId);
   if (!fs.existsSync(dir)) return "";
-  const found = fs.readdirSync(dir).find((name) => name.startsWith("logo."));
+  const found = fs.readdirSync(dir).find((name) => /^logo\.(png|jpe?g|webp)$/i.test(name));
   return found ? path.join(dir, found) : "";
+}
+
+export function brandLogoType(userId: string) {
+  const file = brandLogoPath(userId);
+  if (!file) return null;
+  const ext = path.extname(file).toLowerCase();
+  const type =
+    ext === ".png" ? "image/png" : ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".webp" ? "image/webp" : "";
+  if (!type) return null;
+  return { file, type };
+}
+
+export function logoKindFromBytes(buffer: Buffer): "png" | "jpg" | "" {
+  if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+    return "png";
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return "jpg";
+  }
+  return "";
 }
 
 export function hasBrandLogo(userId: string) {
@@ -36,11 +56,13 @@ export function removeBrandLogo(userId: string) {
 }
 
 export function writeBrandLogo(userId: string, buffer: Buffer, ext: string) {
+  const safe = ext === "png" || ext === "jpg" || ext === "jpeg" ? (ext === "jpeg" ? "jpg" : ext) : "";
+  if (!safe) throw Object.assign(new Error("Use a PNG or JPG under 2 MB. SVG is not allowed."), { status: 400 });
   const dir = brandLogoDir(userId);
   for (const name of fs.readdirSync(dir)) {
     if (name.startsWith("logo.")) fs.rmSync(path.join(dir, name), { force: true });
   }
-  const file = path.join(dir, `logo.${ext}`);
+  const file = path.join(dir, `logo.${safe}`);
   fs.writeFileSync(file, buffer);
   return file;
 }
@@ -65,6 +87,27 @@ export function videoFile(projectId: string) {
 
 export function stillFile(projectId: string, sceneId: number) {
   return path.join(projectMediaDir(projectId), `still-${sceneId}.jpg`);
+}
+
+export function stillVersionFile(projectId: string, sceneId: number, versionId: string) {
+  return path.join(projectMediaDir(projectId), `still-${sceneId}-${versionId}.jpg`);
+}
+
+export function snapshotStills(projectId: string, versionId: string, visuals: Visual[]) {
+  for (const visual of visuals) {
+    if (!hasStillFile(projectId, visual.sceneId)) continue;
+    fs.copyFileSync(stillFile(projectId, visual.sceneId), stillVersionFile(projectId, visual.sceneId, versionId));
+  }
+}
+
+export function restoreStillSnapshot(projectId: string, versionId: string, visuals: Visual[], sceneIds?: number[]) {
+  const targets = sceneIds?.length ? visuals.filter((item) => sceneIds.includes(item.sceneId)) : visuals;
+  for (const visual of targets) {
+    const snap = stillVersionFile(projectId, visual.sceneId, versionId);
+    if (fs.existsSync(snap) && fs.statSync(snap).size > 0) {
+      fs.copyFileSync(snap, stillFile(projectId, visual.sceneId));
+    }
+  }
 }
 
 export function hasStillFile(projectId: string, sceneId: number) {

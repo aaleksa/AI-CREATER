@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, parseImageIntent, restoreStepVersion, runStep, saveFeedback, serializeProject } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, readCreateImageIntent, restoreStepVersion, runStep, saveFeedback, serializeProject } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
 import { hasStillFile, hasVideoFile, hasVoiceFile, stillFile, videoFile, voiceFile } from "../services/media.js";
 import { rateLimit } from "../middleware/rateLimit.js";
@@ -50,8 +50,12 @@ projectsRouter.post("/", (req, res) => {
     });
     return;
   }
-  const intent = parseImageIntent(type, imageIntent);
-  const project = createProject(req.user!.id, type as (typeof FORMAT_TYPES)[number], parsed.text, intent);
+  const intent = readCreateImageIntent(type, imageIntent);
+  if ("error" in intent) {
+    res.status(400).json({ error: intent.error });
+    return;
+  }
+  const project = createProject(req.user!.id, type as (typeof FORMAT_TYPES)[number], parsed.text, intent.intent);
   res.status(201).json({ project: serializeProject(project) });
 });
 
@@ -141,12 +145,14 @@ projectsRouter.post("/:id/share", (req, res) => {
 
 projectsRouter.post("/:id/versions/:step/:versionId/restore", (req, res) => {
   const step = String(req.params.step);
-  if (step !== "idea" && step !== "script") {
-    res.status(400).json({ error: "Only idea and script versions can be compared." });
+  if (step !== "idea" && step !== "script" && step !== "visuals") {
+    res.status(400).json({ error: "Only idea, script and picture versions can be restored." });
     return;
   }
+  const sceneRaw = req.body?.sceneId;
+  const sceneId = Number.isFinite(Number(sceneRaw)) ? Number(sceneRaw) : undefined;
   try {
-    const project = restoreStepVersion(req.user!.id, String(req.params.id), step, String(req.params.versionId));
+    const project = restoreStepVersion(req.user!.id, String(req.params.id), step, String(req.params.versionId), sceneId);
     res.json({ project });
   } catch (error) {
     const err = error as Error & { status?: number };

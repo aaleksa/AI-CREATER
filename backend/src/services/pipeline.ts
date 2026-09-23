@@ -15,7 +15,7 @@ import {
   type Script,
   type Visual,
 } from "./ai.js";
-import { hasVideoFile, hasVoiceFile, persistStills, removeVideoFile, removeVoiceFile, renderReel, synthesizeSpeech } from "./media.js";
+import { hasVideoFile, hasVoiceFile, persistStills, removeVideoFile, removeVoiceFile, renderReel, restoreStillSnapshot, snapshotStills, synthesizeSpeech } from "./media.js";
 import { parseStepFeedback, recordStepRejection } from "./feedback.js";
 import { maybeRefreshLearnedSummary } from "./learning.js";
 import { previewState } from "./share.js";
@@ -45,6 +45,15 @@ export function parseImageIntent(type: string, raw: unknown): ImageIntent | "" {
     return raw as ImageIntent;
   }
   return "photo";
+}
+
+export function readCreateImageIntent(type: string, raw: unknown): { intent: ImageIntent | "" } | { error: string } {
+  if (!isImagePost(type)) return { intent: "" };
+  if (raw == null || raw === "") return { intent: "photo" };
+  if (typeof raw === "string" && (IMAGE_INTENTS as readonly string[]).includes(raw)) {
+    return { intent: raw as ImageIntent };
+  }
+  return { error: "Choose photo, invitation, information or offer." };
 }
 
 function imageCarousel(prompt: string, idea: Idea, intent: ImageIntent | "" = "photo"): Script {
@@ -126,6 +135,7 @@ function finishGeneration(
 }
 
 function saveStepVersion(projectId: string, step: string, payload: unknown, generationId: string, sceneId?: number) {
+  const id = uuid();
   if (sceneId) {
     db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = ? AND scene_id = ?").run(
       projectId,
@@ -138,7 +148,8 @@ function saveStepVersion(projectId: string, step: string, payload: unknown, gene
   db.prepare(
     `INSERT INTO project_step_versions (id, project_id, step, scene_id, payload_json, accepted, generation_id)
      VALUES (?, ?, ?, ?, ?, 1, ?)`
-  ).run(uuid(), projectId, step, sceneId ?? null, JSON.stringify(payload), generationId);
+  ).run(id, projectId, step, sceneId ?? null, JSON.stringify(payload), generationId);
+  return id;
 }
 
 function brandFor(userId: string): BrandKit | null {
@@ -248,6 +259,7 @@ export function serializeProject(row: Record<string, unknown>) {
     versions: {
       idea: lastVersions(id, "idea"),
       script: lastVersions(id, "script"),
+      visuals: lastVersions(id, "visuals"),
     },
     ...previewState(row),
     createdAt: row.created_at,
@@ -255,12 +267,47 @@ export function serializeProject(row: Record<string, unknown>) {
   };
 }
 
-export function restoreStepVersion(userId: string, projectId: string, step: "idea" | "script", versionId: string) {
+export function restoreStepVersion(
+  userId: string,
+  projectId: string,
+  step: "idea" | "script" | "visuals",
+  versionId: string,
+  sceneId?: number
+) {
   const project = getProject(projectId, userId);
   const version = db
-    .prepare("SELECT id, payload_json, accepted FROM project_step_versions WHERE id = ? AND project_id = ? AND step = ?")
-    .get(versionId, projectId, step) as { id: string; payload_json: string; accepted: number } | undefined;
+    .prepare("SELECT id, payload_json, accepted, scene_id FROM project_step_versions WHERE id = ? AND project_id = ? AND step = ?")
+    .get(versionId, projectId, step) as
+    | { id: string; payload_json: string; accepted: number; scene_id: number | null }
+    | undefined;
   if (!version) throw Object.assign(new Error("That version is gone."), { status: 404 });
+  if (Number(version.accepted) === 1 && step !== "visuals") return serializeProject(project);
+
+  if (step === "visuals") {
+    const snapshot = parse<Visual[]>(version.payload_json);
+    const current = parse<Visual[]>(project.visuals_json) || [];
+    if (!snapshot?.length) throw Object.assign(new Error("That picture is gone."), { status: 404 });
+    const target = sceneId || version.scene_id;
+    const next = target
+      ? (() => {
+          const frame = snapshot.find((item) => item.sceneId === target);
+          if (!frame) throw Object.assign(new Error("That picture is gone."), { status: 404 });
+          return current.some((item) => item.sceneId === target)
+            ? current.map((item) => (item.sceneId === target ? frame : item))
+            : [...current, frame];
+        })()
+      : snapshot;
+    restoreStillSnapshot(projectId, version.id, next, target ? [target] : undefined);
+    db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = 'visuals'").run(projectId);
+    db.prepare("UPDATE project_step_versions SET accepted = 1 WHERE id = ?").run(version.id);
+    const ready = isImagePost(String(project.type));
+    db.prepare(
+      `UPDATE projects SET visuals_json = ?, output_url = ?, status = ?, updated_at = datetime('now') WHERE id = ?`
+    ).run(JSON.stringify(next), ready ? `/projects/${projectId}/image/1` : null, ready ? "ready" : "draft", projectId);
+    removeVideoFile(projectId);
+    return serializeProject(getProject(projectId, userId));
+  }
+
   if (Number(version.accepted) === 1) return serializeProject(project);
   db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = ?").run(projectId, step);
   db.prepare("UPDATE project_step_versions SET accepted = 1 WHERE id = ?").run(version.id);
@@ -271,10 +318,8 @@ export function restoreStepVersion(userId: string, projectId: string, step: "ide
     ...wipe,
     updated_at: new Date().toISOString(),
   };
-  if (step === "idea" || step === "script") {
-    removeVoiceFile(projectId);
-    removeVideoFile(projectId);
-  }
+  removeVoiceFile(projectId);
+  removeVideoFile(projectId);
   const fields = Object.keys(updates)
     .map((key) => `${key} = @${key}`)
     .join(", ");
@@ -592,13 +637,17 @@ export async function runStep(
               : step === "captions"
                 ? updates.captions_json
                 : updates.output_url;
-    saveStepVersion(
+    const versionId = saveStepVersion(
       projectId,
       step,
       versionPayload ? parse(String(versionPayload)) || versionPayload : {},
       generationId,
       sceneId
     );
+    if (step === "visuals") {
+      const frames = parse<Visual[]>(String(updates.visuals_json || ""));
+      if (frames?.length) snapshotStills(projectId, versionId, frames);
+    }
     if (String(updates.status || "") === "ready") maybeRefreshLearnedSummary(userId);
 
     return serializeProject(getProject(projectId, userId));

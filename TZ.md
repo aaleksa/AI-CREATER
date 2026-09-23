@@ -2,7 +2,7 @@
 
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
-**Версія документа:** 1.12  
+**Версія документа:** 1.13  
 **Мова інтерфейсу першої версії:** English  
 **Валюта:** GBP (£)
 
@@ -243,7 +243,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 
 **Studio.** Reel/TikTok: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: квадратний прев’ю 1:1, кроки Idea → Pictures, без Voice/Captions/Create. Бриф зверху — textarea, `Save brief` (PATCH, 0 credits); щоб застосувати — regenerate idea. Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб кнопка лишається: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі: бейдж *Couldn’t generate — regenerate this picture (8cr)*. Після Create (Reel) — Download mp4; після Pictures — Download JPG. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
 
-**Brand Kit.** Дві групи: *How it looks & sounds* (кольори, шрифт, тон-чипси + optional note) і *About your business* (ім’я, **upload лого**, vertical, сайт, Instagram) — друге опційне. Vertical: salon / café / fitness / **other** + вільний текст; мікрокопі: лише каркас сцен, не обов’язково. Жива прев’ю-картка (CSS, 0 AI). Індикатор «Brand kit N% complete — …». Learned-картка зверху + **Reset learning**. Лого: `POST /brand/logo` → `data/media/brand/{userId}/logo.*`. Невалідний hex не ламає picker. Disclaimer про знаки.
+**Brand Kit.** Дві групи: *How it looks & sounds* (кольори, шрифт, тон-чипси + optional note) і *About your business* (ім’я, **upload лого**, vertical, сайт, Instagram) — друге опційне. Vertical: salon / café / fitness / **other** + вільний текст; мікрокопі: лише каркас сцен, не обов’язково. Жива прев’ю-картка (CSS, 0 AI). Індикатор «Brand kit N% complete — …». Learned-картка зверху + **Reset learning** (одразу перераховує з готової історії, не чекає 3 нові Reels). Лого: `POST /brand/logo` — **max 2 MB, лише `image/png` / `image/jpeg`**, SVG заборонено; `GET /brand/logo` віддає файл з `Content-Type` png/jpeg і `X-Content-Type-Options: nosniff`, ніколи `image/svg+xml`, у UI лише `<img>`. Невалідний hex не ламає picker. Disclaimer про знаки.
 
 **Billing.** 4 плани, 3 пакети, таблиця вартості кроків (150 = повний Reel, 37 = still post), історія generation. Користувач бачить credits_used і орієнтовну £. Планові £/міс підписати **FROZEN**, доки бета не дасть логи TTS+рендеру.
 
@@ -543,7 +543,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 
 Не тренувати модель. Агрегувати accepted vs rejected + причину в `brand_kits.learned_summary_json` і підмішувати в system prompt як текстові підказки.
 
-**Тригер.** Після кожного **третього** `ready`/`expired` проєкту цього Brand Kit — фонова джоба. Не рахувати живцем на кожен запит. Поки < 3 ready — не рахувати (шум). `other` + note **не** парсити в v1; зберігати для ручного перегляду.
+**Тригер.** Після кожного **третього** `ready`/`expired` проєкту цього Brand Kit — фонова джоба. Не рахувати живцем на кожен звичайний запит. Поки < 3 ready — не рахувати (шум). `POST /brand/learning/reset` стирає `learned_summary_json` і **одразу** викликає той самий перерахунок з наявної історії (`force`); якщо ready < 3 — картка лишається порожньою, UI це каже. `other` + note **не** парсити в v1; зберігати для ручного перегляду.
 
 | Крок | Сигнал | Приклад у `learned_summary_json` |
 | --- | --- | --- |
@@ -613,11 +613,12 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 Власник хоче показати Reel партнеру / бариста / дружині **до** викладу. Це не публікація.
 
 - `POST /projects/:id/share` (JWT) — токен + TTL 7 днів; повторний Share оновлює expiry.
+- `preview_token` — **криптографічно випадковий, 32 байти** (`crypto.randomBytes(32).toString('hex')`, 64 hex). Не UUID v1 і не обрізаний UUID. Публічний, без auth — ентропія обов’язкова.
 - Сторінка `/preview/:token` (без логіну). Медіа: `GET /share/:token/file` і `/share/:token/image/:sceneId`.
 - `GET /projects/:id/preview?token=` — той самий JSON без auth.
 - Не постійний Download URL і не S3. Після TTL — 404. Кнопка в студії: *Share a preview*.
 
-Порівняння версій Idea/Script: `GET` проєкту віддає дві останні в `versions`; `POST /projects/:id/versions/{idea|script}/:versionId/restore` ставить обрану `accepted=1`, **0 credits**, каскад як regenerate.
+Порівняння версій Idea/Script/**Visuals**: `GET` проєкту віддає дві останні в `versions`; `POST /projects/:id/versions/{idea|script|visuals}/:versionId/restore` ставить обрану `accepted=1`, **0 credits**. Idea/script — каскад як regenerate. Visuals — за `{ sceneId }` відкочує один кадр з файлового знімка `still-{sceneId}-{versionId}.jpg` (mp4 скидається).
 
 ---
 
@@ -635,7 +636,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | POST | `/auth/login` | ні | `{ email, password }` → `{ token, user }` |
 | GET | `/auth/me` | так | `{ user, subscription, credits }` |
 | GET | `/projects` | так | список + `fullVideoCost` + `fullImageCost` |
-| POST | `/projects` | так | `{ type, prompt }` → 201 `{ project }` |
+| POST | `/projects` | так | `{ type, prompt, imageIntent? }` → 201 `{ project }`; невалідний `imageIntent` → **400** |
 | GET | `/projects/:id` | так | проєкт + таблиця costs |
 | PATCH | `/projects/:id` | так | `{ prompt }` — змінити бриф; credits 0; щоб застосувати — regenerate idea |
 | POST | `/projects/:id/steps/:step` | так | `{ regenerate?, sceneId?, idempotencyKey?, feedbackReason?, feedbackNote? }` + `Idempotency-Key`; 20 req/хв |
@@ -645,16 +646,16 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | GET | `/share/:token` | ні | JSON прев’ю |
 | GET | `/share/:token/file` | ні | mp4 прев’ю |
 | GET | `/share/:token/image/:sceneId` | ні | JPG прев’ю |
-| POST | `/projects/:id/versions/:step/:versionId/restore` | так | idea/script, 0 credits |
+| POST | `/projects/:id/versions/:step/:versionId/restore` | так | idea / script / **visuals** (`sceneId?`), 0 credits |
 | DELETE | `/auth/account` | так | спочатку Stripe `subscriptions.cancel`, потім дані |
 | GET | `/projects/:id/file` | так | mp4 після Create |
 | GET | `/projects/:id/image/:sceneId` | так | JPG still після Pictures |
 | GET | `/projects/:id/audio` | так | mp3 після Voice |
 | GET | `/brand` | так | `{ brandKit }` + completeness + learned_lines |
 | PUT | `/brand` | так | зберегти kit |
-| POST | `/brand/logo` | так | `{ image: data-url }` → файл у `data/media/brand/{userId}` |
-| GET | `/brand/logo` | так | файл лого |
-| POST | `/brand/learning/reset` | так | стерти `learned_summary_json` |
+| POST | `/brand/logo` | так | `{ image: data-url }` → файл у `data/media/brand/{userId}`; **≤2 MB, лише PNG/JPEG** (перевірка magic bytes); SVG/WebP → 400 |
+| GET | `/brand/logo` | так | файл лого як `<img>`; `Content-Type` png/jpeg, не `image/svg+xml` |
+| POST | `/brand/learning/reset` | так | стерти і **одразу перерахувати** `learned_summary_json` з історії |
 | GET | `/billing/plans` | ні | плани + packs (**провізорні**) |
 | GET | `/billing/credits` | так | balance, transactions, generations, **economics** (собівартість на готовий Reel) |
 | POST | `/billing/checkout` | так | `{ planId? , packId? }` → `{ mode, url }` |
@@ -681,6 +682,8 @@ Image / Post: idea → visuals (4 stills). `script` / `voice` / `captions` / `re
 
 Промпт: `trim`, 8–2000 символів. Одне речення — норма; абзац дозволений.
 
+`image_intent` на `image_post`: `photo` / `invite` / `info` / `offer`. Порожньо → `photo`. Значення не з переліку → **400** `Choose photo, invitation, information or offer.` На Reel/TikTok поле ігнорується.
+
 ### 7.2 Регенерація (UX і ціна)
 
 Власник малого бізнесу, якому не зайшов голос або кадр, **не** має єдиним виходом починати новий проєкт — це вбиває retention.
@@ -690,6 +693,7 @@ Image / Post: idea → visuals (4 stills). `script` / `voice` / `captions` / `re
 | `POST /steps/:step` повторно, крок уже done, **без** `regenerate` | 0 | повернути поточний проєкт, **AI не викликати** |
 | `POST /steps/:step` з `{ "regenerate": true }` | ціна кроку; з 4-ї спроби **2×** | новий виклик AI/TTS/ffmpeg, перезапис артефакту |
 | `POST /steps/visuals` з `{ "regenerate": true, "sceneId": N }` | **8**; з 4-ї Visuals-спроби **16** | лише цей кадр; mp4 скидається |
+| `POST .../versions/{idea\|script\|visuals}/:id/restore` | **0** | повернути вже оплачену версію; visuals — по `sceneId`, файл зі знімка |
 | Недостатньо credits | 402 | лишити версію або докупити credits |
 | Провайдер викликаний, крок упав | списані | refund немає — запит уже коштував нам грошей |
 
@@ -889,7 +893,7 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 1. Brand Kit learning (§6.9.1) — **є**.
 2. Feedback на рівні кроку (§6.11) — **є**.
 3. Публічний preview-лінк (§6.12) — **є** (показати партнеру, не викласти).
-4. Порівняння двох останніх Idea/Script і restore без credits — **є**.
+4. Порівняння двох останніх Idea/Script/**Visuals** і restore без credits — **є**.
 
 **Етапи доступу (як було):** закрита бета 5–10 → чекпоінт собівартості → privacy/delete → публічний лендінг → CAC-тест → гейт §11.11.
 

@@ -27,6 +27,7 @@ export type BrandKitRow = Record<string, string> & {
   learned_summary?: LearnedSummary | null;
   learned_lines?: string[];
   ready?: boolean;
+  ready_projects?: number;
   completeness?: { percent: number; hint: string };
   tone_note?: string;
   vertical_note?: string;
@@ -71,10 +72,12 @@ export type Project = {
   versions: {
     idea: StepVersion<Idea>[];
     script: StepVersion<{ durationSec: number; cta: string; scenes: ScriptScene[] }>[];
+    visuals?: StepVersion<{ sceneId: number; imageUrl: string; prompt: string; placeholder?: boolean }[]>[];
   };
   previewUrl: string | null;
   previewExpiresAt: string | null;
   createdAt: string;
+  updatedAt?: string;
 };
 export type StepVersion<T> = { id: string; accepted: boolean; createdAt: string; payload: T | null };
 
@@ -136,8 +139,11 @@ export const api = {
       body: JSON.stringify({ publishable, reasons }),
     }),
   sharePreview: (id: string) => request<{ url: string; expiresAt: string }>(`/projects/${id}/share`, { method: "POST" }),
-  restoreVersion: (id: string, step: "idea" | "script", versionId: string) =>
-    request<{ project: Project }>(`/projects/${id}/versions/${step}/${versionId}/restore`, { method: "POST" }),
+  restoreVersion: (id: string, step: "idea" | "script" | "visuals", versionId: string, sceneId?: number) =>
+    request<{ project: Project }>(`/projects/${id}/versions/${step}/${versionId}/restore`, {
+      method: "POST",
+      body: JSON.stringify(sceneId ? { sceneId } : {}),
+    }),
   deleteAccount: () => request<{ ok: boolean }>("/auth/account", { method: "DELETE" }),
   brand: () => request<{ brandKit: BrandKitRow | null }>("/brand"),
   saveBrand: (body: Record<string, string>) =>

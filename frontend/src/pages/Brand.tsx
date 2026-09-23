@@ -56,6 +56,7 @@ export default function Brand() {
   const [error, setError] = useState("");
   const [learnedFrom, setLearnedFrom] = useState(0);
   const [learnedLines, setLearnedLines] = useState<string[]>([]);
+  const [readyProjects, setReadyProjects] = useState(0);
   const [hint, setHint] = useState("");
   const [logoSrc, setLogoSrc] = useState("");
   const [ownNote, setOwnNote] = useState(false);
@@ -64,6 +65,7 @@ export default function Brand() {
     setForm(applyKit(kit));
     setLearnedFrom(kit.learned_summary?.basedOnProjects || 0);
     setLearnedLines(kit.learned_lines || []);
+    setReadyProjects(kit.ready_projects || 0);
     setHint(kit.completeness?.hint || "");
     setOwnNote(Boolean(kit.tone_note));
   }
@@ -116,6 +118,10 @@ export default function Brand() {
       setError("That file is too large. Keep it under 2 MB.");
       return;
     }
+    if (!["image/png", "image/jpeg"].includes(file.type)) {
+      setError("Use a PNG or JPG under 2 MB. SVG is not allowed.");
+      return;
+    }
     const reader = new FileReader();
     reader.onload = async () => {
       try {
@@ -129,7 +135,7 @@ export default function Brand() {
   }
 
   async function resetLearning() {
-    if (!window.confirm("Forget what Auteur learned from your Reels? The next one starts fresh.")) return;
+    if (!window.confirm("Recalculate what Auteur learned from the Reels you already finished?")) return;
     try {
       const { brandKit } = await api.resetLearning();
       apply(brandKit);
@@ -152,15 +158,26 @@ export default function Brand() {
       </p>
       {hint && <p className="hint" style={{ marginTop: 12 }}>{hint}</p>}
 
-      {learnedFrom >= 3 && (
+      {(learnedFrom >= 3 || readyProjects >= 3) && (
         <div className="panel" style={{ marginTop: 20, maxWidth: 920 }}>
-          <p className="ok">Auteur has learned from {learnedFrom} of your Reels</p>
+          <p className="ok">
+            {learnedFrom >= 3
+              ? `Auteur has learned from ${learnedFrom} of your Reels`
+              : "Auteur can learn from the Reels you already finished"}
+          </p>
           <p className="lede" style={{ marginTop: 8 }}>
-            {learnedLines.length ? learnedLines.join(" · ") : "Keep using Try again with a reason — that is how it learns."}
+            {learnedLines.length
+              ? learnedLines.join(" · ")
+              : readyProjects >= 3
+                ? "Reset recalculates from those Reels now — you don’t wait for three new ones."
+                : "Keep using Try again with a reason — that is how it learns."}
           </p>
           <button className="btn ghost" type="button" style={{ marginTop: 12 }} onClick={resetLearning}>
             Reset learning
           </button>
+          <p className="hint" style={{ marginTop: 8 }}>
+            Recalculates from finished Reels you already have. If you have fewer than three, the card stays empty until you do.
+          </p>
         </div>
       )}
 
@@ -240,8 +257,8 @@ export default function Brand() {
           </div>
           <div className="field">
             <label htmlFor="logo">Logo</label>
-            <p className="hint">From your phone is fine. PNG, JPG or WebP, under 2 MB.</p>
-            <input id="logo" type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => onLogo(e.target.files?.[0])} />
+            <p className="hint">From your phone is fine. PNG or JPG, under 2 MB. Not SVG.</p>
+            <input id="logo" type="file" accept="image/png,image/jpeg" onChange={(e) => onLogo(e.target.files?.[0])} />
           </div>
           <div className="field">
             <label>What do you run? — optional</label>
