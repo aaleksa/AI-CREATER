@@ -14,7 +14,7 @@ export const config = {
 
 export const MIN_PROMPT_CHARS = 8;
 export const MAX_PROMPT_CHARS = 2000;
-export const FREE_CREDITS = 200;
+export const FREE_CREDITS = 400;
 
 export const CREDIT_COSTS = {
   idea: 5,

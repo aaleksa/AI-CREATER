@@ -6,7 +6,7 @@ Auteur is not a Canva clone. It is a simple AI content studio: the user never ch
 
 UI: **English and Ukrainian** (EN / УК, stored in the browser). The brief stays in the language they wrote.
 
-Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.15).
+Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.16).
 
 The first studio is **one short video** (30 seconds, Instagram or TikTok — same file) and still **Image / Posts**. A video is 150 credits; a still post is 13 (idea + one picture). Ads and YouTube stay later.
 
@@ -15,7 +15,7 @@ The first studio is **one short video** (30 seconds, Instagram or TikTok — sam
 | Screen | What it does |
 | --- | --- |
 | Landing | Promise, not a tool list. Language switch. |
-| Sign up / Sign in | Account + **200** free credits |
+| Sign up / Sign in | Account + **400** free credits |
 | Create | Short video or Image, optional photo / invite / info / offer, brand on/off, saved briefs to insert |
 | Studio | Reel: six steps. Image: Idea → Pictures. Brief, copy brief, brand chips |
 | Brand kit | Logo (optional), colours, font, tone, niche, Instagram |
@@ -26,7 +26,7 @@ A finished Reel costs **150 credits** (5 + 10 + 40 + 30 + 10 + 55). A still post
 
 Plans (provisional until real unit cost is measured):
 
-- Free — £0 — 200 credits
+- Free — £0 — 400 credits
 - Creator — £9.99 — 1,000
 - Pro — £24.99 — 3,500
 - Business — £49.99 — 8,000
