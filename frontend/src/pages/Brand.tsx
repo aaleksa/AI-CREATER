@@ -1,5 +1,22 @@
 import { FormEvent, useEffect, useState } from "react";
-import { api } from "../lib/api";
+import { Link } from "react-router-dom";
+import { api, fetchMedia, type BrandKitRow } from "../lib/api";
+
+const TONES = [
+  { id: "warm", label: "Warm & friendly", text: "Warm and friendly. Like a regular, not an ad." },
+  { id: "professional", label: "Professional & polished", text: "Professional and polished. Clear, short, never stiff." },
+  { id: "playful", label: "Fun & playful", text: "Fun and playful. Light. Never try-hard." },
+  { id: "calm", label: "Calm & minimal", text: "Calm and minimal. Unhurried. Quiet, not luxury-speak." },
+];
+
+const TYPES = [
+  { id: "salon", label: "Salon", hint: "The chair, the cut — not stock hair." },
+  { id: "cafe", label: "Café", hint: "The pour, the room — not a latte cliché." },
+  { id: "fitness", label: "Fitness", hint: "The third set — not a gym advert." },
+  { id: "other", label: "Something else", hint: "Optional. Only steers the story, not ads." },
+];
+
+const FONTS = ["Fraunces", "Outfit", "Playfair Display", "IBM Plex Sans"];
 
 const empty = {
   business_name: "",
@@ -7,60 +24,117 @@ const empty = {
   primary_color: "#C45C26",
   secondary_color: "#F4EFE8",
   font: "Fraunces",
-  tone_of_voice: "Warm, confident, cinematic",
+  tone_of_voice: TONES[0].text,
+  tone_note: "",
   website: "",
   instagram: "",
   vertical: "",
+  vertical_note: "",
 };
+
+function applyKit(kit: BrandKitRow) {
+  const hex = (value: string | undefined, fallback: string) =>
+    value && /^#[0-9A-Fa-f]{6}$/.test(value) ? value : fallback;
+  return {
+    business_name: kit.business_name || "",
+    logo_url: kit.logo_url || "",
+    primary_color: hex(kit.primary_color, "#C45C26"),
+    secondary_color: hex(kit.secondary_color, "#F4EFE8"),
+    font: kit.font || "Fraunces",
+    tone_of_voice: kit.tone_of_voice || TONES[0].text,
+    tone_note: kit.tone_note || "",
+    website: kit.website || "",
+    instagram: kit.instagram || "",
+    vertical: kit.vertical || "",
+    vertical_note: kit.vertical_note || "",
+  };
+}
 
 export default function Brand() {
   const [form, setForm] = useState(empty);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [learnedFrom, setLearnedFrom] = useState(0);
+  const [learnedLines, setLearnedLines] = useState<string[]>([]);
+  const [hint, setHint] = useState("");
+  const [logoSrc, setLogoSrc] = useState("");
+  const [ownNote, setOwnNote] = useState(false);
+
+  function apply(kit: BrandKitRow) {
+    setForm(applyKit(kit));
+    setLearnedFrom(kit.learned_summary?.basedOnProjects || 0);
+    setLearnedLines(kit.learned_lines || []);
+    setHint(kit.completeness?.hint || "");
+    setOwnNote(Boolean(kit.tone_note));
+  }
 
   useEffect(() => {
     api.brand().then((d) => {
       if (!d.brandKit) return;
-      const kit = d.brandKit;
-      const hex = (value: string | undefined, fallback: string) =>
-        value && /^#[0-9A-Fa-f]{6}$/.test(value) ? value : fallback;
-      setForm({
-        business_name: kit.business_name || "",
-        logo_url: kit.logo_url || "",
-        primary_color: hex(kit.primary_color, "#C45C26"),
-        secondary_color: hex(kit.secondary_color, "#F4EFE8"),
-        font: kit.font || "Fraunces",
-        tone_of_voice: kit.tone_of_voice || empty.tone_of_voice,
-        website: kit.website || "",
-        instagram: kit.instagram || "",
-        vertical: kit.vertical || "",
-      });
-      setLearnedFrom(kit.learned_summary?.basedOnProjects || 0);
+      apply(d.brandKit);
     });
   }, []);
+
+  useEffect(() => {
+    if (form.logo_url !== "/brand/logo") {
+      setLogoSrc(form.logo_url.startsWith("http") ? form.logo_url : "");
+      return;
+    }
+    let url = "";
+    fetchMedia("/brand/logo")
+      .then((blob) => {
+        url = URL.createObjectURL(blob);
+        setLogoSrc(url);
+      })
+      .catch(() => setLogoSrc(""));
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [form.logo_url]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
     try {
-      const { brandKit } = await api.saveBrand(form);
-      const kit = brandKit;
-      setForm({
-        business_name: kit.business_name || "",
-        logo_url: kit.logo_url || "",
-        primary_color: kit.primary_color || "#C45C26",
-        secondary_color: kit.secondary_color || "#F4EFE8",
-        font: kit.font || "Fraunces",
-        tone_of_voice: kit.tone_of_voice || empty.tone_of_voice,
-        website: kit.website || "",
-        instagram: kit.instagram || "",
-        vertical: kit.vertical || "",
+      const instagram = form.instagram.trim().replace(/^@+/, "");
+      const { brandKit } = await api.saveBrand({
+        ...form,
+        instagram: instagram ? `@${instagram}` : "",
+        website: form.website.trim(),
       });
+      apply(brandKit);
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), 2500);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save.");
+    }
+  }
+
+  async function onLogo(file: File | undefined) {
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      setError("That file is too large. Keep it under 2 MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const { brandKit } = await api.uploadLogo(String(reader.result || ""));
+        apply(brandKit);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not upload the logo.");
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function resetLearning() {
+    if (!window.confirm("Forget what Auteur learned from your Reels? The next one starts fresh.")) return;
+    try {
+      const { brandKit } = await api.resetLearning();
+      apply(brandKit);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reset learning.");
     }
   }
 
@@ -68,70 +142,181 @@ export default function Brand() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  const tone = TONES.find((item) => item.text === form.tone_of_voice);
+
   return (
     <div>
-      <h1 className="page-title" style={{ fontSize: 48 }}>My Brand</h1>
+      <h1 className="page-title" style={{ fontSize: 48 }}>Brand kit</h1>
       <p className="lede">
-        Set this once. Then write “Create a Reel promoting my coffee shop” —
-        Auteur already knows the colours, type, tone, and whether you are a salon, café or gym.
+        Colours, type and tone change every Reel. Name, logo and Instagram can wait.
       </p>
+      {hint && <p className="hint" style={{ marginTop: 12 }}>{hint}</p>}
+
       {learnedFrom >= 3 && (
-        <p className="ok" style={{ marginTop: 12 }}>
-          Auteur has learned from {learnedFrom} of your Reels.
-        </p>
+        <div className="panel" style={{ marginTop: 20, maxWidth: 920 }}>
+          <p className="ok">Auteur has learned from {learnedFrom} of your Reels</p>
+          <p className="lede" style={{ marginTop: 8 }}>
+            {learnedLines.length ? learnedLines.join(" · ") : "Keep using Try again with a reason — that is how it learns."}
+          </p>
+          <button className="btn ghost" type="button" style={{ marginTop: 12 }} onClick={resetLearning}>
+            Reset learning
+          </button>
+        </div>
       )}
-      <form className="panel" style={{ maxWidth: 640, marginTop: 28 }} onSubmit={onSubmit}>
-        <div className="field">
-          <label>Business name</label>
-          <input value={form.business_name} onChange={(e) => set("business_name", e.target.value)} />
-        </div>
-        <div className="field">
-          <label>Logo URL</label>
-          <input value={form.logo_url} onChange={(e) => set("logo_url", e.target.value)} placeholder="https://" />
-        </div>
-        <div className="field">
-          <label>Brand colours</label>
-          <div className="color-row">
-            <input type="color" value={form.primary_color} onChange={(e) => set("primary_color", e.target.value)} />
-            <input value={form.primary_color} onChange={(e) => set("primary_color", e.target.value)} />
-            <input type="color" value={form.secondary_color} onChange={(e) => set("secondary_color", e.target.value)} />
-            <input value={form.secondary_color} onChange={(e) => set("secondary_color", e.target.value)} />
+
+      <div className="brand-layout">
+        <form className="panel" onSubmit={onSubmit}>
+          <h2>How it looks & sounds</h2>
+          <p className="hint">This is what Auteur uses on every Reel. Worth getting right.</p>
+          <div className="field">
+            <label>Colours</label>
+            <p className="hint">Main colour grades the pictures. Soft colour is the paper and the quiet space.</p>
+            <div className="color-row">
+              <div>
+                <span className="hint">Main</span>
+                <div className="color-row">
+                  <input type="color" value={form.primary_color} onChange={(e) => set("primary_color", e.target.value)} />
+                  <input value={form.primary_color} onChange={(e) => set("primary_color", e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <span className="hint">Soft</span>
+                <div className="color-row">
+                  <input type="color" value={form.secondary_color} onChange={(e) => set("secondary_color", e.target.value)} />
+                  <input value={form.secondary_color} onChange={(e) => set("secondary_color", e.target.value)} />
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="field">
-          <label>Font</label>
-          <select value={form.font} onChange={(e) => set("font", e.target.value)}>
-            <option>Fraunces</option>
-            <option>Outfit</option>
-            <option>Playfair Display</option>
-            <option>IBM Plex Sans</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Vertical</label>
-          <select value={form.vertical} onChange={(e) => set("vertical", e.target.value)}>
-            <option value="">Choose one</option>
-            <option value="salon">Salon</option>
-            <option value="cafe">Café</option>
-            <option value="fitness">Fitness</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Tone of voice</label>
-          <textarea value={form.tone_of_voice} onChange={(e) => set("tone_of_voice", e.target.value)} />
-        </div>
-        <div className="field">
-          <label>Website</label>
-          <input value={form.website} onChange={(e) => set("website", e.target.value)} />
-        </div>
-        <div className="field">
-          <label>Instagram</label>
-          <input value={form.instagram} onChange={(e) => set("instagram", e.target.value)} placeholder="@studio" />
-        </div>
-        {error && <p className="err">{error}</p>}
-        {saved && <p className="ok">Brand kit saved. Every new Reel will use it.</p>}
-        <button className="btn">Save brand kit</button>
-      </form>
+          <div className="field">
+            <label htmlFor="font">Title type</label>
+            <p className="hint">Steers how titles are imagined. The mp4 does not embed the font file yet.</p>
+            <select id="font" value={form.font} onChange={(e) => set("font", e.target.value)}>
+              {FONTS.map((font) => (
+                <option key={font}>{font}</option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>Tone</label>
+            <p className="hint">One click. This is what the AI hears — you do not have to write a brief.</p>
+            <div className="choice-row tones">
+              {TONES.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`choice ${form.tone_of_voice === item.text ? "on" : ""}`}
+                  onClick={() => set("tone_of_voice", item.text)}
+                >
+                  <b>{item.label}</b>
+                </button>
+              ))}
+            </div>
+            <button className="btn ghost" type="button" onClick={() => setOwnNote((v) => !v)}>
+              {ownNote ? "Hide extra note" : "+ Add your own note"}
+            </button>
+            {ownNote && (
+              <textarea
+                value={form.tone_note}
+                onChange={(e) => set("tone_note", e.target.value)}
+                rows={2}
+                maxLength={400}
+                placeholder="Never say ‘limited time’. We are a neighbourhood shop."
+                style={{ marginTop: 10 }}
+              />
+            )}
+          </div>
+
+          <h2 style={{ marginTop: 32 }}>About your business</h2>
+          <p className="hint">Optional. Skip anything you do not have. None of this blocks Create.</p>
+          <div className="field">
+            <label htmlFor="business_name">Business name</label>
+            <input
+              id="business_name"
+              value={form.business_name}
+              onChange={(e) => set("business_name", e.target.value)}
+              placeholder="Your coffee shop"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="logo">Logo</label>
+            <p className="hint">From your phone is fine. PNG, JPG or WebP, under 2 MB.</p>
+            <input id="logo" type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => onLogo(e.target.files?.[0])} />
+          </div>
+          <div className="field">
+            <label>What do you run? — optional</label>
+            <p className="hint">Only picks the kind of scenes (chair / pour / floor). Not a category for ads. Skip if none fit.</p>
+            <div className="choice-row">
+              {TYPES.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`choice ${form.vertical === item.id ? "on" : ""}`}
+                  onClick={() => set("vertical", form.vertical === item.id ? "" : item.id)}
+                >
+                  <b>{item.label}</b>
+                  <span className="hint">{item.hint}</span>
+                </button>
+              ))}
+            </div>
+            {form.vertical === "other" && (
+              <input
+                value={form.vertical_note}
+                onChange={(e) => set("vertical_note", e.target.value)}
+                placeholder="What kind of business is this?"
+                maxLength={80}
+              />
+            )}
+          </div>
+          <div className="field">
+            <label htmlFor="instagram">Instagram</label>
+            <input
+              id="instagram"
+              value={form.instagram}
+              onChange={(e) => set("instagram", e.target.value)}
+              placeholder="@studio"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="website">Website</label>
+            <input id="website" value={form.website} onChange={(e) => set("website", e.target.value)} placeholder="https://" />
+          </div>
+
+          <p className="hint">The name and logo you enter are treated as yours. Auteur does not check trademarks.</p>
+          {error && <p className="err">{error}</p>}
+          {saved && <p className="ok">Saved. The next Idea, pictures and voice will use this.</p>}
+          <button className="btn" style={{ marginTop: 12 }}>
+            Save brand kit
+          </button>
+        </form>
+
+        <aside>
+          <p className="hint">Not the Reel. Just how your brand feels — colours, type, tone.</p>
+          <div className="brand-preview" style={{ background: form.secondary_color, color: "#1a1612" }}>
+            {logoSrc && <img src={logoSrc} alt="" className="brand-logo" />}
+            <p
+              style={{
+                fontFamily: form.font,
+                fontSize: 32,
+                lineHeight: 1.1,
+                margin: "8px 0 0",
+                color: form.primary_color,
+              }}
+            >
+              {form.business_name.trim() || "Your coffee shop"}
+            </p>
+            <hr style={{ border: 0, borderTop: `3px solid ${form.primary_color}`, margin: "16px 0" }} />
+            <p>“{tone?.label || "Your tone"}”</p>
+            {form.tone_note && <p className="hint" style={{ color: "inherit", marginTop: 8 }}>{form.tone_note}</p>}
+          </div>
+          {learnedFrom < 3 && (
+            <p className="hint" style={{ marginTop: 16 }}>
+              After three finished Reels, Auteur will write what usually works for you at the top of this page.{" "}
+              <Link to="/app">Make one</Link>
+            </p>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }

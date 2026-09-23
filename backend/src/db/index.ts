@@ -31,6 +31,8 @@ addColumn("ALTER TABLE project_step_versions ADD COLUMN rejection_reason TEXT");
 addColumn("ALTER TABLE brand_kits ADD COLUMN learned_summary_json TEXT");
 addColumn("ALTER TABLE projects ADD COLUMN preview_token TEXT");
 addColumn("ALTER TABLE projects ADD COLUMN preview_expires_at TEXT");
+addColumn("ALTER TABLE brand_kits ADD COLUMN tone_note TEXT NOT NULL DEFAULT ''");
+addColumn("ALTER TABLE brand_kits ADD COLUMN vertical_note TEXT NOT NULL DEFAULT ''");
 
 try {
   sqlite.exec(`

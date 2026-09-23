@@ -20,6 +20,8 @@ export type BrandKit = {
   website: string;
   instagram: string;
   vertical?: string;
+  vertical_note?: string;
+  tone_note?: string;
   learned_summary_json?: string | null;
 };
 
@@ -75,16 +77,29 @@ function parseLearned(value?: string | null): LearnedSummary | null {
 }
 
 function brandContext(brand?: BrandKit | null) {
-  if (!brand?.business_name) return "No brand kit yet. Keep the look cinematic and premium.";
+  if (!brand) return "No brand kit yet. Keep the look cinematic and premium. Do not invent a fake business name.";
   const learned = parseLearned(brand.learned_summary_json);
+  const niche =
+    brand.vertical === "salon"
+      ? "This is a salon. Show the chair, the cut, the quiet — not stock hair."
+      : brand.vertical === "cafe"
+        ? "This is a café. Show the pour, the regular, the room — not a latte cliché."
+        : brand.vertical === "fitness"
+          ? "This is a fitness studio. Show the floor, the breath, the third set — not a gym advert."
+          : brand.vertical === "other" && brand.vertical_note
+            ? `This is a ${brand.vertical_note}. Use real details of that trade, not a generic stock set.`
+            : "";
   const lines = [
-    `Brand: ${brand.business_name}`,
+    brand.business_name && `Brand name: ${brand.business_name}. Use this name if a title card is needed. Do not invent another.`,
     brand.tone_of_voice && `Tone of voice: ${brand.tone_of_voice}`,
-    brand.primary_color && `Primary colour: ${brand.primary_color}`,
-    brand.font && `Font: ${brand.font}`,
+    brand.tone_note && `Owner note on tone: ${brand.tone_note}`,
+    brand.primary_color && `Primary colour: ${brand.primary_color}. Grade light and accents toward it.`,
+    brand.secondary_color && `Secondary colour: ${brand.secondary_color}. Use for paper, type, quiet space.`,
+    brand.font && `Title font feel: ${brand.font}.`,
+    brand.logo_url && `They have a logo at ${brand.logo_url}. Do not invent a different mark.`,
     brand.instagram && `Instagram: ${brand.instagram}`,
     brand.website && `Website: ${brand.website}`,
-    brand.vertical && `Business vertical: ${brand.vertical}. Use the pacing and details a ${brand.vertical} would actually post.`,
+    niche,
   ].filter(Boolean) as string[];
   if (learned && learned.basedOnProjects >= 3) {
     const avoidCopy: Record<string, string> = {
@@ -294,8 +309,8 @@ async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, k
 
   const prompt =
     kind === "still"
-      ? `${scene.visualPrompt}. Square 1:1 Instagram still photograph, natural light, no text overlay, no UI chrome.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}.` : ""}`
-      : `${scene.visualPrompt}. Vertical 9:16 cinematic still, filmic, no text overlay.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}.` : ""}`;
+      ? `${scene.visualPrompt}. Square 1:1 Instagram still photograph, natural light, no text overlay, no UI chrome.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}${brand.secondary_color ? ` with ${brand.secondary_color} quiet space` : ""}.` : ""}${brand?.vertical ? ` A real ${brand.vertical}, not a stock set.` : ""}`
+      : `${scene.visualPrompt}. Vertical 9:16 cinematic still, filmic, no text overlay.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}${brand.secondary_color ? ` with ${brand.secondary_color} quiet space` : ""}.` : ""}${brand?.vertical ? ` A real ${brand.vertical}, not a stock set.` : ""}`;
 
   const once = async () => {
     const image = await openai.images.generate({

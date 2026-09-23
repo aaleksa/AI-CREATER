@@ -23,7 +23,14 @@ export type LearnedSummary = {
   preferredVoice?: string;
   visualNotes?: string;
 };
-export type BrandKitRow = Record<string, string> & { learned_summary?: LearnedSummary | null };
+export type BrandKitRow = Record<string, string> & {
+  learned_summary?: LearnedSummary | null;
+  learned_lines?: string[];
+  ready?: boolean;
+  completeness?: { percent: number; hint: string };
+  tone_note?: string;
+  vertical_note?: string;
+};
 export type Idea = {
   title: string;
   hook: string;
@@ -134,6 +141,9 @@ export const api = {
   brand: () => request<{ brandKit: BrandKitRow | null }>("/brand"),
   saveBrand: (body: Record<string, string>) =>
     request<{ brandKit: BrandKitRow }>("/brand", { method: "PUT", body: JSON.stringify(body) }),
+  uploadLogo: (image: string) =>
+    request<{ brandKit: BrandKitRow }>("/brand/logo", { method: "POST", body: JSON.stringify({ image }) }),
+  resetLearning: () => request<{ brandKit: BrandKitRow }>("/brand/learning/reset", { method: "POST" }),
   plans: () =>
     request<{
       plans: { id: string; name: string; price_gbp: number; monthly_credits: number; description: string }[];

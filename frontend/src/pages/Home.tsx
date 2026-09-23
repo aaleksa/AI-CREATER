@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 
 const FORMATS = [
@@ -23,7 +23,18 @@ export default function Home() {
   const [prompt, setPrompt] = useState(EXAMPLES.instagram_reel);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [kitHint, setKitHint] = useState("");
   const selected = useMemo(() => FORMATS.find((f) => f.id === type), [type]);
+
+  useEffect(() => {
+    api
+      .brand()
+      .then((d) => {
+        const progress = d.brandKit?.completeness;
+        setKitHint(progress && progress.percent < 70 ? progress.hint : "");
+      })
+      .catch(() => setKitHint(""));
+  }, []);
 
   async function start() {
     if (!selected?.ready) {
@@ -47,6 +58,11 @@ export default function Home() {
       <p className="hint">The studio</p>
       <h1 style={{ fontSize: "clamp(40px, 6vw, 64px)" }}>What do you want to create?</h1>
       <p className="lede">Pick a format. Write what you want. A sentence can be enough — but if the offer, the place or who it’s for matters, say that too.</p>
+      {kitHint && (
+        <p className="hint">
+          {kitHint}. <Link to="/app/brand">Open brand kit</Link>
+        </p>
+      )}
 
       <div className="format-grid">
         {FORMATS.map((format) => (

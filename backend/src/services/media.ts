@@ -12,6 +12,39 @@ const ffmpegPath = (require("ffmpeg-static") as string | null) || "ffmpeg";
 
 const dataDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../data");
 
+export function brandLogoDir(userId: string) {
+  const dir = path.join(dataDir, "media", "brand", userId);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+export function brandLogoPath(userId: string) {
+  const dir = path.join(dataDir, "media", "brand", userId);
+  if (!fs.existsSync(dir)) return "";
+  const found = fs.readdirSync(dir).find((name) => name.startsWith("logo."));
+  return found ? path.join(dir, found) : "";
+}
+
+export function hasBrandLogo(userId: string) {
+  const file = brandLogoPath(userId);
+  return Boolean(file && fs.existsSync(file) && fs.statSync(file).size > 0);
+}
+
+export function removeBrandLogo(userId: string) {
+  const dir = path.join(dataDir, "media", "brand", userId);
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+export function writeBrandLogo(userId: string, buffer: Buffer, ext: string) {
+  const dir = brandLogoDir(userId);
+  for (const name of fs.readdirSync(dir)) {
+    if (name.startsWith("logo.")) fs.rmSync(path.join(dir, name), { force: true });
+  }
+  const file = path.join(dir, `logo.${ext}`);
+  fs.writeFileSync(file, buffer);
+  return file;
+}
+
 export function projectMediaDir(projectId: string) {
   const dir = path.join(dataDir, "media", projectId);
   fs.mkdirSync(dir, { recursive: true });

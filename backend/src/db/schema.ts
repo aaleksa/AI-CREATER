@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS brand_kits (
   website TEXT NOT NULL DEFAULT '',
   instagram TEXT NOT NULL DEFAULT '',
   vertical TEXT NOT NULL DEFAULT '',
+  tone_note TEXT NOT NULL DEFAULT '',
+  vertical_note TEXT NOT NULL DEFAULT '',
   learned_summary_json TEXT,
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (user_id) REFERENCES users(id)

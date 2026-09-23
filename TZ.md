@@ -237,7 +237,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 
 **Studio.** Reel/TikTok: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: квадратний прев’ю 1:1, кроки Idea → Pictures, без Voice/Captions/Create. Бриф зверху — textarea, `Save brief` (PATCH, 0 credits); щоб застосувати — regenerate idea. Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб кнопка лишається: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі: бейдж *Couldn’t generate — regenerate this picture (8cr)*. Після Create (Reel) — Download mp4; після Pictures — Download JPG. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
 
-**Brand Kit.** Поля: business name, logo URL, primary/secondary colour (hex), font, tone of voice, website, Instagram, **vertical** (salon / cafe / fitness). Невалідний hex не ламає color picker.
+**Brand Kit.** Дві групи: *How it looks & sounds* (кольори, шрифт, тон-чипси + optional note) і *About your business* (ім’я, **upload лого**, vertical, сайт, Instagram) — друге опційне. Vertical: salon / café / fitness / **other** + вільний текст; мікрокопі: лише каркас сцен, не обов’язково. Жива прев’ю-картка (CSS, 0 AI). Індикатор «Brand kit N% complete — …». Learned-картка зверху + **Reset learning**. Лого: `POST /brand/logo` → `data/media/brand/{userId}/logo.*`. Невалідний hex не ламає picker. Disclaimer про знаки.
 
 **Billing.** 4 плани, 3 пакети, таблиця вартості кроків (150 = повний Reel, 37 = still post), історія generation. Користувач бачить credits_used і орієнтовну £. Планові £/міс підписати **FROZEN**, доки бета не дасть логи TTS+рендеру.
 
@@ -427,14 +427,16 @@ Text AI  Image AI   TTS
 | id | text PK | |
 | user_id | unique FK | |
 | business_name | text | |
-| logo_url | text | URL, не upload у першому білді |
+| logo_url | text | внутрішній `/brand/logo` після upload, або порожньо |
 | primary_color | text | `#RRGGBB` |
 | secondary_color | text | `#RRGGBB` |
 | font | text | Fraunces / Outfit / Playfair Display / IBM Plex Sans |
-| tone_of_voice | text | |
+| tone_of_voice | text | пресет (чипси); AI отримує розшифровку |
+| tone_note | text | опційна нотатка власника |
 | website | text | |
 | instagram | text | |
-| vertical | text nullable | `salon` / `cafe` / `fitness` — ніша для каркасів |
+| vertical | text nullable | `salon` / `cafe` / `fitness` / `other` — каркас сцен, не обов’язково |
+| vertical_note | text | якщо `other` |
 | learned_summary_json | text nullable | агрегат §6.9.1; порожньо, поки < 3 ready |
 | updated_at | datetime | |
 
@@ -641,8 +643,11 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | GET | `/projects/:id/file` | так | mp4 після Create |
 | GET | `/projects/:id/image/:sceneId` | так | JPG still після Pictures |
 | GET | `/projects/:id/audio` | так | mp3 після Voice |
-| GET | `/brand` | так | `{ brandKit }` |
+| GET | `/brand` | так | `{ brandKit }` + completeness + learned_lines |
 | PUT | `/brand` | так | зберегти kit |
+| POST | `/brand/logo` | так | `{ image: data-url }` → файл у `data/media/brand/{userId}` |
+| GET | `/brand/logo` | так | файл лого |
+| POST | `/brand/learning/reset` | так | стерти `learned_summary_json` |
 | GET | `/billing/plans` | ні | плани + packs (**провізорні**) |
 | GET | `/billing/credits` | так | balance, transactions, generations, **economics** (собівартість на готовий Reel) |
 | POST | `/billing/checkout` | так | `{ planId? , packId? }` → `{ mode, url }` |

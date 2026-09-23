@@ -123,6 +123,7 @@ export default function Studio() {
   const [regenReason, setRegenReason] = useState("");
   const [regenNote, setRegenNote] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
+  const [kitHint, setKitHint] = useState("");
 
   useEffect(() => {
     if (!id) return;
@@ -130,6 +131,13 @@ export default function Studio() {
       setProject(d.project);
       setBrief(d.project.prompt);
     }).catch((e) => setError(e.message));
+    api
+      .brand()
+      .then((d) => {
+        const progress = d.brandKit?.completeness;
+        setKitHint(progress && progress.percent < 70 ? progress.hint : "");
+      })
+      .catch(() => setKitHint(""));
   }, [id]);
 
   useEffect(() => {
@@ -346,6 +354,11 @@ export default function Studio() {
   return (
     <div>
       <p className="hint">{project.type.replaceAll("_", " ")}</p>
+      {kitHint && (
+        <p className="hint">
+          {kitHint}. <Link to="/app/brand">Brand kit</Link>
+        </p>
+      )}
       <div className="field">
         <label htmlFor="brief">What you asked for — change it if this isn’t right</label>
         <textarea
