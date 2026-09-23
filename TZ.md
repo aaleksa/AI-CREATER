@@ -2,7 +2,7 @@
 
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
-**Версія документа:** 1.13  
+**Версія документа:** 1.14  
 **Мова інтерфейсу:** English і українська (перемикач EN / УК, зберігається в браузері)  
 **Валюта:** GBP (£)
 
@@ -211,7 +211,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 
 ## 4. Екрани (15)
 
-Усі приватні екрани — у спільному layout: логотип **Auteur**, навігація Create / Library / Brand kit / Credits, баланс, план, Sign out.
+Усі приватні екрани — у спільному layout: логотип **Auteur**, навігація Create / Library / Brand kit / Credits. Сайдбар знизу окремими блоками: кредити (лінк на Billing) → EN/УК → ім’я + план → Sign out.
 
 | # | Екран | URL | Доступ |
 | --- | --- | --- | --- |
@@ -241,13 +241,13 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 
 **Create.** Сітка 6 форматів. Reel / TikTok / Image Post — активні. Video, Ad, Social — «soon». Промпт — від 8 до 2 000 символів. Copy: речення може вистачити; якщо ні — офер, місце, для кого. Reel 150 cr · Image / Post 13 cr. Перемикач **Use brand kit / Ignore** (`use_brand`, дефолт так): з брендом у промпт картинки йдуть назва, кольори, шрифт, тон і ніша; без бренду — лише бриф. Те саме в студії — regenerate, щоб застосувати. UI показує, які поля кіту підуть на картинку.
 
-**Studio.** Reel/TikTok: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: квадратний прев’ю 1:1, кроки Idea → Pictures, без Voice/Captions/Create. Бриф зверху — textarea, `Save brief` (PATCH, 0 credits) і `Copy brief`; щоб застосувати — regenerate idea. На Create — список збережених брифів, клік вставляє в поле. Бібліотека показує бриф і теж копіює. Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб кнопка лишається: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі: бейдж *Couldn’t generate — regenerate this picture (8cr)*. Після Create (Reel) — Download mp4; після Pictures — Download JPG. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
+**Studio.** Reel/TikTok: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: invite/info/offer — прев’ю **2:3** (`contain`, без обрізання низу); фото — 1:1. Кроки Idea → Pictures, без Voice/Captions/Create. Зверху лише **Бриф** (textarea), `Save brief` (PATCH, 0 cr) і `Copy brief` (з fallback, якщо браузер блокує clipboard). Рядок `image post · …` і нагадування «кіт N% — додайте лого» **не показуємо** (лого опційне). На Create — список збережених брифів, клік вставляє. Після Pictures: Download JPG; takes поруч; *Share* і *Would you publish?* **сховані** (`SHOW_SHARE_AND_PUBLISH`). Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
 
 **Brand Kit.** Дві групи: *How it looks & sounds* (кольори, шрифт, тон-чипси + optional note) і *About your business* (ім’я, **upload лого**, vertical, сайт, Instagram) — друге опційне. Vertical: salon / café / fitness / **other** + вільний текст; мікрокопі: лише каркас сцен, не обов’язково. Жива прев’ю-картка (CSS, 0 AI). Індикатор «Brand kit N% complete — …». Learned-картка зверху + **Reset learning** (одразу перераховує з готової історії, не чекає 3 нові Reels). Лого: `POST /brand/logo` — **max 2 MB, лише `image/png` / `image/jpeg`**, SVG заборонено; `DELETE /brand/logo` стирає файл; `GET /brand/logo` віддає файл з `Content-Type` png/jpeg і `X-Content-Type-Options: nosniff`, ніколи `image/svg+xml`, у UI лише `<img>`. Невалідний hex не ламає picker. Disclaimer про знаки.
 
 **Billing.** 4 плани, 3 пакети, таблиця вартості кроків (150 = повний Reel, 13 = Image / Post), історія generation. Користувач бачить credits_used і орієнтовну £. Планові £/міс підписати **FROZEN**, доки бета не дасть логи TTS+рендеру.
 
-**Library.** Список проєктів: промпт, тип, статус, credits, дата, наявність файлу. Якщо mp4 ще на диску — посилання в студію. Якщо термін вийшов — статус `expired` і підказка, що Create знову платний. Перед витісненням через ліміт плану — попередження, не тихе зникнення.
+**Library.** Список проєктів: промпт, тип, статус, credits, дата. Відкрити в студії, **скопіювати бриф**, **видалити** (`DELETE /projects/:id` — файли й версії; кредити не повертаються, confirm у UI). Якщо термін вийшов — статус `expired` і підказка, що Create знову платний. Перед витісненням через ліміт плану — попередження, не тихе зникнення.
 
 ---
 
@@ -262,7 +262,7 @@ Node.js API  (Express, порт 4000)
    ┌────┼──────────────┐
    ▼    ▼              ▼
 Text AI  Image AI   TTS
-   gpt-4o-mini  DALL·E 3  OpenAI tts-1 (або macOS say у dev)
+   gpt-4o-mini  gpt-image-2.5-sunburst  OpenAI tts-1 (або macOS say у dev)
          │
          ▼
    ffmpeg  →  backend/data/media/{id}/reel.mp4   (1080×1920, без ефектів)
@@ -281,7 +281,7 @@ Text AI  Image AI   TTS
 | Frontend | React 19, Vite 6, React Router 7, TypeScript |
 | Backend | Node.js, Express, TypeScript, JWT, bcrypt |
 | БД | SQLite (`node:sqlite`), файл `backend/data/auteur.db` |
-| AI | OpenAI `gpt-4o-mini` + DALL·E 3 (опційно) |
+| AI | OpenAI `gpt-4o-mini` + `OPENAI_IMAGE_MODEL` (дефолт `gpt-image-2.5-sunburst`; fallback `gpt-image-1` / DALL·E 3) |
 | TTS | OpenAI `tts-1` / `nova`; dev: macOS `say` |
 | Рендер | ffmpeg через `ffmpeg-static`, 1080×1920 |
 | Медіа | `backend/data/media/{projectId}/` |
@@ -872,7 +872,7 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 4. Після повного шляху баланс = 50 (при вартості 150), у Library статус ready **і** файл.
 5. Повторний Idea **без** `regenerate` не списує 5 credits і **не викликає AI**; **з** `regenerate` — списує і каскадить; 4-та спроба Idea — **10 credits (2×)**, не 429 (§7.2).
 6. Video / Ad / Social post не створюють проєкт. **Image / Post створює** (1 картинка з брифу, 13 cr; `GET /projects/:id/image/:sceneId`).
-7. Brand Kit зберігається і впливає на Idea (включно з vertical).
+7. Brand Kit зберігається і впливає на Idea; якщо `use_brand=1` — також на промпт картинки (назва, кольори, шрифт, тон, ніша). Лого опційне.
 8. На billing видно generation (provider, credits_used, £) **користувачу**.
 9. Без платних ключів шлях для розробки не падає; **закрита бета і зовнішнє демо — тільки з TTS+рендером** (не `say`-тиша як «голос»).
 10. `GET /health` = 200. `GET /projects/:id/file` віддає mp4, коли файл є.
@@ -885,7 +885,7 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
     - **Хард-гейт наступного формату** (пост/реклама): §11.11 виконано на вибірці **≥ 40** користувачів з готовим першим mp4 — не на реєстраціях без файлу, не на n=10 закритої бети.
 
 13. Регенерація Voice або Visuals доступна в UI і тарифікується; єдиний шлях «новий проєкт» **не** є прийнятим UX.
-14. Після mp4 в студії є питання *Would you publish this Reel?* (yes / edits / no). Відповідь не обов’язкова для Download, але збирається на беті. **Publishability** — окремий KPI від «файл зібрався».
+14. Питання *Would you publish this Reel/post?* і кнопка *Share a preview* у UI **сховані** до потреби бети; ендпоінти лишаються. Download не залежить від відповіді. **Publishability** — окремий KPI від «файл зібрався».
 
 ---
 
@@ -922,7 +922,7 @@ cd frontend && npm install && npm run dev
 
 Відкрити [http://localhost:5173](http://localhost:5173).
 
-Опційно: `OPENAI_API_KEY` (текст, DALL·E, **і TTS `tts-1`**), `STRIPE_SECRET_KEY`, `JWT_SECRET`, `APP_URL`. Окремий ключ TTS не потрібен.
+Опційно: `OPENAI_API_KEY` (текст, картинки, **і TTS `tts-1`**), `OPENAI_IMAGE_MODEL` (id з playground Images), `STRIPE_SECRET_KEY`, `JWT_SECRET`, `APP_URL`. Окремий ключ TTS не потрібен. `.env` у git не комітити.
 
 ---
 

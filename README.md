@@ -2,9 +2,11 @@
 
 Tell us what you want to create. We'll do the rest.
 
-Auteur is not a Canva clone. It is a simple AI content studio: the user never chooses a model, a prompt stack, or a voice engine. They pick a format, write a sentence, and the studio runs Idea → Script → Visuals → Voice → Captions → Create.
+Auteur is not a Canva clone. It is a simple AI content studio: the user never chooses a model, a prompt stack, or a voice engine. They pick a format, write what they want, and the studio finishes a Reel or a still picture.
 
-Full specification (current build + future expansion): [docs/TZ.md](docs/TZ.md).
+UI: **English and Ukrainian** (EN / УК, stored in the browser). The brief stays in the language they wrote.
+
+Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.14).
 
 The first studio is **Instagram Reels, TikTok, and still Image / Posts**. A Reel is 150 credits; a still post is 13 (idea + one picture). Ads and YouTube stay later.
 
@@ -12,15 +14,15 @@ The first studio is **Instagram Reels, TikTok, and still Image / Posts**. A Reel
 
 | Screen | What it does |
 | --- | --- |
-| Landing | Promise, not a tool list |
-| Sign up / Sign in | Account + 100 free credits |
-| Create | “What do you want to create?” |
-| Studio | Six steps, one Reel |
-| Brand kit | Logo, colours, font, tone, Instagram |
+| Landing | Promise, not a tool list. Language switch. |
+| Sign up / Sign in | Account + **200** free credits |
+| Create | Format, optional photo / invite / info / offer, brand on/off, saved briefs to insert |
+| Studio | Reel: six steps. Image: Idea → Pictures. Brief, copy brief, brand chips |
+| Brand kit | Logo (optional), colours, font, tone, niche, Instagram |
 | Credits | Plans, extra packs, real AI cost log |
-| Library | Every project |
+| Library | Every project — open, copy the brief, or **delete** |
 
-A finished Reel costs **150 credits** (5 + 10 + 40 + 30 + 10 + 55). A still post costs **13** (5 + 8).
+A finished Reel costs **150 credits** (5 + 10 + 40 + 30 + 10 + 55). A still post costs **13** (5 + 8). Delete does not refund credits.
 
 Plans (provisional until real unit cost is measured):
 
@@ -28,6 +30,15 @@ Plans (provisional until real unit cost is measured):
 - Creator — £9.99 — 1,000
 - Pro — £24.99 — 3,500
 - Business — £49.99 — 8,000
+
+## Image / Post (now)
+
+- One finished picture from the **whole brief**, not four assembled slides.
+- Model: `OPENAI_IMAGE_MODEL` (default **gpt-image-2.5-sunburst**, same family as the OpenAI Images playground).
+- Invite / info / offer: portrait **1024×1536**, shown 2:3 without cropping the footer.
+- If **Use brand kit** is on, the picture prompt gets name, colours, font, tone, niche. Logo is optional — no nag in Studio.
+- Previous takes stay in the project; restore is free.
+- *Share a preview* and *Would you publish this post?* are **hidden** until the closed beta needs them.
 
 ## Architecture
 
@@ -37,10 +48,10 @@ React (Vite)
     ▼
 Node.js API
     │
-    ├── Text AI   (OpenAI if OPENAI_API_KEY is set, otherwise studio preview)
-    ├── Image AI
-    ├── Voice AI
-    └── Video renderer (vertical preview in the studio)
+    ├── Text    gpt-4o-mini
+    ├── Image   gpt-image-2.5-sunburst (env)
+    ├── Voice   OpenAI tts-1 (or macOS say in dev)
+    └── Render  ffmpeg 1080×1920
     │
     ▼
 SQLite  →  users, plans, credit_balances, credit_transactions,
@@ -62,8 +73,11 @@ Open [http://localhost:5173](http://localhost:5173).
 
 Optional in `backend/.env`:
 
-- `OPENAI_API_KEY` — live copy and (when available) DALL·E frames
+- `OPENAI_API_KEY` — live copy, pictures, and TTS
+- `OPENAI_IMAGE_MODEL` — playground model id (`gpt-image-2.5-sunburst` or `gpt-image-2.5-flare`)
 - `STRIPE_SECRET_KEY` — real Checkout instead of studio grants
+
+Do not commit `.env`. Do not spend OpenAI credits unless you mean to.
 
 ## Intentionally not in v1
 
