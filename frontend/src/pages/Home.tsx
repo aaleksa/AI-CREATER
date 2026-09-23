@@ -6,7 +6,7 @@ const FORMATS = [
   { id: "video", emoji: "🎬", title: "Video", blurb: "A short film, decided for you.", ready: false },
   { id: "instagram_reel", emoji: "📱", title: "Instagram Reel", blurb: "30 seconds, vertical, finished.", ready: true },
   { id: "tiktok", emoji: "🎵", title: "TikTok", blurb: "Same studio, native pacing.", ready: true },
-  { id: "image_post", emoji: "🖼️", title: "Image / Post", blurb: "Coming after Reels.", ready: false },
+  { id: "image_post", emoji: "🖼️", title: "Image / Post", blurb: "Still photos. No voice, no video.", ready: true },
   { id: "advertisement", emoji: "📢", title: "Advertisement", blurb: "Coming after Reels.", ready: false },
   { id: "social_post", emoji: "✍️", title: "Social media post", blurb: "Coming after Reels.", ready: false },
 ];
@@ -14,6 +14,7 @@ const FORMATS = [
 const EXAMPLES: Record<string, string> = {
   instagram_reel: "Create a 30-second Reel about the best places to visit in London.",
   tiktok: "Make a TikTok promoting my coffee shop’s morning ritual.",
+  image_post: "A warm photo post for my salon’s Tuesday walk-in offer.",
 };
 
 export default function Home() {
@@ -26,7 +27,7 @@ export default function Home() {
 
   async function start() {
     if (!selected?.ready) {
-      setError("This format is next. Start with a Reel or TikTok.");
+      setError("This format is next. Start with a Reel, TikTok, or still images.");
       return;
     }
     setBusy(true);
@@ -77,7 +78,7 @@ export default function Home() {
         />
         <div className="row">
           <span className="hint">
-            A sentence is enough. More is fine (up to 2,000 characters). A finished Reel is 150 credits · Free starts with 200
+            A sentence is enough. More is fine (up to 2,000 characters). A Reel is 150 credits · stills are 37 · Free starts with 200
           </span>
           <button className="btn accent" onClick={start} disabled={busy}>
             {busy ? "Opening studio…" : `Continue with ${selected?.title}`}

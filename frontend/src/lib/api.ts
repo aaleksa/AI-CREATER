@@ -43,6 +43,7 @@ export type Project = {
   audioUrl: string | null;
   outputUrl: string | null;
   hasVideo: boolean;
+  hasImages: boolean;
   creditsUsed: number;
   stepAttempts: Record<string, number>;
   maxStepAttempts: number;

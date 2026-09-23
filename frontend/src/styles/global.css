@@ -201,6 +201,10 @@ button { cursor: pointer; }
   background: #1c1713;
   box-shadow: var(--shadow);
 }
+.phone.post {
+  aspect-ratio: 1 / 1;
+  max-width: 360px;
+}
 .phone-frame {
   position: absolute;
   inset: 0;

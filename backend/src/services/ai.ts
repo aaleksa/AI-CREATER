@@ -104,11 +104,16 @@ async function jsonCompletion<T>(system: string, user: string, fallback: T): Pro
 
 function mockIdea(prompt: string, type: string, brand?: BrandKit | null): Idea {
   const brandName = brand?.business_name || "your brand";
+  const still = type === "image_post";
   return {
-    title: type.includes("reel") || type === "tiktok" ? "30 seconds. One feeling." : "A clear story, told simply.",
+    title: still ? "One still. One feeling." : type.includes("reel") || type === "tiktok" ? "30 seconds. One feeling." : "A clear story, told simply.",
     hook: prompt.slice(0, 90),
-    concept: `A vertical film that answers “${prompt}” without asking the viewer to learn any tools. ${brandName} stays visible in colour, type and tone — never as a watermark slapped on at the end.`,
-    audience: "People scrolling fast who will stop for a strong first frame and a human voice.",
+    concept: still
+      ? `A still Instagram post that answers “${prompt}” in one glance. ${brandName} shows in colour and light — not as a logo stamp.`
+      : `A vertical film that answers “${prompt}” without asking the viewer to learn any tools. ${brandName} stays visible in colour, type and tone — never as a watermark slapped on at the end.`,
+    audience: still
+      ? "People scrolling the feed who will stop for a strong photo."
+      : "People scrolling fast who will stop for a strong first frame and a human voice.",
     visualDirection: brand?.primary_color
       ? `Warm practical light, ${brand.primary_color} accents, generous negative space, ${brand.font} titles.`
       : "Warm practical light, terracotta accents, generous negative space, serif titles over handheld texture.",
@@ -181,7 +186,11 @@ const PLACEHOLDER_FRAMES = [
 export async function generateIdea(prompt: string, type: string, brand?: BrandKit | null) {
   const fallback = mockIdea(prompt, type, brand);
   return jsonCompletion<Idea>(
-    `You are the creative director of Auteur, an AI content studio. The user never chooses models or prompts. You decide the concept. Format: vertical short-form video unless told otherwise.\n${brandContext(brand)}`,
+    `You are the creative director of Auteur, an AI content studio. The user never chooses models or prompts. You decide the concept. ${
+      type === "image_post"
+        ? "Format: still Instagram photos or a short carousel — not video, no voiceover."
+        : "Format: vertical short-form video unless told otherwise."
+    }\n${brandContext(brand)}`,
     `Content type: ${type}\nUser request: ${prompt}\nReturn JSON with keys: title, hook, concept, audience, visualDirection.`,
     fallback
   );
@@ -196,7 +205,7 @@ export async function generateScript(prompt: string, idea: Idea, brand?: BrandKi
   );
 }
 
-export async function generateVisuals(script: Script, brand?: BrandKit | null) {
+export async function generateVisuals(script: Script, brand?: BrandKit | null, kind: "video" | "still" = "video") {
   const openai = client();
   const visuals: Visual[] = [];
   let provider = "auteur-studio";
@@ -205,7 +214,7 @@ export async function generateVisuals(script: Script, brand?: BrandKit | null) {
   let live = 0;
 
   for (const scene of script.scenes) {
-    const frame = await generateSceneFrame(scene, brand);
+    const frame = await generateSceneFrame(scene, brand, kind);
     visuals.push(frame.visual);
     cost += frame.cost;
     if (!frame.visual.placeholder) {
@@ -230,16 +239,16 @@ export async function generateVisuals(script: Script, brand?: BrandKit | null) {
   };
 }
 
-export async function generateOneVisual(scene: ScriptScene, brand?: BrandKit | null) {
+export async function generateOneVisual(scene: ScriptScene, brand?: BrandKit | null, kind: "video" | "still" = "video") {
   const openai = client();
-  const frame = await generateSceneFrame(scene, brand);
+  const frame = await generateSceneFrame(scene, brand, kind);
   if (openai && frame.visual.placeholder) {
     throw Object.assign(new Error("We couldn’t generate this frame. Try a simpler description."), { status: 400 });
   }
   return { data: frame.visual, provider: frame.provider, model: frame.model, cost: frame.cost };
 }
 
-async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null) {
+async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, kind: "video" | "still" = "video") {
   const openai = client();
   const fallback = PLACEHOLDER_FRAMES[(Math.max(1, scene.id) - 1) % PLACEHOLDER_FRAMES.length];
   const placeholder = {
@@ -250,13 +259,16 @@ async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null) {
   };
   if (!openai) return placeholder;
 
-  const prompt = `${scene.visualPrompt}. Vertical 9:16 cinematic still, filmic, no text overlay.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}.` : ""}`;
+  const prompt =
+    kind === "still"
+      ? `${scene.visualPrompt}. Square 1:1 Instagram still photograph, natural light, no text overlay, no UI chrome.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}.` : ""}`
+      : `${scene.visualPrompt}. Vertical 9:16 cinematic still, filmic, no text overlay.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}.` : ""}`;
 
   const once = async () => {
     const image = await openai.images.generate({
       model: "dall-e-3",
       prompt,
-      size: "1024x1792",
+      size: kind === "still" ? "1024x1024" : "1024x1792",
       n: 1,
     });
     const url = image.data?.[0]?.url;

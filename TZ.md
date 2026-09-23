@@ -2,7 +2,7 @@
 
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
-**Версія документа:** 1.8  
+**Версія документа:** 1.9  
 **Мова інтерфейсу першої версії:** English  
 **Валюта:** GBP (£)
 
@@ -101,7 +101,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 | Блок | У коді зараз | Обов’язково для прийняття MVP |
 | --- | --- | --- |
 | Лендінг, auth, JWT, 200 free credits | так | так |
-| Create: Reel / TikTok + промпт | так | так |
+| Create: Reel / TikTok / Image Post + промпт | так | так |
 | 6 кроків студії, credits, Brand Kit, Library | так | так |
 | `ai_generations` (собівартість) | так | так; плюс показ користувачу (§1.3.3) |
 | Idea / Script / Visuals / Captions | так (текст + кадри; captions = scene-level) | так; word-level не вимагається в MVP |
@@ -143,13 +143,15 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 | `video` | Video | екран є, створення заблоковане |
 | `instagram_reel` | Instagram Reel | повний пайплайн + **mp4** |
 | `tiktok` | TikTok | повний пайплайн + **mp4** |
-| `image_post` | Image / Post | «Coming after Reels» |
+| `image_post` | Image / Post | Idea + **4 stills** (JPG), **37 credits**, без voice/mp4 |
 | `advertisement` | Advertisement | «Coming after Reels» |
 | `social_post` | Social media post | «Coming after Reels» |
 
+`image_post` — виняток з гейту §11.11: додано за явним запитом (картинки, не лише відео). Video / Ad / Social далі заблоковані.
+
 Повідомлення, якщо формат ще не готовий:
 
-> This format is next. The first studio is Reels and TikTok — 30 seconds, vertical, done for you.
+> This format is next. Start with a Reel, TikTok, or still images.
 
 ---
 
@@ -188,6 +190,17 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 - Buy credits — разові пакети (**маржа**) — стратегія в §9.4;
 - без Stripe-ключа — studio mode (нарахування одразу, тільки для розробки).
 
+### 3.5 Щасливий шлях (Image / Post)
+
+1. На Create обирає **Image / Post**.
+2. Пише, що має бути на фото (офер, місце, настрій). Приклад: `A warm photo post for my salon’s Tuesday walk-in offer.`
+3. Студія — **2 кроки**, не 6:
+   1. **Idea** (5 cr) — концепція каруселі, без скрипта й голосу;
+   2. **Pictures** (32 cr max) — **4 квадратні stills** 1:1 (DALL·E `1024x1024`), оплата live × 8, поріг ≥3/4.
+4. Разом **37 credits**. `script` / `voice` / `captions` / `render` на цьому типі — 400.
+5. JPG пишуться як `still-{sceneId}.jpg`. Прев’ю квадратне. Download кожного кадру. Питання *Would you publish this post?*
+6. Без voice, субтитрів і mp4. Готовий артефакт — картинки, не відео.
+
 ---
 
 ## 4. Екрани (15)
@@ -220,13 +233,13 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 
 **Auth.** Ім’я (тільки signup), email, пароль. Помилки зрозумілою мовою.
 
-**Create.** Сітка 6 форматів. Reel/TikTok — активні. Інші — «soon». Промпт — від 8 до 2 000 символів. Copy: одне речення досить, можна більше.
+**Create.** Сітка 6 форматів. Reel / TikTok / Image Post — активні. Video, Ad, Social — «soon». Промпт — від 8 до 2 000 символів. Copy: одне речення досить, можна більше. Reel 150 cr · stills 37 cr.
 
-**Studio.** Вертикальний прев’ю 9:16 ліворуч (після Create — `<video>` з mp4). Бриф зверху — textarea, `Save brief` (PATCH, 0 credits); щоб застосувати — regenerate idea. Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб кнопка лишається: `Keep this, or another try · 2×`. Кадри з `placeholder: true` **видимі до Voice**: бейдж *Couldn’t generate — regenerate this frame (8cr)* на прев’ю і в списку сцен. Після Create — Download mp4 і явний текст: **файл варто завантажити зараз**; проміжні файли можуть зникнути через 7 днів, mp4 тримаємо 90 днів; повторний Create після expiry — знову 55 credits.
+**Studio.** Reel/TikTok: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: квадратний прев’ю 1:1, кроки Idea → Pictures, без Voice/Captions/Create. Бриф зверху — textarea, `Save brief` (PATCH, 0 credits); щоб застосувати — regenerate idea. Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб кнопка лишається: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі: бейдж *Couldn’t generate — regenerate this picture (8cr)*. Після Create (Reel) — Download mp4; після Pictures — Download JPG. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
 
 **Brand Kit.** Поля: business name, logo URL, primary/secondary colour (hex), font, tone of voice, website, Instagram, **vertical** (salon / cafe / fitness). Невалідний hex не ламає color picker.
 
-**Billing.** 4 плани, 3 пакети, таблиця вартості кроків (150 = повний Reel), історія generation. Користувач бачить credits_used і орієнтовну £. Планові £/міс підписати **FROZEN**, доки бета не дасть логи TTS+рендеру.
+**Billing.** 4 плани, 3 пакети, таблиця вартості кроків (150 = повний Reel, 37 = still post), історія generation. Користувач бачить credits_used і орієнтовну £. Планові £/міс підписати **FROZEN**, доки бета не дасть логи TTS+рендеру.
 
 **Library.** Список проєктів: промпт, тип, статус, credits, дата, наявність файлу. Якщо mp4 ще на диску — посилання в студію. Якщо термін вийшов — статус `expired` і підказка, що Create знову платний. Перед витісненням через ліміт плану — попередження, не тихе зникнення.
 
@@ -274,12 +287,13 @@ Text AI  Image AI   TTS
 
 ### 5.3 Політика файлів (до S3)
 
-Проміжні артефакти дешеві в генерації відносно готового ролика; **готовий mp4 — те, за що користувач заплатив 150 credits.** Не можна ставити їм однаковий короткий TTL.
+Проміжні артефакти дешеві в генерації відносно готового ролика; **готовий mp4 або stills — те, за що користувач заплатив.** Не можна ставити їм однаковий короткий TTL.
 
 | Артефакт | TTL | Чому |
 | --- | --- | --- |
 | `voice.mp3`, `scene-*.jpg`, `captions.srt` | **7 днів** після `updated_at` | можна зібрати mp4 знову з credits, місце на диску |
 | `reel.mp4` | **90 днів** після Create, або одразу після успішного S3 | зберігання дешеве; регенерація = 55 cr + залежності |
+| `still-*.jpg` | **90 днів** (як mp4) | для Image Post це готовий файл, не проміжний кадр відео |
 | Після S3 | локальна копія mp4 можна стерти; рядок проєкту й `output_url` лишаються | |
 
 Ліміт **готових mp4 на диску** — від плану. **TTL 90 днів для mp4 однаковий для Free і Business** — свідомо проста політика; довший архів Business з’явиться разом із S3, не як окремий локальний TTL.
@@ -532,7 +546,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | POST | `/auth/signup` | ні | `{ name, email, password }` → `{ token, user }` |
 | POST | `/auth/login` | ні | `{ email, password }` → `{ token, user }` |
 | GET | `/auth/me` | так | `{ user, subscription, credits }` |
-| GET | `/projects` | так | список + `fullVideoCost` |
+| GET | `/projects` | так | список + `fullVideoCost` + `fullImageCost` |
 | POST | `/projects` | так | `{ type, prompt }` → 201 `{ project }` |
 | GET | `/projects/:id` | так | проєкт + таблиця costs |
 | PATCH | `/projects/:id` | так | `{ prompt }` — змінити бриф; credits 0; щоб застосувати — regenerate idea |
@@ -540,6 +554,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | POST | `/projects/:id/feedback` | так | `{ publishable: yes\|edits\|no, reasons[] }` після mp4 |
 | DELETE | `/auth/account` | так | спочатку Stripe `subscriptions.cancel`, потім дані |
 | GET | `/projects/:id/file` | так | mp4 після Create |
+| GET | `/projects/:id/image/:sceneId` | так | JPG still після Pictures |
 | GET | `/projects/:id/audio` | так | mp3 після Voice |
 | GET | `/brand` | так | `{ brandKit }` |
 | PUT | `/brand` | так | зберегти kit |
@@ -551,18 +566,21 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 
 ### 7.1 Правила пайплайну
 
-Порядок: idea → script → visuals / voice / captions (потребують script) → render.
+Reel / TikTok: idea → script → visuals / voice / captions (потребують script) → render.
+
+Image / Post: idea → visuals (4 stills). `script` / `voice` / `captions` / `render` → 400.
 
 | step | credits | Що вважається успіхом |
 | --- | --- | --- |
 | idea | 5 | `idea_json` |
-| script | 10 | `script_json` |
-| visuals | 40 max | кадри; оплата **live × 8**, поріг ≥3/5 (§7.3) |
+| script | 10 | `script_json` (лише відео) |
+| visuals | 40 max / **32 max** на пост | кадри; оплата **live × 8**, поріг ≥3/5 відео або ≥3/4 пост (§7.3) |
 | visuals *один кадр* | **8** | `{ regenerate: true, sceneId }` |
-| voice | 30 | `voice_json` **і** `audio_url` (TTS) |
-| captions | 10 | cues (scene-level) |
-| render | 55 | **існує mp4**, `status=ready` |
-| **разом** | **150** | |
+| voice | 30 | `voice_json` **і** `audio_url` (TTS); немає на `image_post` |
+| captions | 10 | cues (scene-level); немає на `image_post` |
+| render | 55 | **існує mp4**, `status=ready`; немає на `image_post` |
+| **разом Reel** | **150** | |
+| **разом Image Post** | **37** | idea 5 + 4×8; `status=ready` після Pictures |
 
 Промпт: `trim`, 8–2000 символів. Одне речення — норма; абзац дозволений.
 
@@ -747,7 +765,7 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 3. Крок Voice не вважається done без аудіофайла (`audio_url`).
 4. Після повного шляху баланс = 50 (при вартості 150), у Library статус ready **і** файл.
 5. Повторний Idea **без** `regenerate` не списує 5 credits і **не викликає AI**; **з** `regenerate` — списує і каскадить; 4-та спроба Idea — **10 credits (2×)**, не 429 (§7.2).
-6. Video / Post / Ad / Social post не створюють проєкт.
+6. Video / Ad / Social post не створюють проєкт. **Image / Post створює** (Idea + 4 stills, 37 cr; `GET /projects/:id/image/:sceneId`).
 7. Brand Kit зберігається і впливає на Idea (включно з vertical).
 8. На billing видно generation (provider, credits_used, £) **користувачу**.
 9. Без платних ключів шлях для розробки не падає; **закрита бета і зовнішнє демо — тільки з TTS+рендером** (не `say`-тиша як «голос»).
@@ -775,7 +793,7 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 4. **Privacy / content policy (§10.1)** — DALL·E-refusal UX, disclaimer Brand Kit, GDPR-текст, **self-service delete**. **Обов’язково перед публічним лендінгом.**
 5. **Публічний лендінг** — copy «готовий Reel» дозволений.
 6. **Платний CAC-тест** — гіпотеза £25–40 / перший mp4 (§9.5).
-7. **Retention-гейт** — §11.11 на **n≥40**. Лише тоді пости / реклама як формат.
+7. **Retention-гейт** — §11.11 на **n≥40**. Лише тоді advertisement / generic video / captions-only. `image_post` уже відкритий (виняток, §2.3).
 
 Після пункту 1, паралельно з бетою (не блокер файлу): диференційований TTL (§5.3); ліміт 2 ffmpeg (§5.4); Stripe webhook **з idempotency event id**; **навчання Brand Kit з `project_step_versions`**; лог `queueWaitMs`.
 
@@ -783,7 +801,7 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 
 **Далі, тільки якщо є §11.11 на n≥40:**
 
-- Instagram post, advertisement, captions-only post;
+- advertisement, captions-only post, generic Video;
 - S3 + постійний Download + вища якість;
 - word-level captions (ElevenLabs), якщо сцена-рівень ріже якість;
 - upload лого;
@@ -817,7 +835,7 @@ cd frontend && npm install && npm run dev
 | Scene-level captions | субтитри по сценах скрипта, не по словах |
 | Credits | внутрішня валюта, не крипта |
 | Brand Kit | профіль вигляду й тону; має еволюціонувати з історії |
-| Ready (прийняття) | є mp4 на диску, credits за render списані |
+| Ready (прийняття) | Reel: є mp4 на диску, credits за render списані. Image Post: є `still-*.jpg` (або live visuals), credits за Pictures списані |
 | Expired | рядок у Library є, файлу на диску немає |
 | Frozen price | £ у документі, до виміру собівартості на беті |
 | FROZEN | не орієнтир для продакшен-прайсу |

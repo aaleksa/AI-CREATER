@@ -2,13 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, fetchMedia, refreshMe, type Project } from "../lib/api";
 
-const STEPS = [
+const VIDEO_STEPS = [
   { id: "idea", label: "Idea", cost: 5 },
   { id: "script", label: "Script", cost: 10 },
   { id: "visuals", label: "Visuals", cost: 40 },
   { id: "voice", label: "Voice", cost: 30 },
   { id: "captions", label: "Captions", cost: 10 },
   { id: "render", label: "Create", cost: 55 },
+] as const;
+
+const IMAGE_STEPS = [
+  { id: "idea", label: "Idea", cost: 5 },
+  { id: "visuals", label: "Pictures", cost: 32 },
 ] as const;
 
 function doneThrough(project: Project, step: string) {
@@ -35,6 +40,7 @@ export default function Studio() {
   const [briefSaved, setBriefSaved] = useState(false);
   const [publishable, setPublishable] = useState("");
   const [reasons, setReasons] = useState<string[]>([]);
+  const [imageSrcs, setImageSrcs] = useState<Record<number, string>>({});
 
   useEffect(() => {
     if (!id) return;
@@ -88,8 +94,36 @@ export default function Studio() {
     };
   }, [id, project?.audioUrl]);
 
-  const next = useMemo(() => STEPS.find((s) => project && !doneThrough(project, s.id)), [project]);
-  const lastDone = useMemo(() => [...STEPS].reverse().find((s) => project && doneThrough(project, s.id)), [project]);
+  useEffect(() => {
+    if (!id || !project?.visuals?.length) {
+      setImageSrcs({});
+      return;
+    }
+    let cancelled = false;
+    const created: string[] = [];
+    Promise.all(
+      project.visuals.map(async (visual) => {
+        if (!visual.imageUrl || visual.imageUrl.startsWith("linear")) return [visual.sceneId, ""] as const;
+        if (visual.imageUrl.startsWith("http")) return [visual.sceneId, visual.imageUrl] as const;
+        const blob = await fetchMedia(visual.imageUrl);
+        const url = URL.createObjectURL(blob);
+        created.push(url);
+        return [visual.sceneId, url] as const;
+      })
+    ).then((pairs) => {
+      if (cancelled) return;
+      setImageSrcs(Object.fromEntries(pairs.filter(([, url]) => url)));
+    });
+    return () => {
+      cancelled = true;
+      created.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [id, project?.visuals]);
+
+  const isImage = project?.type === "image_post";
+  const STEPS = isImage ? IMAGE_STEPS : VIDEO_STEPS;
+  const next = useMemo(() => STEPS.find((s) => project && !doneThrough(project, s.id)), [project, isImage]);
+  const lastDone = useMemo(() => [...STEPS].reverse().find((s) => project && doneThrough(project, s.id)), [project, isImage]);
   const extraPrice = (step: string, sceneId?: number) => {
     const base = sceneId ? 8 : STEPS.find((s) => s.id === step)?.cost ?? 0;
     const used = project?.stepAttempts?.[step] ?? 0;
@@ -97,7 +131,8 @@ export default function Studio() {
     const mult = used >= included ? (project?.extraAttemptMultiplier ?? 2) : 1;
     return { extra: used >= included, credits: base * mult };
   };
-  const frame = project?.visuals?.[scene]?.imageUrl;
+  const frame =
+    (project?.visuals?.[scene] && imageSrcs[project.visuals[scene].sceneId]) || project?.visuals?.[scene]?.imageUrl;
   const frameIsPlaceholder = Boolean(project?.visuals?.[scene]?.placeholder);
   const placeholderCount = project?.visuals?.filter((v) => v.placeholder).length ?? 0;
   const caption = project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title;
@@ -122,7 +157,7 @@ export default function Studio() {
     } else if (regenerate && !sceneId && (step === "idea" || step === "script")) {
       const ok = window.confirm(
         step === "idea"
-          ? `This remakes the idea and clears script, frames, voice and video. ${price.credits} credits.`
+          ? `This remakes the idea and clears what follows. ${price.credits} credits.`
           : `This remakes the script and clears frames, voice and video. ${price.credits} credits.`
       );
       if (!ok) return;
@@ -167,7 +202,8 @@ export default function Studio() {
 
   if (!project) return <p className="hint">{error || "Opening the studio…"}</p>;
 
-  const makingLabel = busy === "render" ? "Rendering mp4…" : busy === "voice" ? "Recording voice…" : "Making…";
+  const makingLabel =
+    busy === "render" ? "Rendering mp4…" : busy === "voice" ? "Recording voice…" : busy === "visuals" && isImage ? "Making pictures…" : "Making…";
 
   return (
     <div>
@@ -202,7 +238,7 @@ export default function Studio() {
 
       <div className="studio">
         <div>
-          <div className="phone" style={typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : undefined}>
+          <div className={`phone${isImage ? " post" : ""}`} style={typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : undefined}>
             {project.hasVideo && videoSrc ? (
               <video className="phone-video" src={videoSrc} controls playsInline />
             ) : (
@@ -216,7 +252,7 @@ export default function Studio() {
                 {!frame && <div className="phone-frame" style={{ background: "linear-gradient(160deg,#2b1d14,#c45c26)" }} />}
                 {frameIsPlaceholder && (
                   <div className="caption" style={{ top: 18, bottom: "auto", fontSize: 14, fontFamily: "var(--sans, inherit)" }}>
-                    Couldn’t generate — regenerate this frame (8cr)
+                    Couldn’t generate — regenerate this picture (8cr)
                   </div>
                 )}
                 <div className="caption">{caption}</div>
@@ -229,12 +265,12 @@ export default function Studio() {
                 <div key={s.id} className="scene" style={{ display: "grid", gap: 8 }}>
                   <button onClick={() => setScene(i)} style={{ background: "none", border: 0, textAlign: "left", width: "100%", padding: 0, color: "inherit" }}>
                     <b>{s.time}</b>
-                    <span style={{ display: "block" }}>{s.voiceover}</span>
+                    <span style={{ display: "block" }}>{isImage ? s.onScreen : s.voiceover}</span>
                   </button>
                   {project.visuals && (
                     <>
                       {project.visuals.find((v) => v.sceneId === s.id)?.placeholder && (
-                        <p className="hint">Couldn’t generate — regenerate this frame (8cr)</p>
+                        <p className="hint">Couldn’t generate — regenerate this picture (8cr)</p>
                       )}
                       <button
                         className="btn ghost"
@@ -245,7 +281,7 @@ export default function Studio() {
                           ? "Making…"
                           : extraPrice("visuals", s.id).extra
                             ? `Another try · ${extraPrice("visuals", s.id).credits} credits (2×)`
-                            : `Regenerate this frame · ${extraPrice("visuals", s.id).credits} credits`}
+                            : `Regenerate this picture · ${extraPrice("visuals", s.id).credits} credits`}
                       </button>
                     </>
                   )}
@@ -257,16 +293,27 @@ export default function Studio() {
 
         <div className="panel">
           <h2>{next ? `Step — ${next.label}` : "Ready"}</h2>
-          {!project.idea && <p className="lede">We’ll propose a concept before writing a word of script.</p>}
-          {project.idea && !project.script && (
+          {!project.idea && (
+            <p className="lede">
+              {isImage ? "We’ll propose a look before making pictures." : "We’ll propose a concept before writing a word of script."}
+            </p>
+          )}
+          {project.idea && !project.visuals && isImage && (
             <>
               <p><b>{project.idea.title}</b></p>
               <p className="lede">{project.idea.concept}</p>
               <p className="hint">{project.idea.visualDirection}</p>
             </>
           )}
-          {project.script && !project.visuals && <p className="lede">A 30-second voiceover, already broken into scenes.</p>}
-          {project.visuals && !project.audioUrl && (
+          {project.idea && !project.script && !isImage && (
+            <>
+              <p><b>{project.idea.title}</b></p>
+              <p className="lede">{project.idea.concept}</p>
+              <p className="hint">{project.idea.visualDirection}</p>
+            </>
+          )}
+          {!isImage && project.script && !project.visuals && <p className="lede">A 30-second voiceover, already broken into scenes.</p>}
+          {!isImage && project.visuals && !project.audioUrl && (
             <p className="lede">
               {placeholderCount
                 ? `${placeholderCount} frame${placeholderCount === 1 ? "" : "s"} couldn’t be generated. Regenerate them for 8 credits each before Voice, or the Reel will use colour cards.`
@@ -281,6 +328,70 @@ export default function Studio() {
             </>
           )}
           {project.captions && !project.hasVideo && <p className="lede">Captions are timed. Create writes a 9:16 mp4 you can download.</p>}
+          {project.hasImages && (
+            <>
+              <p className="ok">Your pictures are ready. {project.creditsUsed} credits used.</p>
+              <p className="hint">Download the stills now. We keep them for 90 days. Recreating after that uses credits again.</p>
+              <div className="row" style={{ marginTop: 12 }}>
+                {project.visuals?.map((visual, i) => {
+                  const src = imageSrcs[visual.sceneId];
+                  if (!src || visual.placeholder) return null;
+                  return (
+                    <a key={visual.sceneId} className="btn" href={src} download={`still-${i + 1}.jpg`}>
+                      Download {i + 1}
+                    </a>
+                  );
+                })}
+              </div>
+              {project.feedback ? (
+                <p className="ok" style={{ marginTop: 16 }}>Thanks — that helps the next post.</p>
+              ) : (
+                <div style={{ marginTop: 20 }}>
+                  <p className="lede">Would you publish this post?</p>
+                  <div className="row" style={{ marginTop: 8 }}>
+                    {[
+                      ["yes", "Yes"],
+                      ["edits", "Yes, after minor edits"],
+                      ["no", "No"],
+                    ].map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className={`btn ${publishable === value ? "accent" : "ghost"}`}
+                        onClick={() => setPublishable(value)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {publishable && publishable !== "yes" && (
+                    <div style={{ marginTop: 12 }}>
+                      <p className="hint">What was wrong?</p>
+                      {["Images", "Idea", "Brand style", "Too generic", "Not useful"].map((reason) => (
+                        <label key={reason} className="hint" style={{ display: "block", marginTop: 6 }}>
+                          <input
+                            type="checkbox"
+                            checked={reasons.includes(reason)}
+                            onChange={() =>
+                              setReasons((current) =>
+                                current.includes(reason) ? current.filter((item) => item !== reason) : [...current, reason]
+                              )
+                            }
+                          />{" "}
+                          {reason}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {publishable && (
+                    <button className="btn" style={{ marginTop: 12 }} type="button" onClick={sendFeedback}>
+                      Send
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
+          )}
           {project.hasVideo && (
             <>
               <p className="ok">Your Reel is ready. {project.creditsUsed} credits used.</p>
@@ -370,7 +481,7 @@ export default function Studio() {
             <div style={{ marginTop: 18 }}>
               <p className="hint">
                 Keep this version — that’s free. Two retries at the usual price. After that you can still try, at 2×,
-                if you want. A later redo clears the video.
+                if you want. A later redo clears what follows.
               </p>
               {STEPS.filter((s) => doneThrough(project, s.id)).map((s) => (
                 <button
@@ -401,7 +512,7 @@ export default function Studio() {
             </p>
           )}
           <p className="hint" style={{ marginTop: 18 }}>
-            Used on this Reel: {project.creditsUsed} credits · full video 150
+            Used on this {isImage ? "post" : "Reel"}: {project.creditsUsed} credits · {isImage ? "stills 37" : "full video 150"}
           </p>
         </div>
       </div>

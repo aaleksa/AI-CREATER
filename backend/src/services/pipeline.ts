@@ -1,6 +1,6 @@
 import { v4 as uuid } from "uuid";
 import { db } from "../db/index.js";
-import { attemptCost, CREDIT_COSTS, EXTRA_ATTEMPT_MULTIPLIER, MAX_STEP_ATTEMPTS, MAX_REGENERATES_PER_STEP, VISUAL_SCENE_CREDITS, visualMinLive } from "../config.js";
+import { attemptCost, CREDIT_COSTS, EXTRA_ATTEMPT_MULTIPLIER, IMAGE_SLIDE_COUNT, MAX_STEP_ATTEMPTS, MAX_REGENERATES_PER_STEP, VISUAL_SCENE_CREDITS, visualMinLive } from "../config.js";
 import { getBalance, refundCredits, spendCredits } from "./credits.js";
 import {
   generateCaptions,
@@ -15,12 +15,33 @@ import {
   type Script,
   type Visual,
 } from "./ai.js";
-import { hasVideoFile, hasVoiceFile, removeVideoFile, removeVoiceFile, renderReel, synthesizeSpeech } from "./media.js";
+import { hasVideoFile, hasVoiceFile, persistStills, removeVideoFile, removeVoiceFile, renderReel, synthesizeSpeech } from "./media.js";
 
 export const FORMAT_TYPES = ["video", "instagram_reel", "tiktok", "image_post", "advertisement", "social_post"] as const;
 export type FormatType = (typeof FORMAT_TYPES)[number];
 
-export const MVP_READY: FormatType[] = ["instagram_reel", "tiktok"];
+export const MVP_READY: FormatType[] = ["instagram_reel", "tiktok", "image_post"];
+
+export function isImagePost(type: string) {
+  return type === "image_post";
+}
+
+function imageCarousel(prompt: string, idea: Idea): Script {
+  return {
+    durationSec: 0,
+    cta: idea.title,
+    scenes: Array.from({ length: IMAGE_SLIDE_COUNT }, (_, index) => {
+      const id = index + 1;
+      return {
+        id,
+        time: `Slide ${id}`,
+        onScreen: id === 1 ? idea.hook : idea.title,
+        voiceover: "",
+        visualPrompt: `${idea.visualDirection}. Still ${id} of ${IMAGE_SLIDE_COUNT} for an Instagram photo post, not a video frame. ${idea.concept} Request: ${prompt}`,
+      };
+    }),
+  };
+}
 
 function logGeneration(params: {
   userId: string;
@@ -164,6 +185,7 @@ export function serializeProject(row: Record<string, unknown>) {
     audioUrl: hasVoiceFile(id) ? `/projects/${id}/audio` : null,
     outputUrl: hasVideoFile(id) ? `/projects/${id}/file` : row.output_url || null,
     hasVideo: hasVideoFile(id),
+    hasImages: isImagePost(String(row.type)) && Boolean(parse(row.visuals_json)),
     creditsUsed: row.credits_used,
     stepAttempts: stepAttemptCounts(id),
     maxStepAttempts: MAX_STEP_ATTEMPTS,
@@ -220,6 +242,9 @@ export async function runStep(
     (step === "voice" && hasVoiceFile(projectId)) ||
     (step === "captions" && Boolean(project.captions_json)) ||
     (step === "render" && hasVideoFile(projectId));
+  if (isImagePost(type) && (step === "script" || step === "voice" || step === "captions" || step === "render")) {
+    throw Object.assign(new Error("This is a still post — pictures only, no voice or video."), { status: 400 });
+  }
   if (alreadyDone && !regenerate) return serializeProject(project);
 
   const idempotencyKey = String(opts.idempotencyKey || "").trim().slice(0, 80);
@@ -243,17 +268,27 @@ export async function runStep(
 
   const attemptsSoFar = stepAttemptCount(projectId, step);
   const multiplier = attemptsSoFar >= MAX_STEP_ATTEMPTS ? EXTRA_ATTEMPT_MULTIPLIER : 1;
-  let cost = attemptCost(step === "visuals" && sceneId ? VISUAL_SCENE_CREDITS : CREDIT_COSTS[step], attemptsSoFar);
+  const visualsBase =
+    step === "visuals" && sceneId
+      ? VISUAL_SCENE_CREDITS
+      : step === "visuals" && isImagePost(type)
+        ? IMAGE_SLIDE_COUNT * VISUAL_SCENE_CREDITS
+        : CREDIT_COSTS[step];
+  let cost = attemptCost(visualsBase, attemptsSoFar);
 
   const idea = parse<Idea>(project.idea_json);
   const script = parse<Script>(project.script_json);
   if (step === "script" && !idea) {
     throw Object.assign(new Error("Generate the idea first."), { status: 400 });
   }
-  if ((step === "visuals" || step === "voice" || step === "captions" || step === "render") && !script) {
+  if (step === "visuals" && isImagePost(type) && !idea) {
+    throw Object.assign(new Error("Generate the idea first."), { status: 400 });
+  }
+  if ((step === "visuals" || step === "voice" || step === "captions" || step === "render") && !script && !isImagePost(type)) {
     throw Object.assign(new Error("Generate the script first."), { status: 400 });
   }
-  if (step === "visuals" && sceneId && script && !script.scenes.find((item) => item.id === sceneId)) {
+  const imageScript = isImagePost(type) && idea ? script || imageCarousel(prompt, idea) : script;
+  if (step === "visuals" && sceneId && imageScript && !imageScript.scenes.find((item) => item.id === sceneId)) {
     throw Object.assign(new Error("Unknown scene."), { status: 400 });
   }
   if (step === "render" && !hasVoiceFile(projectId)) {
@@ -319,32 +354,40 @@ export async function runStep(
       provider = result.provider;
       model = result.model;
       actualCost = result.cost;
-    } else if (step === "visuals" && script) {
+    } else if (step === "visuals" && imageScript) {
       providerTouched = true;
+      const kind = isImagePost(type) ? "still" : "video";
+      if (isImagePost(type)) {
+        updates.script_json = JSON.stringify(imageScript);
+      }
       if (sceneId) {
-        const scene = script.scenes.find((item) => item.id === sceneId)!;
+        const scene = imageScript.scenes.find((item) => item.id === sceneId)!;
         const current = parse<Visual[]>(project.visuals_json) || [];
-        const one = await generateOneVisual(scene, brand);
-        const next = current.some((item) => item.sceneId === sceneId)
-          ? current.map((item) => (item.sceneId === sceneId ? one.data : item))
-          : [...current, one.data];
+        const one = await generateOneVisual(scene, brand, kind);
+        const next = await persistStills(
+          projectId,
+          current.some((item) => item.sceneId === sceneId)
+            ? current.map((item) => (item.sceneId === sceneId ? one.data : item))
+            : [...current, one.data]
+        );
         updates.visuals_json = JSON.stringify(next);
         updates.current_step = "visuals";
         provider = one.provider;
         model = one.model;
         actualCost = one.cost;
       } else {
-        const result = await generateVisuals(script, brand);
-        const minLive = visualMinLive(script.scenes.length);
+        const result = await generateVisuals(imageScript, brand, kind);
+        const minLive = visualMinLive(imageScript.scenes.length);
         if (result.usedOpenAI && result.live < minLive) {
           throw Object.assign(
             new Error(
-              `We couldn’t generate enough frames (${result.live} of ${script.scenes.length}). Try a simpler description.`
+              `We couldn’t generate enough ${isImagePost(type) ? "pictures" : "frames"} (${result.live} of ${imageScript.scenes.length}). Try a simpler description.`
             ),
             { status: 400 }
           );
         }
-        updates.visuals_json = JSON.stringify(result.data);
+        const persisted = await persistStills(projectId, result.data);
+        updates.visuals_json = JSON.stringify(persisted);
         updates.current_step = "visuals";
         provider = result.provider;
         model = result.model;
@@ -415,7 +458,12 @@ export async function runStep(
       if (step === "idea" || step === "script") removeVoiceFile(projectId);
       if (step !== "render") removeVideoFile(projectId);
     }
-    if (step !== "render") {
+    if (step === "render") {
+      /* ready already set */
+    } else if (isImagePost(type)) {
+      updates.status = step === "visuals" ? "ready" : "draft";
+      if (step === "visuals") updates.output_url = `/projects/${projectId}/image/1`;
+    } else {
       updates.status = hasVideoFile(projectId) ? "ready" : "draft";
     }
 

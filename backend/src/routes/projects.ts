@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
-import { CREDIT_COSTS, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
+import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
 import { FORMAT_TYPES, MVP_READY, createProject, runStep, saveFeedback, serializeProject } from "../services/pipeline.js";
-import { hasVideoFile, hasVoiceFile, videoFile, voiceFile } from "../services/media.js";
+import { hasStillFile, hasVideoFile, hasVoiceFile, stillFile, videoFile, voiceFile } from "../services/media.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 
 function readPrompt(value: unknown) {
@@ -24,7 +24,12 @@ projectsRouter.get("/", (req, res) => {
   const rows = db
     .prepare("SELECT * FROM projects WHERE user_id = ? ORDER BY created_at DESC")
     .all(req.user!.id) as Record<string, unknown>[];
-  res.json({ projects: rows.map(serializeProject), costs: CREDIT_COSTS, fullVideoCost: FULL_VIDEO_COST });
+  res.json({
+    projects: rows.map(serializeProject),
+    costs: CREDIT_COSTS,
+    fullVideoCost: FULL_VIDEO_COST,
+    fullImageCost: FULL_IMAGE_COST,
+  });
 });
 
 projectsRouter.post("/", (req, res) => {
@@ -40,7 +45,7 @@ projectsRouter.post("/", (req, res) => {
   }
   if (!MVP_READY.includes(type as (typeof FORMAT_TYPES)[number])) {
     res.status(400).json({
-      error: "This format is next. The first studio is Reels and TikTok — 30 seconds, vertical, done for you.",
+      error: "This format is next. Start with a Reel, TikTok, or still images.",
     });
     return;
   }
@@ -57,6 +62,18 @@ projectsRouter.get("/:id/file", (req, res) => {
   }
   res.type("video/mp4");
   res.sendFile(videoFile(id));
+});
+
+projectsRouter.get("/:id/image/:sceneId", (req, res) => {
+  const id = String(req.params.id);
+  const sceneId = Number(req.params.sceneId);
+  const row = db.prepare("SELECT id FROM projects WHERE id = ? AND user_id = ?").get(id, req.user!.id);
+  if (!row || !hasStillFile(id, sceneId)) {
+    res.status(404).json({ error: "Image not ready." });
+    return;
+  }
+  res.type("image/jpeg");
+  res.sendFile(stillFile(id, sceneId));
 });
 
 projectsRouter.get("/:id/audio", (req, res) => {
@@ -79,7 +96,12 @@ projectsRouter.get("/:id", (req, res) => {
     res.status(404).json({ error: "Project not found." });
     return;
   }
-  res.json({ project: serializeProject(row), costs: CREDIT_COSTS, fullVideoCost: FULL_VIDEO_COST });
+  res.json({
+    project: serializeProject(row),
+    costs: CREDIT_COSTS,
+    fullVideoCost: FULL_VIDEO_COST,
+    fullImageCost: FULL_IMAGE_COST,
+  });
 });
 
 projectsRouter.patch("/:id", (req, res) => {

@@ -30,6 +30,51 @@ export function videoFile(projectId: string) {
   return path.join(projectMediaDir(projectId), "reel.mp4");
 }
 
+export function stillFile(projectId: string, sceneId: number) {
+  return path.join(projectMediaDir(projectId), `still-${sceneId}.jpg`);
+}
+
+export function hasStillFile(projectId: string, sceneId: number) {
+  const file = stillFile(projectId, sceneId);
+  return fs.existsSync(file) && fs.statSync(file).size > 0;
+}
+
+export function hasStillFiles(projectId: string) {
+  const dir = projectMediaPath(projectId);
+  if (!fs.existsSync(dir)) return false;
+  return fs.readdirSync(dir).some((name) => name.startsWith("still-") && fs.statSync(path.join(dir, name)).size > 0);
+}
+
+export function removeStillFiles(projectId: string) {
+  const dir = projectMediaPath(projectId);
+  if (!fs.existsSync(dir)) return;
+  for (const name of fs.readdirSync(dir)) {
+    if (name.startsWith("still-")) fs.rmSync(path.join(dir, name), { force: true });
+  }
+}
+
+export async function persistStills(projectId: string, visuals: Visual[]) {
+  const next: Visual[] = [];
+  for (const visual of visuals) {
+    if (visual.placeholder || !visual.imageUrl.startsWith("http")) {
+      next.push(visual);
+      continue;
+    }
+    try {
+      const res = await fetch(visual.imageUrl);
+      if (!res.ok) {
+        next.push(visual);
+        continue;
+      }
+      fs.writeFileSync(stillFile(projectId, visual.sceneId), Buffer.from(await res.arrayBuffer()));
+      next.push({ ...visual, imageUrl: `/projects/${projectId}/image/${visual.sceneId}` });
+    } catch {
+      next.push(visual);
+    }
+  }
+  return next;
+}
+
 export function hasVoiceFile(projectId: string) {
   return fs.existsSync(voiceFile(projectId)) && fs.statSync(voiceFile(projectId)).size > 0;
 }
@@ -130,6 +175,12 @@ const FALLBACK_COLORS = ["C45C26", "6B3A22", "3D2A1C", "8A4A28", "2B1D14"];
 
 async function sceneImage(visual: Visual | undefined, index: number, dir: string) {
   const url = visual?.imageUrl || "";
+  const persisted = visual?.sceneId != null ? path.join(dir, `still-${visual.sceneId}.jpg`) : "";
+  if (persisted && fs.existsSync(persisted) && fs.statSync(persisted).size > 0) {
+    const file = path.join(dir, `scene-${index}.jpg`);
+    if (path.resolve(persisted) !== path.resolve(file)) fs.copyFileSync(persisted, file);
+    return file;
+  }
   if (url.startsWith("http://") || url.startsWith("https://")) {
     try {
       const res = await fetch(url);

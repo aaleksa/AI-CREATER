@@ -13,7 +13,7 @@ export default function Library() {
     return (
       <div>
         <h1 className="page-title" style={{ fontSize: 48 }}>Library</h1>
-        <p className="empty">Nothing yet. Start with a Reel.</p>
+        <p className="empty">Nothing yet. Start with a Reel or stills.</p>
         <Link className="btn" to="/app">Create</Link>
       </div>
     );
@@ -22,13 +22,13 @@ export default function Library() {
   return (
     <div>
       <h1 className="page-title" style={{ fontSize: 48 }}>Library</h1>
-      <p className="hint">Finished Reels stay on disk for 90 days. Download anything you still need to post later.</p>
+      <p className="hint">Finished Reels and stills stay on disk for 90 days. Download anything you still need to post later.</p>
       <div className="list" style={{ marginTop: 24 }}>
         {projects.map((p) => (
           <Link key={p.id} to={`/app/studio/${p.id}`}>
             <span>
               <b>{p.prompt}</b>
-              <div className="hint">{p.type} · {p.hasVideo ? "mp4 ready" : p.status} · {p.creditsUsed} credits</div>
+              <div className="hint">{p.type} · {p.hasVideo ? "mp4 ready" : p.hasImages ? "stills ready" : p.status} · {p.creditsUsed} credits</div>
             </span>
             <span className="hint">{new Date(p.createdAt).toLocaleString()}</span>
           </Link>

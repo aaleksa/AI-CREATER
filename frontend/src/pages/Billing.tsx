@@ -49,7 +49,7 @@ export default function Billing() {
     <div>
       <h1 className="page-title" style={{ fontSize: 48 }}>Credits</h1>
       <p className="lede">
-        A finished Reel costs 150 credits. These prices stay frozen until we measure real TTS and render cost per video.
+        A finished Reel costs 150 credits. A still post is 37 (idea 5 + four pictures at 8). Prices stay frozen until we measure real AI cost.
       </p>
       <div className="credits-pill" style={{ marginTop: 20 }}>
         Balance <b>{credits?.balance?.credits ?? 0}</b>
@@ -84,6 +84,10 @@ export default function Billing() {
         <div className="item">
           <span><b>Full Reel</b></span>
           <span className="hint">150 credits</span>
+        </div>
+        <div className="item">
+          <span><b>Still post</b></span>
+          <span className="hint">37 credits</span>
         </div>
       </div>
 

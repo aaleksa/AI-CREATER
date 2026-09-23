@@ -26,6 +26,8 @@ export const FULL_VIDEO_COST = Object.values(CREDIT_COSTS).reduce((a, b) => a + 
 
 /** One DALL·E frame. 40 / 5 scenes. FROZEN with the rest of §9. */
 export const VISUAL_SCENE_CREDITS = 8;
+export const IMAGE_SLIDE_COUNT = 4;
+export const FULL_IMAGE_COST = CREDIT_COSTS.idea + IMAGE_SLIDE_COUNT * VISUAL_SCENE_CREDITS;
 
 export function visualMinLive(sceneCount: number) {
   return Math.max(1, Math.ceil((sceneCount * 3) / 5));
