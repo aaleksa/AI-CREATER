@@ -304,6 +304,12 @@ button { cursor: pointer; }
 }
 .choice.on { border-color: var(--accent-2); }
 .choice-row.tones { grid-template-columns: 1fr 1fr; }
+.choice-row.kinds { grid-template-columns: repeat(4, 1fr); margin-top: 10px; }
+.choice-row.kinds .choice span { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.image-kinds { margin: 8px 0 4px; }
+@media (max-width: 900px) {
+  .choice-row.kinds { grid-template-columns: 1fr 1fr; }
+}
 @media (max-width: 900px) {
   .brand-layout { grid-template-columns: 1fr; }
 }

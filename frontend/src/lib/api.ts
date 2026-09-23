@@ -49,6 +49,7 @@ export type Project = {
   id: string;
   type: string;
   prompt: string;
+  imageIntent?: string;
   status: string;
   currentStep: string;
   idea: Idea | null;
@@ -105,8 +106,8 @@ export const api = {
   me: () => request<Me>("/auth/me"),
   projects: () => request<{ projects: Project[]; fullVideoCost: number }>("/projects"),
   project: (id: string) => request<{ project: Project; costs: Record<string, number>; fullVideoCost: number }>(`/projects/${id}`),
-  createProject: (type: string, prompt: string) =>
-    request<{ project: Project }>("/projects", { method: "POST", body: JSON.stringify({ type, prompt }) }),
+  createProject: (type: string, prompt: string, imageIntent?: string) =>
+    request<{ project: Project }>("/projects", { method: "POST", body: JSON.stringify({ type, prompt, imageIntent }) }),
   updatePrompt: (id: string, prompt: string) =>
     request<{ project: Project }>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify({ prompt }) }),
   runStep: (

@@ -150,14 +150,31 @@ async function jsonCompletion<T>(system: string, user: string, fallback: T): Pro
   }
 }
 
-function mockIdea(prompt: string, type: string, brand?: BrandKit | null): Idea {
+const IMAGE_KIND_GUIDE: Record<string, string> = {
+  photo: "Still photo post: one feeling, four complementary photographs. Mood, place, people — not a date card or an offer card.",
+  invite: "Event invitation: the brief should name what, when and where. Four slides that could later carry type (cover, when, place, save-the-date). Photographs themselves have no burned-in text. The concept must name the event.",
+  info: "Information post: one fact people need — hours, a change, a reminder. Four slides that support that fact. Photographs, no burned-in type.",
+  offer: "Commercial offer: the deal, when it runs, who it’s for. Four slides — the feeling, the deal, when, walk in. Photographs, no burned-in type.",
+};
+
+function mockIdea(prompt: string, type: string, brand?: BrandKit | null, imageIntent = ""): Idea {
   const brandName = brand?.business_name || "your brand";
   const still = type === "image_post";
+  const kindTitle: Record<string, string> = {
+    invite: "You’re invited.",
+    info: "One thing to know.",
+    offer: "Come in for this.",
+    photo: "One still. One feeling.",
+  };
   return {
-    title: still ? "One still. One feeling." : type.includes("reel") || type === "tiktok" ? "30 seconds. One feeling." : "A clear story, told simply.",
+    title: still
+      ? kindTitle[imageIntent] || "One still. One feeling."
+      : type.includes("reel") || type === "tiktok"
+        ? "30 seconds. One feeling."
+        : "A clear story, told simply.",
     hook: prompt.slice(0, 90),
     concept: still
-      ? `A still Instagram post that answers “${prompt}” in one glance. ${brandName} shows in colour and light — not as a logo stamp.`
+      ? `A still Instagram ${imageIntent === "invite" ? "invitation" : imageIntent === "info" ? "information post" : imageIntent === "offer" ? "offer" : "photo"} that answers “${prompt}” in one glance. ${brandName} shows in colour and light — not as a logo stamp.`
       : `A vertical film that answers “${prompt}” without asking the viewer to learn any tools. ${brandName} stays visible in colour, type and tone — never as a watermark slapped on at the end.`,
     audience: still
       ? "People scrolling the feed who will stop for a strong photo."
@@ -231,15 +248,16 @@ const PLACEHOLDER_FRAMES = [
   "linear-gradient(155deg,#0c0b0a 0%,#c45c26 70%,#f7e7d4 100%)",
 ];
 
-export async function generateIdea(prompt: string, type: string, brand?: BrandKit | null) {
-  const fallback = mockIdea(prompt, type, brand);
+export async function generateIdea(prompt: string, type: string, brand?: BrandKit | null, imageIntent = "") {
+  const fallback = mockIdea(prompt, type, brand, imageIntent);
+  const kindGuide = type === "image_post" ? IMAGE_KIND_GUIDE[imageIntent] || IMAGE_KIND_GUIDE.photo : "";
   return jsonCompletion<Idea>(
     `You are the creative director of Auteur, an AI content studio. The user never chooses models or prompts. You decide the concept. ${
       type === "image_post"
         ? "Format: still Instagram photos or a short carousel — not video, no voiceover."
         : "Format: vertical short-form video unless told otherwise."
-    }\n${brandContext(brand)}`,
-    `Content type: ${type}\nUser request: ${prompt}\nReturn JSON with keys: title, hook, concept, audience, visualDirection.`,
+    }${kindGuide ? `\n${kindGuide}` : ""}\n${brandContext(brand)}`,
+    `Content type: ${type}${imageIntent ? `\nImage kind: ${imageIntent}` : ""}\nUser request: ${prompt}\nReturn JSON with keys: title, hook, concept, audience, visualDirection.`,
     fallback
   );
 }

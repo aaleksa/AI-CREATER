@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, restoreStepVersion, runStep, saveFeedback, serializeProject } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, parseImageIntent, restoreStepVersion, runStep, saveFeedback, serializeProject } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
 import { hasStillFile, hasVideoFile, hasVoiceFile, stillFile, videoFile, voiceFile } from "../services/media.js";
 import { rateLimit } from "../middleware/rateLimit.js";
@@ -34,7 +34,7 @@ projectsRouter.get("/", (req, res) => {
 });
 
 projectsRouter.post("/", (req, res) => {
-  const { type, prompt } = req.body ?? {};
+  const { type, prompt, imageIntent } = req.body ?? {};
   if (!FORMAT_TYPES.includes(type as (typeof FORMAT_TYPES)[number])) {
     res.status(400).json({ error: "Unknown format." });
     return;
@@ -50,7 +50,8 @@ projectsRouter.post("/", (req, res) => {
     });
     return;
   }
-  const project = createProject(req.user!.id, type as (typeof FORMAT_TYPES)[number], parsed.text);
+  const intent = parseImageIntent(type, imageIntent);
+  const project = createProject(req.user!.id, type as (typeof FORMAT_TYPES)[number], parsed.text, intent);
   res.status(201).json({ project: serializeProject(project) });
 });
 

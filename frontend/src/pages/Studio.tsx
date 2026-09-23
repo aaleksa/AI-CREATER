@@ -353,7 +353,15 @@ export default function Studio() {
 
   return (
     <div>
-      <p className="hint">{project.type.replaceAll("_", " ")}</p>
+      <p className="hint">
+        {project.type.replaceAll("_", " ")}
+        {isImage && project.imageIntent
+          ? ` · ${
+              { photo: "just a photo", invite: "invitation", info: "information", offer: "offer" }[project.imageIntent] ||
+              project.imageIntent
+            }`
+          : ""}
+      </p>
       {kitHint && (
         <p className="hint">
           {kitHint}. <Link to="/app/brand">Brand kit</Link>

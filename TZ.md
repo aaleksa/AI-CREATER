@@ -2,7 +2,7 @@
 
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
-**Версія документа:** 1.11  
+**Версія документа:** 1.12  
 **Мова інтерфейсу першої версії:** English  
 **Валюта:** GBP (£)
 
@@ -143,7 +143,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 | `video` | Video | екран є, створення заблоковане |
 | `instagram_reel` | Instagram Reel | повний пайплайн + **mp4** |
 | `tiktok` | TikTok | повний пайплайн + **mp4** |
-| `image_post` | Image / Post | Idea + **4 stills** (JPG), **37 credits**, без voice/mp4 |
+| `image_post` | Image / Post | Idea + **4 stills** (JPG), **37 credits**, без voice/mp4. Один формат; `image_intent` = photo / invite / info / offer |
 | `advertisement` | Advertisement | «Coming after Reels» |
 | `social_post` | Social media post | «Coming after Reels» |
 
@@ -192,14 +192,20 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 
 ### 3.5 Щасливий шлях (Image / Post)
 
-1. На Create обирає **Image / Post**.
-2. Пише, що має бути на фото (офер, місце, настрій). Приклад: `A warm photo post for my salon’s Tuesday walk-in offer.`
-3. Студія — **2 кроки**, не 6:
-   1. **Idea** (5 cr) — концепція каруселі, без скрипта й голосу;
-   2. **Pictures** (32 cr max) — **4 квадратні stills** 1:1 (DALL·E `1024x1024`), оплата live × 8, поріг ≥3/4.
-4. Разом **37 credits**. `script` / `voice` / `captions` / `render` на цьому типі — 400.
-5. JPG пишуться як `still-{sceneId}.jpg`. Прев’ю квадратне. Download кожного кадру. Питання *Would you publish this post?*
-6. Без voice, субтитрів і mp4. Готовий артефакт — картинки, не відео.
+1. На Create обирає **Image / Post** — **один** формат, не окремі продукти «фото / запрошення / інфо».
+2. Опційно обирає **what kind of post** (`image_intent`):
+   - **Just a photo** — настрій, місце, хто на кадрі;
+   - **Invitation** — що за івент, коли, де;
+   - **Information** — факт (години, зміна, нагадування);
+   - **Offer** — офер, коли діє, для кого.
+   Чип **не** новий `type`. Змінює placeholder, hint і промпт Idea/Pictures. Текст на слайдах — після n≥40 (§11.11).
+3. Пише бриф. Приклади: photo `A quiet morning table at my café.`; invite `Saturday 11am colour workshop at the salon.`; info `Closed Monday 6 May.`; offer `Tuesday walk-in offer.`
+4. Студія — **2 кроки**, не 6:
+   1. **Idea** (5 cr) — концепція каруселі під обраний kind, без скрипта й голосу;
+   2. **Pictures** (32 cr max) — **4 квадратні stills** 1:1 (DALL·E `1024x1024`), оплата live × 8, поріг ≥3/4. Ролі слайдів залежать від kind (cover / when / place / save-the-date для invite; fact / detail / why / remember для info).
+5. Разом **37 credits**. `script` / `voice` / `captions` / `render` на цьому типі — 400.
+6. JPG пишуться як `still-{sceneId}.jpg`. Прев’ю квадратне. Download кожного кадру. Питання *Would you publish this post?*
+7. Без voice, субтитрів і mp4. Готовий артефакт — картинки, не відео. Дати й ціни в бриф, не випалені на фото.
 
 ---
 
@@ -450,6 +456,7 @@ Text AI  Image AI   TTS
 | user_id | FK | |
 | type | text | див. формати |
 | prompt | text | речення користувача |
+| image_intent | text | лише `image_post`: `photo` / `invite` / `info` / `offer`; інакше порожньо |
 | status | text | `draft` / `generating` / `ready` / `expired` |
 | current_step | text | `prompt` / `idea` / `script` / `visuals` / `voice` / `captions` / `create` |
 | idea_json | text | |

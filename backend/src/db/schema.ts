@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS projects (
   user_id TEXT NOT NULL,
   type TEXT NOT NULL,
   prompt TEXT NOT NULL,
+  image_intent TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL,
   current_step TEXT NOT NULL,
   idea_json TEXT,

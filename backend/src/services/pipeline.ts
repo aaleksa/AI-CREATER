@@ -29,18 +29,39 @@ export function isImagePost(type: string) {
   return type === "image_post";
 }
 
-function imageCarousel(prompt: string, idea: Idea): Script {
+export const IMAGE_INTENTS = ["photo", "invite", "info", "offer"] as const;
+export type ImageIntent = (typeof IMAGE_INTENTS)[number];
+
+const IMAGE_SLIDE_ROLES: Record<ImageIntent, string[]> = {
+  photo: ["the first glance", "the place", "a quiet detail", "the feeling you leave with"],
+  invite: ["the invitation cover", "when it happens", "where it happens", "save this date"],
+  info: ["the fact at a glance", "the detail they need", "why it matters", "remember this"],
+  offer: ["the offer at a glance", "what they get", "when it runs", "walk in"],
+};
+
+export function parseImageIntent(type: string, raw: unknown): ImageIntent | "" {
+  if (!isImagePost(type)) return "";
+  if (typeof raw === "string" && (IMAGE_INTENTS as readonly string[]).includes(raw)) {
+    return raw as ImageIntent;
+  }
+  return "photo";
+}
+
+function imageCarousel(prompt: string, idea: Idea, intent: ImageIntent | "" = "photo"): Script {
+  const kind = intent || "photo";
+  const roles = IMAGE_SLIDE_ROLES[kind] || IMAGE_SLIDE_ROLES.photo;
   return {
     durationSec: 0,
     cta: idea.title,
     scenes: Array.from({ length: IMAGE_SLIDE_COUNT }, (_, index) => {
       const id = index + 1;
+      const role = roles[index] || `still ${id}`;
       return {
         id,
         time: `Slide ${id}`,
-        onScreen: id === 1 ? idea.hook : idea.title,
+        onScreen: role,
         voiceover: "",
-        visualPrompt: `${idea.visualDirection}. Still ${id} of ${IMAGE_SLIDE_COUNT} for an Instagram photo post, not a video frame. ${idea.concept} Request: ${prompt}`,
+        visualPrompt: `${idea.visualDirection}. Still ${id} of ${IMAGE_SLIDE_COUNT} — ${role}. Square Instagram photograph, no burned-in text, not a video frame. ${idea.concept} Request: ${prompt}`,
       };
     }),
   };
@@ -203,6 +224,7 @@ export function serializeProject(row: Record<string, unknown>) {
     id: row.id,
     type: row.type,
     prompt: row.prompt,
+    imageIntent: row.image_intent || "",
     status: running ? "generating" : row.status,
     currentStep: row.current_step,
     runningStep: running?.type || null,
@@ -271,12 +293,12 @@ export function saveFeedback(userId: string, projectId: string, publishable: str
   return serializeProject(getProject(projectId, userId));
 }
 
-export function createProject(userId: string, type: FormatType, prompt: string) {
+export function createProject(userId: string, type: FormatType, prompt: string, imageIntent: ImageIntent | "" = "") {
   const id = uuid();
   db.prepare(
-    `INSERT INTO projects (id, user_id, type, prompt, status, current_step)
-     VALUES (?, ?, ?, ?, 'draft', 'prompt')`
-  ).run(id, userId, type, prompt);
+    `INSERT INTO projects (id, user_id, type, prompt, image_intent, status, current_step)
+     VALUES (?, ?, ?, ?, ?, 'draft', 'prompt')`
+  ).run(id, userId, type, prompt, imageIntent);
   return getProject(id, userId);
 }
 
@@ -346,6 +368,7 @@ export async function runStep(
 
   const idea = parse<Idea>(project.idea_json);
   const script = parse<Script>(project.script_json);
+  const imageIntent = parseImageIntent(type, project.image_intent);
   if (step === "script" && !idea) {
     throw Object.assign(new Error("Generate the idea first."), { status: 400 });
   }
@@ -355,7 +378,7 @@ export async function runStep(
   if ((step === "visuals" || step === "voice" || step === "captions" || step === "render") && !script && !isImagePost(type)) {
     throw Object.assign(new Error("Generate the script first."), { status: 400 });
   }
-  const imageScript = isImagePost(type) && idea ? script || imageCarousel(prompt, idea) : script;
+  const imageScript = isImagePost(type) && idea ? script || imageCarousel(prompt, idea, imageIntent) : script;
   if (step === "visuals" && sceneId && imageScript && !imageScript.scenes.find((item) => item.id === sceneId)) {
     throw Object.assign(new Error("Unknown scene."), { status: 400 });
   }
@@ -417,7 +440,7 @@ export async function runStep(
 
     if (step === "idea") {
       providerTouched = true;
-      const result = await generateIdea(prompt, type, brand);
+      const result = await generateIdea(prompt, type, brand, imageIntent);
       updates.idea_json = JSON.stringify(result.data);
       updates.current_step = "idea";
       provider = result.provider;
