@@ -20,7 +20,8 @@ import {
   type Script,
   type Visual,
 } from "./ai.js";
-import { hasStillFile, hasVideoFile, hasVoiceFile, persistStills, removeVideoFile, removeVoiceFile, renderReel, restoreStillSnapshot, snapshotStills, synthesizeSpeech } from "./media.js";
+import { hasStillFile, hasVideoFile, hasVoiceFile, persistStills, removeVideoFile, removeVoiceFile, renderReel, restoreStillSnapshot, snapshotStills, synthesizeSpeech, voiceDurationSec } from "./media.js";
+import { assertArchiveRoom, evictOverLimit } from "./archive.js";
 import { inviteFrom, parseInvite, preferBriefInvite } from "./invite.js";
 import { parseStepFeedback, recordStepRejection } from "./feedback.js";
 import { maybeRefreshLearnedSummary } from "./learning.js";
@@ -431,6 +432,7 @@ export async function runStep(
     idempotencyKey?: string;
     feedbackReason?: unknown;
     feedbackNote?: unknown;
+    evictOldest?: boolean;
   } = {}
 ) {
   const project = getProject(projectId, userId);
@@ -506,6 +508,9 @@ export async function runStep(
   }
   if (step === "render" && !hasVoiceFile(projectId)) {
     throw Object.assign(new Error("Generate the voice audio first."), { status: 400 });
+  }
+  if (step === "render") {
+    assertArchiveRoom(userId, projectId, Boolean(opts.evictOldest));
   }
 
   if (getBalance(userId) < cost) {
@@ -668,7 +673,8 @@ export async function runStep(
       });
     } else if (step === "captions" && script) {
       providerTouched = true;
-      const result = await generateCaptions(script);
+      const audioSec = (await voiceDurationSec(projectId)) || script.durationSec || 30;
+      const result = await generateCaptions(script, audioSec);
       updates.captions_json = JSON.stringify(result.data);
       updates.current_step = "captions";
       provider = result.provider;
@@ -686,6 +692,7 @@ export async function runStep(
       updates.current_step = "create";
       updates.status = "ready";
       updates.output_url = `/projects/${projectId}/file`;
+      if (opts.evictOldest) evictOverLimit(userId, projectId);
       provider = rendered.provider;
       model = rendered.model;
       actualCost = rendered.cost;

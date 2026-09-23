@@ -5,6 +5,7 @@ import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_INVITE_COST, FULL_VIDEO_COST, MAX_P
 import { FORMAT_TYPES, MVP_READY, createProject, readCreateImageIntent, restoreStepVersion, runStep, saveFeedback, serializeProject, updateInvite } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
 import { hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
+import { archiveState } from "../services/archive.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 
 function readPrompt(value: unknown) {
@@ -27,6 +28,7 @@ projectsRouter.get("/", (req, res) => {
     .all(req.user!.id) as Record<string, unknown>[];
   res.json({
     projects: rows.map(serializeProject),
+    archive: archiveState(req.user!.id),
     costs: CREDIT_COSTS,
     fullVideoCost: FULL_VIDEO_COST,
     fullImageCost: FULL_IMAGE_COST,
@@ -145,6 +147,7 @@ projectsRouter.get("/:id", (req, res) => {
   }
   res.json({
     project: serializeProject(row),
+    archive: archiveState(req.user!.id),
     costs: CREDIT_COSTS,
     fullVideoCost: FULL_VIDEO_COST,
     fullImageCost: FULL_IMAGE_COST,
@@ -255,10 +258,11 @@ projectsRouter.post("/:id/steps/:step", rateLimit(20, 60_000), async (req, res) 
       idempotencyKey: String(req.get("Idempotency-Key") || req.body?.idempotencyKey || ""),
       feedbackReason: req.body?.feedbackReason,
       feedbackNote: req.body?.feedbackNote,
+      evictOldest: Boolean(req.body?.evictOldest),
     });
-    res.json({ project });
+    res.json({ project, archive: archiveState(req.user!.id) });
   } catch (error) {
-    const err = error as Error & { status?: number };
-    res.status(err.status || 500).json({ error: err.message || "Generation failed." });
+    const err = error as Error & { status?: number; code?: string };
+    res.status(err.status || 500).json({ error: err.message || "Generation failed.", code: err.code });
   }
 });

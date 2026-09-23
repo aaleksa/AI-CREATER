@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, fetchMedia, refreshMe, type BrandKitRow, type InviteCard, type Project } from "../lib/api";
+import { ApiError, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type Project } from "../lib/api";
 import { copyText } from "../lib/copy";
 import BrandToggle from "../components/BrandToggle";
 import { useLocale } from "../i18n/locale";
@@ -231,6 +231,7 @@ export default function Studio() {
   const [regenReason, setRegenReason] = useState("");
   const [regenNote, setRegenNote] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
+  const [archive, setArchive] = useState<ArchiveState | null>(null);
   const [kit, setKit] = useState<BrandKitRow | null>(null);
   const [inviteDraft, setInviteDraft] = useState<InviteCard>(EMPTY_INVITE);
   const [inviteSaved, setInviteSaved] = useState(false);
@@ -242,6 +243,7 @@ export default function Studio() {
     api.project(id).then((d) => {
       if (cancelled) return;
       setProject(d.project);
+      setArchive(d.archive || null);
       setBrief(d.project.prompt);
       if (d.project.invite) setInviteDraft(draftFromInvite(d.project.invite));
     }).catch((e) => {
@@ -395,14 +397,28 @@ export default function Studio() {
     project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title || ""
   );
 
-  async function execute(step: string, regenerate = false, sceneId?: number, feedback?: { reason?: string; note?: string }) {
+  async function execute(
+    step: string,
+    regenerate = false,
+    sceneId?: number,
+    feedback?: { reason?: string; note?: string },
+    evictOldest = false
+  ) {
     if (!id) return;
     setBusy(sceneId ? `visual-${sceneId}` : step);
     setError("");
     try {
-      const { project: nextProject } = await api.runStep(id, step, regenerate, sceneId, feedback);
+      const { project: nextProject, archive: nextArchive } = await api.runStep(
+        id,
+        step,
+        regenerate,
+        sceneId,
+        feedback,
+        evictOldest
+      );
       setPreviewVersionId(null);
       setProject(nextProject);
+      if (nextArchive) setArchive(nextArchive);
       setBrief(nextProject.prompt);
       if (nextProject.invite) setInviteDraft(draftFromInvite(nextProject.invite));
       refreshMe();
@@ -410,6 +426,14 @@ export default function Studio() {
       setRegenReason("");
       setRegenNote("");
     } catch (err) {
+      if (!evictOldest && step === "render" && err instanceof ApiError && err.code === "archive_full") {
+        const oldest = archive?.oldestPrompt || t("studio.oldestReel");
+        const ok = window.confirm(t("studio.confirmArchive", { limit: archive?.limit ?? 10, oldest }));
+        if (ok) {
+          await execute(step, regenerate, sceneId, feedback, true);
+          return;
+        }
+      }
       setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
     } finally {
       setBusy(null);
@@ -455,6 +479,19 @@ export default function Studio() {
       );
       if (!ok) return;
     }
+    if (step === "render" && archive?.atLimit && !project.hasVideo) {
+      const oldest = archive.oldestPrompt || t("studio.oldestReel");
+      const ok = window.confirm(t("studio.confirmArchive", { limit: archive.limit, oldest }));
+      if (!ok) return;
+      if (regenerate && STEP_REASONS[step]) {
+        setPendingRegen({ step, sceneId });
+        setRegenReason("");
+        setRegenNote("");
+        return;
+      }
+      await execute(step, regenerate, sceneId, undefined, true);
+      return;
+    }
     if (regenerate && STEP_REASONS[step]) {
       setPendingRegen({ step, sceneId });
       setRegenReason("");
@@ -470,7 +507,13 @@ export default function Studio() {
       setError(t("studio.needNote"));
       return;
     }
-    await execute(pendingRegen.step, true, pendingRegen.sceneId, withReason && regenReason ? { reason: regenReason, note: regenNote } : undefined);
+    await execute(
+      pendingRegen.step,
+      true,
+      pendingRegen.sceneId,
+      withReason && regenReason ? { reason: regenReason, note: regenNote } : undefined,
+      Boolean(archive?.atLimit && pendingRegen.step === "render" && project && !project.hasVideo)
+    );
   }
 
   async function restore(step: "idea" | "script" | "visuals", versionId: string, sceneId?: number) {
@@ -764,6 +807,12 @@ export default function Studio() {
             </>
           )}
           {project.captions && !project.hasVideo && <p className="lede">{t("studio.captionsReady")}</p>}
+          {archive?.atLimit && !project.hasVideo && !isImage && (
+            <p className="hint">{t("studio.archiveWarn", { limit: archive.limit })}</p>
+          )}
+          {!project.hasVideo && !project.hasImages && (project.status === "expired" || project.status === "ready") && (
+            <p className="hint">{t("studio.fileGone")}</p>
+          )}
           {project.hasImages && (
             <>
               <div className="ready-block">

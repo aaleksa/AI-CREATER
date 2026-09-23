@@ -42,6 +42,8 @@ export const ERROR_UK: Record<string, string> = {
   "This is a still post — pictures only, no voice or video.": "Це статичний пост — лише картинка, без голосу й відео.",
   "This request is already running.": "Цей запит уже виконується.",
   "This step is already running. Wait for it to finish.": "Цей крок уже виконується. Зачекайте.",
+  "This plan is full. Confirm to take the oldest Reel off disk (download it first if you still need it), or delete one from the Library.":
+    "План заповнений. Підтвердіть, щоб зняти найстаріший Reel з диска (спочатку завантажте, якщо ще потрібен), або видаліть один у бібліотеці.",
   "Generate the idea first.": "Спочатку зробіть ідею.",
   "Generate the script first.": "Спочатку зробіть сценарій.",
   "Generate the voice audio first.": "Спочатку запишіть голос.",

@@ -182,6 +182,30 @@ export function hasVoiceFile(projectId: string) {
   return fs.existsSync(voiceFile(projectId)) && fs.statSync(voiceFile(projectId)).size > 0;
 }
 
+export async function voiceDurationSec(projectId: string) {
+  const file = voiceFile(projectId);
+  if (!hasVoiceFile(projectId) || !ffmpegPath || !fs.existsSync(ffmpegPath)) return 0;
+  return new Promise<number>((resolve) => {
+    const child = spawn(ffmpegPath, ["-hide_banner", "-i", file, "-f", "null", "-"], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let err = "";
+    child.stderr.on("data", (chunk) => {
+      err += String(chunk);
+    });
+    child.on("error", () => resolve(0));
+    child.on("close", () => {
+      const match = err.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+      if (!match) {
+        resolve(0);
+        return;
+      }
+      const seconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+      resolve(Number.isFinite(seconds) && seconds > 0 ? seconds : 0);
+    });
+  });
+}
+
 export function hasVideoFile(projectId: string) {
   return fs.existsSync(videoFile(projectId)) && fs.statSync(videoFile(projectId)).size > 0;
 }

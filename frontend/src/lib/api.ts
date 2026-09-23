@@ -11,9 +11,11 @@ export type Me = {
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  code?: string;
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -63,6 +65,14 @@ export type ScriptScene = {
   onScreen: string;
   voiceover: string;
   visualPrompt: string;
+};
+export type ArchiveState = {
+  used: number;
+  limit: number;
+  planId: string;
+  atLimit: boolean;
+  oldestId: string | null;
+  oldestPrompt: string | null;
 };
 export type Project = {
   id: string;
@@ -123,8 +133,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   } catch {
     throw new ApiError(translateError(locale, "Studio is offline. Start the API and try again."), 503);
   }
-  const data = (await res.json().catch(() => ({}))) as { error?: string };
-  if (!res.ok) throw new ApiError(translateError(locale, data.error || "Request failed"), res.status);
+  const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+  if (!res.ok) throw new ApiError(translateError(locale, data.error || "Request failed"), res.status, data.code);
   return data as T;
 }
 
@@ -134,8 +144,11 @@ export const api = {
   login: (body: { email: string; password: string }) =>
     request<{ token: string; user: User }>("/auth/login", { method: "POST", body: JSON.stringify(body) }),
   me: () => request<Me>("/auth/me"),
-  projects: () => request<{ projects: Project[]; fullVideoCost: number }>("/projects"),
-  project: (id: string) => request<{ project: Project; costs: Record<string, number>; fullVideoCost: number }>(`/projects/${id}`),
+  projects: () => request<{ projects: Project[]; archive?: ArchiveState; fullVideoCost: number }>("/projects"),
+  project: (id: string) =>
+    request<{ project: Project; archive?: ArchiveState; costs: Record<string, number>; fullVideoCost: number }>(
+      `/projects/${id}`
+    ),
   createProject: (type: string, prompt: string, imageIntent?: string, useBrand = true) =>
     request<{ project: Project }>("/projects", { method: "POST", body: JSON.stringify({ type, prompt, imageIntent, useBrand }) }),
   deleteProject: (id: string) => request<{ ok: boolean }>(`/projects/${id}`, { method: "DELETE" }),
@@ -150,10 +163,11 @@ export const api = {
     step: string,
     regenerate = false,
     sceneId?: number,
-    feedback?: { reason?: string; note?: string }
+    feedback?: { reason?: string; note?: string },
+    evictOldest = false
   ) => {
     const idempotencyKey = crypto.randomUUID();
-    return request<{ project: Project }>(`/projects/${id}/steps/${step}`, {
+    return request<{ project: Project; archive?: ArchiveState }>(`/projects/${id}/steps/${step}`, {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify({
@@ -162,6 +176,7 @@ export const api = {
         idempotencyKey,
         feedbackReason: feedback?.reason || undefined,
         feedbackNote: feedback?.note || undefined,
+        evictOldest: evictOldest || undefined,
       }),
     });
   },

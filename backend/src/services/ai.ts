@@ -784,19 +784,46 @@ notes must be one short string of speaking direction, not an object.\n${brandCon
   return { ...result, data: tidyVoice(result.data) || fallback };
 }
 
-export async function generateCaptions(script: Script) {
-  const fallback: { cues: CaptionCue[] } = { cues: [] };
+export function fitCuesToDuration(cues: CaptionCue[], scenes: ScriptScene[], durationSec: number): CaptionCue[] {
+  if (!scenes.length) return [];
+  const total = Math.max(1, durationSec);
+  const weights = scenes.map((scene) => {
+    const n = String(scene.voiceover || "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean).length;
+    return Math.max(1, n);
+  });
+  const sum = weights.reduce((a, b) => a + b, 0);
   let t = 0;
-  for (const scene of script.scenes) {
-    const words = scene.voiceover.split(" ");
-    const dur = Math.max(3, Math.round(30 / script.scenes.length));
-    fallback.cues.push({ start: t, end: t + dur, text: words.slice(0, 8).join(" ") });
-    t += dur;
-  }
+  return scenes.map((scene, i) => {
+    const fromCue = String(cues[i]?.text || "").replace(/\s+/g, " ").trim();
+    const fromScene = String(scene.onScreen || scene.voiceover || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .split(/\s+/)
+      .slice(0, 8)
+      .join(" ");
+    const text = (fromCue || fromScene).slice(0, 80);
+    const share = (weights[i] / sum) * total;
+    const start = t;
+    t += share;
+    const end = i === scenes.length - 1 ? total : t;
+    return { start: Math.round(start * 100) / 100, end: Math.round(end * 100) / 100, text };
+  });
+}
 
-  return jsonCompletion<{ cues: CaptionCue[] }>(
-    "Turn a 30-second script into burned-in caption cues. Short lines, 3–8 words.",
-    `Scenes: ${JSON.stringify(script.scenes)}\nReturn JSON: { cues: [{ start, end, text }] } with start/end in seconds.`,
+export async function generateCaptions(script: Script, durationSec = 30) {
+  const seconds = Math.max(3, durationSec);
+  const fallback: { cues: CaptionCue[] } = {
+    cues: fitCuesToDuration([], script.scenes, seconds),
+  };
+
+  const result = await jsonCompletion<{ cues: CaptionCue[] }>(
+    `Turn a voiceover into burned-in caption cues. Short lines, 3–8 words. The audio is ${seconds.toFixed(1)} seconds — cues must cover that whole file, not a guessed 30 seconds.`,
+    `Scenes: ${JSON.stringify(script.scenes)}\nAudio duration seconds: ${seconds}\nReturn JSON: { cues: [{ start, end, text }] } with start/end in seconds covering 0–${seconds}.`,
     fallback
   );
+  const cues = result.data?.cues?.length ? result.data.cues : fallback.cues;
+  return { ...result, data: { cues: fitCuesToDuration(cues, script.scenes, seconds) } };
 }

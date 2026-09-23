@@ -50,6 +50,17 @@ export function attemptCost(baseCredits: number, attemptsSoFar: number) {
   return baseCredits * (attemptsSoFar >= MAX_STEP_ATTEMPTS ? EXTRA_ATTEMPT_MULTIPLIER : 1);
 }
 
+/** Finished mp4s kept on disk at once. Evict only after UI confirm (§5.3). */
+export const ARCHIVE_LIMITS: Record<string, number> = {
+  free: 10,
+  creator: 30,
+  pro: 60,
+  business: 120,
+};
+
+export const ARCHIVE_FULL_ERROR =
+  "This plan is full. Confirm to take the oldest Reel off disk (download it first if you still need it), or delete one from the Library.";
+
 export const CREDIT_PACKS = [
   { id: "pack_200", credits: 200, price_gbp: 499, label: "200 credits" },
   { id: "pack_600", credits: 600, price_gbp: 1299, label: "600 credits" },

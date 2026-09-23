@@ -138,7 +138,12 @@ export const en = {
     framesFail: "{count} frame couldn’t be generated. Regenerate them for 8 credits each before Voice, or the Reel will use colour cards.",
     framesFailMany: "{count} frames couldn’t be generated. Regenerate them for 8 credits each before Voice, or the Reel will use colour cards.",
     framesOk: "Frames are in. If one shot missed, regenerate that frame for 8 credits — not the whole set. Next we record a voiceover.",
-    captionsReady: "Captions are timed. Create writes a 9:16 mp4 you can download.",
+    captionsReady: "Captions are fitted to the voice file. Create writes a 9:16 mp4 you can download.",
+    archiveWarn: "This plan keeps {limit} finished Reels on disk. Create will ask before taking the oldest mp4 off disk.",
+    confirmArchive:
+      "This plan keeps {limit} Reels on disk. The oldest — “{oldest}” — will be taken off disk so this one can be created. Download it first if you still need it.",
+    oldestReel: "oldest Reel",
+    fileGone: "The file is gone. Create again to remake it — that uses credits.",
     pictureReady: "Your picture is ready. {credits} credits used.",
     inviteReady: "Your invitation is ready. {credits} credits used.",
     reelReady: "Your Reel is ready. {credits} credits used.",
@@ -364,6 +369,9 @@ export const en = {
     failRemove: "Could not delete this.",
     mp4: "mp4 ready",
     stills: "picture ready",
+    expired: "file gone",
+    expiredHint: "The file is gone. Create again to remake it — that uses credits.",
+    archiveHint: "{used} of {limit} finished Reels on this plan. Oldest files leave the disk first.",
   },
   preview: {
     expired: "This preview has expired.",
