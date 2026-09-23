@@ -17,6 +17,19 @@ const VIDEO_STEPS = [
 /** Closed until we need a public preview link and a publishability metric. */
 const SHOW_SHARE_AND_PUBLISH = false;
 
+function asText(value: unknown) {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  return "";
+}
+
+function readableLine(text: unknown) {
+  return asText(text)
+    .replace(/([a-zа-яіїєґ])([A-ZА-ЯІЇЄҐ])/g, "$1 $2")
+    .replace(/^(title|end)\s*card\s*:?\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 const EMPTY_INVITE: InviteCard = {
   name: "",
   date: "",
@@ -175,13 +188,13 @@ function VersionCompare({
             <p className="hint">{version.accepted ? t("studio.current") : t("studio.takeN", { n: index + 1 })}</p>
             {step === "idea" ? (
               <>
-                <p><b>{version.payload?.title}</b></p>
-                <p className="hint">{version.payload?.hook || version.payload?.concept}</p>
+                <p><b>{asText(version.payload?.title)}</b></p>
+                <p className="hint">{asText(version.payload?.hook || version.payload?.concept)}</p>
               </>
             ) : (
               <>
-                <p className="hint">{version.payload?.cta}</p>
-                <p className="hint">{version.payload?.scenes?.[0]?.voiceover}</p>
+                <p className="hint">{asText(version.payload?.cta)}</p>
+                <p className="hint">{asText(version.payload?.scenes?.[0]?.voiceover)}</p>
               </>
             )}
             {!version.accepted && (
@@ -378,7 +391,9 @@ export default function Studio() {
   const frame = (previewVersionId && versionSrcs[previewVersionId]) || currentFrame;
   const frameIsPlaceholder = Boolean(project?.visuals?.[scene]?.placeholder);
   const placeholderCount = project?.visuals?.filter((v) => v.placeholder).length ?? 0;
-  const caption = project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title;
+  const caption = readableLine(
+    project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title || ""
+  );
 
   async function execute(step: string, regenerate = false, sceneId?: number, feedback?: { reason?: string; note?: string }) {
     if (!id) return;
@@ -661,10 +676,10 @@ export default function Studio() {
           {!isImage && project.script && (
             <div className="scenes">
               {project.script.scenes.map((s, i) => (
-                <div key={s.id} className="scene" style={{ display: "grid", gap: 8 }}>
-                  <button onClick={() => setScene(i)} style={{ background: "none", border: 0, textAlign: "left", width: "100%", padding: 0, color: "inherit" }}>
+                <div key={s.id} className="scene">
+                  <button className="scene-pick" onClick={() => setScene(i)}>
                     <b>{s.time}</b>
-                    <span style={{ display: "block" }}>{isImage ? s.onScreen : s.voiceover}</span>
+                    <span>{readableLine(isImage ? s.onScreen : s.voiceover)}</span>
                   </button>
                   {project.visuals && (
                     <>
@@ -711,9 +726,9 @@ export default function Studio() {
           )}
           {project.idea && !project.visuals && isImage && (
             <>
-              <p><b>{project.idea.title}</b></p>
-              <p className="lede">{project.idea.concept}</p>
-              <p className="hint">{project.idea.visualDirection}</p>
+              <p><b>{asText(project.idea.title)}</b></p>
+              <p className="lede">{asText(project.idea.concept)}</p>
+              <p className="hint">{asText(project.idea.visualDirection)}</p>
               <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} t={t} />
             </>
           )}
@@ -722,9 +737,9 @@ export default function Studio() {
           )}
           {project.idea && !project.script && !isImage && (
             <>
-              <p><b>{project.idea.title}</b></p>
-              <p className="lede">{project.idea.concept}</p>
-              <p className="hint">{project.idea.visualDirection}</p>
+              <p><b>{asText(project.idea.title)}</b></p>
+              <p className="lede">{asText(project.idea.concept)}</p>
+              <p className="hint">{asText(project.idea.visualDirection)}</p>
               <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} t={t} />
             </>
           )}
@@ -743,8 +758,8 @@ export default function Studio() {
           )}
           {project.audioUrl && !project.captions && (
             <>
-              <p><b>{project.voice?.voicePreset || project.voice?.voice}</b></p>
-              <p className="lede">{project.voice?.notes}</p>
+              <p><b>{asText(project.voice?.voicePreset || project.voice?.voice)}</b></p>
+              <p className="lede">{asText(project.voice?.notes)}</p>
               {audioSrc && <audio controls src={audioSrc} style={{ width: "100%", marginTop: 12 }} />}
             </>
           )}

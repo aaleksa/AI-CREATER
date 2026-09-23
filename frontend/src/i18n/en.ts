@@ -306,6 +306,8 @@ export const en = {
     tonePro: "Professional & polished",
     tonePlay: "Fun & playful",
     toneCalm: "Calm & minimal",
+    typeNone: "None",
+    typeNoneHint: "No trade selected. Colour and tone only.",
     typeSalon: "Salon",
     typeSalonHint: "The chair, the cut — not stock hair.",
     typeCafe: "Café",

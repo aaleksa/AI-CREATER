@@ -12,6 +12,8 @@ import {
   generateOneVisual,
   regenInstruction,
   stillPicturePrompt,
+  tidyIdea,
+  tidyVoice,
   type BrandKit,
   type CaptionCue,
   type Idea,
@@ -238,6 +240,25 @@ function lastVersions(projectId: string, step: string) {
     }));
 }
 
+function tidyScript(script: Script | null) {
+  if (!script?.scenes) return script;
+  return {
+    ...script,
+    scenes: script.scenes.map((scene) => ({
+      ...scene,
+      onScreen: String(scene.onScreen || "")
+        .replace(/([a-zа-яіїєґ])([A-ZА-ЯІЇЄҐ])/g, "$1 $2")
+        .replace(/^(title|end)\s*card\s*:?\s*/i, "")
+        .replace(/\s+/g, " ")
+        .trim(),
+      voiceover: String(scene.voiceover || "")
+        .replace(/([a-zа-яіїєґ])([A-ZА-ЯІЇЄҐ])/g, "$1 $2")
+        .replace(/\s+/g, " ")
+        .trim(),
+    })),
+  };
+}
+
 export function serializeProject(row: Record<string, unknown>) {
   const id = String(row.id);
   const running = db
@@ -258,10 +279,10 @@ export function serializeProject(row: Record<string, unknown>) {
     status: running ? "generating" : row.status,
     currentStep: row.current_step,
     runningStep: running?.type || null,
-    idea: parse(row.idea_json),
-    script: parse(row.script_json),
+    idea: tidyIdea(parse(row.idea_json)),
+    script: tidyScript(parse(row.script_json)),
     visuals: slimVersionPayload("visuals", parse(row.visuals_json)),
-    voice: parse(row.voice_json),
+    voice: tidyVoice(parse(row.voice_json)),
     captions: parse(row.captions_json),
     audioUrl: hasVoiceFile(id) ? `/projects/${id}/audio` : null,
     outputUrl: hasVideoFile(id) ? `/projects/${id}/file` : row.output_url || null,
@@ -347,13 +368,15 @@ export function restoreStepVersion(
 }
 
 function pickIdea(data: Idea & { invite?: unknown }): Idea {
-  return {
-    title: String(data.title || "").trim(),
-    hook: String(data.hook || "").trim(),
-    concept: String(data.concept || "").trim(),
-    audience: String(data.audience || "").trim(),
-    visualDirection: String(data.visualDirection || "").trim(),
-  };
+  return (
+    tidyIdea(data) || {
+      title: "",
+      hook: "",
+      concept: "",
+      audience: "",
+      visualDirection: "",
+    }
+  );
 }
 
 export async function updateInvite(userId: string, projectId: string, raw: unknown) {

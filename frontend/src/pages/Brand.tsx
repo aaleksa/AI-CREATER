@@ -11,6 +11,7 @@ const TONES = [
 ];
 
 const TYPES = [
+  { id: "", labelKey: "brand.typeNone", hintKey: "brand.typeNoneHint" },
   { id: "salon", labelKey: "brand.typeSalon", hintKey: "brand.typeSalonHint" },
   { id: "cafe", labelKey: "brand.typeCafe", hintKey: "brand.typeCafeHint" },
   { id: "fitness", labelKey: "brand.typeFitness", hintKey: "brand.typeFitnessHint" },
@@ -302,7 +303,13 @@ export default function Brand() {
                   key={item.id}
                   type="button"
                   className={`choice ${form.vertical === item.id ? "on" : ""}`}
-                  onClick={() => set("vertical", form.vertical === item.id ? "" : item.id)}
+                  onClick={() =>
+                    setForm((f) => ({
+                      ...f,
+                      vertical: item.id,
+                      vertical_note: item.id === "other" ? f.vertical_note : "",
+                    }))
+                  }
                 >
                   <b>{t(item.labelKey)}</b>
                   <span className="hint">{t(item.hintKey)}</span>

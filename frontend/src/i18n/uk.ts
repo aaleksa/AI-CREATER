@@ -308,6 +308,8 @@ export const uk: Messages = {
     tonePro: "Професійно й чисто",
     tonePlay: "Легко й грайливо",
     toneCalm: "Спокійно й мінімально",
+    typeNone: "Не вибрано",
+    typeNoneHint: "Без типу бізнесу. Лише колір і тон.",
     typeSalon: "Салон",
     typeSalonHint: "Крісло, стрижка — не стокове волосся.",
     typeCafe: "Кав’ярня",

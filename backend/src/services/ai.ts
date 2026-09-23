@@ -70,6 +70,38 @@ export type CaptionCue = {
 
 export type RegenNote = { reason?: string; note?: string };
 
+export function plainText(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return value.map(plainText).filter(Boolean).join(" ");
+  return "";
+}
+
+export function tidyIdea(data: unknown): Idea | null {
+  if (!data || typeof data !== "object") return null;
+  const row = data as Partial<Idea>;
+  return {
+    title: plainText(row.title),
+    hook: plainText(row.hook),
+    concept: plainText(row.concept),
+    audience: plainText(row.audience),
+    visualDirection: plainText(row.visualDirection),
+  };
+}
+
+export function tidyVoice(data: unknown): Voiceover | null {
+  if (!data || typeof data !== "object") return null;
+  const row = data as Partial<Voiceover>;
+  const notes = typeof row.notes === "string" ? row.notes.trim() : "";
+  return {
+    voicePreset: plainText(row.voicePreset),
+    voice: plainText(row.voice) || plainText(row.voicePreset),
+    script: plainText(row.script),
+    notes: notes || "Natural pace. Pause after the hook. Never sound like an ad read.",
+  };
+}
+
 const REASON_LINE: Record<string, string> = {
   wrong_angle: "wrong angle",
   too_salesy: "too salesy",
@@ -110,7 +142,7 @@ function parseLearned(value?: string | null): LearnedSummary | null {
   }
 }
 
-export function brandLook(brand?: BrandKit | null) {
+export function brandLook(brand?: BrandKit | null, mode: "designed" | "photo" = "designed") {
   if (!brand) return "";
   const niche =
     brand.vertical === "salon"
@@ -122,6 +154,20 @@ export function brandLook(brand?: BrandKit | null) {
           : brand.vertical === "other" && brand.vertical_note
             ? `This is a ${brand.vertical_note}. Use real details of that trade.`
             : "";
+  if (mode === "photo") {
+    return [
+      "Use this brand kit as colour and mood only. Do not invent another business.",
+      "Do not paint the business name, a logo, a title card, or any letters on the picture.",
+      "If the scene is a place or story that is not this trade, photograph that scene. The kit is grade and mood, not a different subject.",
+      brand.primary_color && `Grade light and accents toward ${brand.primary_color}.`,
+      brand.secondary_color && `Quiet space may lean ${brand.secondary_color}.`,
+      brand.tone_of_voice && `Mood: ${brand.tone_of_voice}.`,
+      brand.tone_note && `Owner note on tone: ${brand.tone_note}`,
+      niche,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
   return [
     "Use this brand kit on the picture. The request is the content; the kit is the look. Do not invent another business.",
     brand.business_name &&
@@ -158,12 +204,13 @@ function brandContext(brand?: BrandKit | null) {
             ? `This is a ${brand.vertical_note}. Use real details of that trade, not a generic stock set.`
             : "";
   const lines = [
-    brand.business_name && `Brand name: ${brand.business_name}. Use this name if a title card is needed. Do not invent another.`,
+    brand.business_name &&
+      `Brand name: ${brand.business_name}. Keep it in the voice. Do not invent another. Do not paint the name on pictures unless they asked.`,
     brand.tone_of_voice && `Tone of voice: ${brand.tone_of_voice}`,
     brand.tone_note && `Owner note on tone: ${brand.tone_note}`,
     brand.primary_color && `Primary colour: ${brand.primary_color}. Grade light and accents toward it.`,
-    brand.secondary_color && `Secondary colour: ${brand.secondary_color}. Use for paper, type, quiet space.`,
-    brand.font && `Title font feel: ${brand.font}.`,
+    brand.secondary_color && `Secondary colour: ${brand.secondary_color}. Use for paper and quiet space.`,
+    brand.font && `Type feel (voice and designed posts only): ${brand.font}.`,
     brand.logo_url && `They have a logo at ${brand.logo_url}. Do not invent a different mark.`,
     brand.instagram && `Instagram: ${brand.instagram}`,
     brand.website && `Website: ${brand.website}`,
@@ -301,7 +348,7 @@ function mockScript(prompt: string, idea: Idea, brand?: BrandKit | null): Script
       voiceover: extra?.[2]?.voiceover || "End on a feeling the viewer can copy this weekend.",
       visualPrompt: `Golden-hour closing frame for: ${prompt}`,
     },
-    { time: "26–30s", onScreen: idea.title, voiceover: "Save this. Then go.", visualPrompt: `Title card, cinematic, vertical 9:16, for: ${prompt}` },
+    { time: "26–30s", onScreen: idea.title, voiceover: "Save this. Then go.", visualPrompt: `Golden-hour closing photograph for: ${prompt}` },
   ];
   return {
     durationSec: 30,
@@ -514,13 +561,64 @@ export async function generateIdea(
   );
 }
 
+function spacedWords(text: string) {
+  return String(text || "")
+    .replace(/([a-zа-яіїєґ])([A-ZА-ЯІЇЄҐ])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanOnScreen(text: string) {
+  return spacedWords(text)
+    .replace(/^(title|end)\s*card\s*:?\s*/i, "")
+    .trim();
+}
+
+function asPhotoBeat(visualPrompt: string, fallback: string) {
+  const text = spacedWords(visualPrompt);
+  if (!text) return fallback;
+  if (/title\s*card|text overlay|on-?screen (text|type)|lettering|typography|storyboard|timestamps?/i.test(text)) {
+    return fallback;
+  }
+  return text;
+}
+
+function photoScript(script: Script, request: string): Script {
+  const fallback = `Cinematic photograph for: ${request}`.slice(0, 240);
+  return {
+    ...script,
+    scenes: (script.scenes || []).map((scene) => ({
+      ...scene,
+      onScreen: cleanOnScreen(scene.onScreen),
+      voiceover: spacedWords(scene.voiceover),
+      visualPrompt: asPhotoBeat(scene.visualPrompt, fallback),
+    })),
+  };
+}
+
+export function videoFramePrompt(scene: ScriptScene, brand?: BrandKit | null) {
+  const fallback = `Cinematic photograph of the moment: ${scene.voiceover || scene.onScreen || "the story"}`.slice(0, 240);
+  const beat = asPhotoBeat(scene.visualPrompt, fallback);
+  return [
+    "One vertical 9:16 photograph for a short film. Real place, real light, cinematic. Fill the frame.",
+    beat,
+    "Photograph only. No letters, no numbers, no words, no title card, no script, no timestamps, no captions, no UI, no logo, no watermark, no document, no storyboard.",
+    brandLook(brand, "photo"),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 export async function generateScript(prompt: string, idea: Idea, brand?: BrandKit | null, feedback?: RegenNote) {
   const fallback = mockScript(prompt, idea, brand);
-  return jsonCompletion<Script>(
-    `Write a 30-second vertical video script. 4–6 scenes. Voiceover should sound spoken, not marketed.\n${brandContext(brand)}`,
+  const result = await jsonCompletion<Script>(
+    `Write a 30-second vertical video script. 4–6 scenes. Voiceover should sound spoken, not marketed.
+visualPrompt describes a photograph we would shoot — a real place or moment. Never a title card, never type, never the voiceover printed on the picture.
+onScreen is a short later caption (2–6 words) with a normal space between every word.\n${brandContext(brand)}`,
     `Request: ${prompt}\nIdea: ${JSON.stringify(idea)}${regenInstruction(feedback) ? `\n${regenInstruction(feedback)}` : ""}\nReturn JSON: { durationSec, cta, scenes: [{ id, time, onScreen, voiceover, visualPrompt }] }`,
     fallback
   );
+  return { ...result, data: photoScript(result.data, prompt) };
 }
 
 export async function generateVisuals(
@@ -612,14 +710,13 @@ async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, k
   };
   if (!openai) return placeholder;
 
-  const prompt = withBrandLook(
-    kind === "poster"
-      ? scene.visualPrompt
-      : kind === "still"
-        ? `${scene.visualPrompt}. Square 1:1 finished image.`
-        : `${scene.visualPrompt}. Vertical 9:16 cinematic still, filmic, no text overlay.`,
-    brand
-  );
+  const prompt =
+    kind === "video"
+      ? videoFramePrompt(scene, brand)
+      : withBrandLook(
+          kind === "poster" ? scene.visualPrompt : `${scene.visualPrompt}. Square 1:1 finished image.`,
+          brand
+        );
 
   const once = async (model: string) => {
     const gptImage = /^gpt-image/i.test(model);
@@ -674,11 +771,13 @@ export async function generateVoice(script: Script, brand?: BrandKit | null) {
     script: spoken,
     notes: "Natural pace. Pause after the hook. Never sound like an ad read.",
   };
-  return jsonCompletion<Voiceover>(
-    `Cast a voice for a 30s vertical film. This is direction for TTS, not audio. Prefer British English unless the brand says otherwise.\n${brandContext(brand)}`,
-    `Script: ${spoken}\nReturn JSON: { voicePreset, script, notes }`,
+  const result = await jsonCompletion<Voiceover>(
+    `Cast a voice for a 30s vertical film. This is direction for TTS, not audio. Prefer British English unless the brand says otherwise.
+notes must be one short string of speaking direction, not an object.\n${brandContext(brand)}`,
+    `Script: ${spoken}\nReturn JSON: { voicePreset: string, script: string, notes: string }`,
     fallback
   );
+  return { ...result, data: tidyVoice(result.data) || fallback };
 }
 
 export async function generateCaptions(script: Script) {
