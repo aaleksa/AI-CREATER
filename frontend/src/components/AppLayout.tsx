@@ -1,10 +1,13 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { ApiError, api, clearSession, type Me } from "../lib/api";
+import LanguageSwitch from "./LanguageSwitch";
+import { useLocale } from "../i18n/locale";
 
 export default function AppLayout() {
   const nav = useNavigate();
   const location = useLocation();
+  const { t } = useLocale();
   const [me, setMe] = useState<Me | null>(null);
 
   useEffect(() => {
@@ -26,17 +29,18 @@ export default function AppLayout() {
       <aside className="side">
         <div className="brand">Aut<span>eur</span></div>
         <nav className="nav">
-          <NavLink to="/app" end>Create</NavLink>
-          <NavLink to="/app/library">Library</NavLink>
-          <NavLink to="/app/brand">Brand kit</NavLink>
-          <NavLink to="/app/billing">Credits</NavLink>
+          <NavLink to="/app" end>{t("nav.create")}</NavLink>
+          <NavLink to="/app/library">{t("nav.library")}</NavLink>
+          <NavLink to="/app/brand">{t("nav.brand")}</NavLink>
+          <NavLink to="/app/billing">{t("nav.credits")}</NavLink>
         </nav>
         <div className="side-foot">
+          <LanguageSwitch compact />
           <div className="credits-pill">
-            Credits <b>{me?.credits ?? "—"}</b>
+            {t("nav.creditsLabel")} <b>{me?.credits ?? "—"}</b>
           </div>
           <div>{me?.user.name}</div>
-          <div>{me?.subscription?.plan_name || "Free"} plan</div>
+          <div>{t("nav.plan", { name: me?.subscription?.plan_name || "Free" })}</div>
           <button
             type="button"
             className="ghost-link"
@@ -45,7 +49,7 @@ export default function AppLayout() {
               nav("/");
             }}
           >
-            Sign out
+            {t("nav.signOut")}
           </button>
         </div>
       </aside>

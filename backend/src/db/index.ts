@@ -35,6 +35,7 @@ addColumn("ALTER TABLE brand_kits ADD COLUMN tone_note TEXT NOT NULL DEFAULT ''"
 addColumn("ALTER TABLE brand_kits ADD COLUMN vertical_note TEXT NOT NULL DEFAULT ''");
 addColumn("ALTER TABLE projects ADD COLUMN image_intent TEXT NOT NULL DEFAULT ''");
 addColumn("ALTER TABLE projects ADD COLUMN invite_json TEXT");
+addColumn("ALTER TABLE projects ADD COLUMN use_brand INTEGER NOT NULL DEFAULT 1");
 
 try {
   sqlite.exec(`

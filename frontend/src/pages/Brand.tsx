@@ -1,19 +1,20 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, fetchMedia, type BrandKitRow } from "../lib/api";
+import { formatBrandHint, useLocale } from "../i18n/locale";
 
 const TONES = [
-  { id: "warm", label: "Warm & friendly", text: "Warm and friendly. Like a regular, not an ad." },
-  { id: "professional", label: "Professional & polished", text: "Professional and polished. Clear, short, never stiff." },
-  { id: "playful", label: "Fun & playful", text: "Fun and playful. Light. Never try-hard." },
-  { id: "calm", label: "Calm & minimal", text: "Calm and minimal. Unhurried. Quiet, not luxury-speak." },
+  { id: "warm", labelKey: "brand.toneWarm", text: "Warm and friendly. Like a regular, not an ad." },
+  { id: "professional", labelKey: "brand.tonePro", text: "Professional and polished. Clear, short, never stiff." },
+  { id: "playful", labelKey: "brand.tonePlay", text: "Fun and playful. Light. Never try-hard." },
+  { id: "calm", labelKey: "brand.toneCalm", text: "Calm and minimal. Unhurried. Quiet, not luxury-speak." },
 ];
 
 const TYPES = [
-  { id: "salon", label: "Salon", hint: "The chair, the cut — not stock hair." },
-  { id: "cafe", label: "Café", hint: "The pour, the room — not a latte cliché." },
-  { id: "fitness", label: "Fitness", hint: "The third set — not a gym advert." },
-  { id: "other", label: "Something else", hint: "Optional. Only steers the story, not ads." },
+  { id: "salon", labelKey: "brand.typeSalon", hintKey: "brand.typeSalonHint" },
+  { id: "cafe", labelKey: "brand.typeCafe", hintKey: "brand.typeCafeHint" },
+  { id: "fitness", labelKey: "brand.typeFitness", hintKey: "brand.typeFitnessHint" },
+  { id: "other", labelKey: "brand.typeOther", hintKey: "brand.typeOtherHint" },
 ];
 
 const FONTS = ["Fraunces", "Outfit", "Playfair Display", "IBM Plex Sans"];
@@ -51,6 +52,7 @@ function applyKit(kit: BrandKitRow) {
 }
 
 export default function Brand() {
+  const { t, te } = useLocale();
   const [form, setForm] = useState(empty);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -66,7 +68,7 @@ export default function Brand() {
     setLearnedFrom(kit.learned_summary?.basedOnProjects || 0);
     setLearnedLines(kit.learned_lines || []);
     setReadyProjects(kit.ready_projects || 0);
-    setHint(kit.completeness?.hint || "");
+    setHint(formatBrandHint(t, kit.completeness));
     setOwnNote(Boolean(kit.tone_note));
   }
 
@@ -75,7 +77,7 @@ export default function Brand() {
       if (!d.brandKit) return;
       apply(d.brandKit);
     });
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (form.logo_url !== "/brand/logo") {
@@ -108,18 +110,18 @@ export default function Brand() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save.");
+      setError(err instanceof Error ? te(err.message) : t("brand.fallbackSave"));
     }
   }
 
   async function onLogo(file: File | undefined) {
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) {
-      setError("That file is too large. Keep it under 2 MB.");
+      setError(t("brand.tooBig"));
       return;
     }
     if (!["image/png", "image/jpeg"].includes(file.type)) {
-      setError("Use a PNG or JPG under 2 MB. SVG is not allowed.");
+      setError(t("brand.badType"));
       return;
     }
     const reader = new FileReader();
@@ -128,19 +130,30 @@ export default function Brand() {
         const { brandKit } = await api.uploadLogo(String(reader.result || ""));
         apply(brandKit);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not upload the logo.");
+        setError(err instanceof Error ? te(err.message) : t("brand.fallbackLogo"));
       }
     };
     reader.readAsDataURL(file);
   }
 
+  async function removeLogo() {
+    setError("");
+    try {
+      const { brandKit } = await api.deleteLogo();
+      apply(brandKit);
+      setLogoSrc("");
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("brand.fallbackRemoveLogo"));
+    }
+  }
+
   async function resetLearning() {
-    if (!window.confirm("Recalculate what Auteur learned from the Reels you already finished?")) return;
+    if (!window.confirm(t("brand.resetConfirm"))) return;
     try {
       const { brandKit } = await api.resetLearning();
       apply(brandKit);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not reset learning.");
+      setError(err instanceof Error ? te(err.message) : t("brand.fallbackReset"));
     }
   }
 
@@ -149,12 +162,18 @@ export default function Brand() {
   }
 
   const tone = TONES.find((item) => item.text === form.tone_of_voice);
+  const vertical = TYPES.find((item) => item.id === form.vertical);
+  const verticalLabel = vertical
+    ? form.vertical === "other" && form.vertical_note.trim()
+      ? form.vertical_note.trim()
+      : t(vertical.labelKey)
+    : "";
 
   return (
     <div>
-      <h1 className="page-title" style={{ fontSize: 48 }}>Brand kit</h1>
+      <h1 className="page-title" style={{ fontSize: 48 }}>{t("brand.title")}</h1>
       <p className="lede">
-        Colours, type and tone change every Reel. Name, logo and Instagram can wait.
+        {t("brand.lede")}
       </p>
       {hint && <p className="hint" style={{ marginTop: 12 }}>{hint}</p>}
 
@@ -162,42 +181,42 @@ export default function Brand() {
         <div className="panel" style={{ marginTop: 20, maxWidth: 920 }}>
           <p className="ok">
             {learnedFrom >= 3
-              ? `Auteur has learned from ${learnedFrom} of your Reels`
-              : "Auteur can learn from the Reels you already finished"}
+              ? t("brand.learned", { n: learnedFrom })
+              : t("brand.canLearn")}
           </p>
           <p className="lede" style={{ marginTop: 8 }}>
             {learnedLines.length
               ? learnedLines.join(" · ")
               : readyProjects >= 3
-                ? "Reset recalculates from those Reels now — you don’t wait for three new ones."
-                : "Keep using Try again with a reason — that is how it learns."}
+                ? t("brand.resetNow")
+                : t("brand.keepReasons")}
           </p>
           <button className="btn ghost" type="button" style={{ marginTop: 12 }} onClick={resetLearning}>
-            Reset learning
+            {t("brand.reset")}
           </button>
           <p className="hint" style={{ marginTop: 8 }}>
-            Recalculates from finished Reels you already have. If you have fewer than three, the card stays empty until you do.
+            {t("brand.resetHint")}
           </p>
         </div>
       )}
 
       <div className="brand-layout">
         <form className="panel" onSubmit={onSubmit}>
-          <h2>How it looks & sounds</h2>
-          <p className="hint">This is what Auteur uses on every Reel. Worth getting right.</p>
+          <h2>{t("brand.looks")}</h2>
+          <p className="hint">{t("brand.looksHint")}</p>
           <div className="field">
-            <label>Colours</label>
-            <p className="hint">Main colour grades the pictures. Soft colour is the paper and the quiet space.</p>
+            <label>{t("brand.colours")}</label>
+            <p className="hint">{t("brand.coloursHint")}</p>
             <div className="color-row">
               <div>
-                <span className="hint">Main</span>
+                <span className="hint">{t("brand.main")}</span>
                 <div className="color-row">
                   <input type="color" value={form.primary_color} onChange={(e) => set("primary_color", e.target.value)} />
                   <input value={form.primary_color} onChange={(e) => set("primary_color", e.target.value)} />
                 </div>
               </div>
               <div>
-                <span className="hint">Soft</span>
+                <span className="hint">{t("brand.soft")}</span>
                 <div className="color-row">
                   <input type="color" value={form.secondary_color} onChange={(e) => set("secondary_color", e.target.value)} />
                   <input value={form.secondary_color} onChange={(e) => set("secondary_color", e.target.value)} />
@@ -206,8 +225,8 @@ export default function Brand() {
             </div>
           </div>
           <div className="field">
-            <label htmlFor="font">Title type</label>
-            <p className="hint">Steers how titles are imagined. The mp4 does not embed the font file yet.</p>
+            <label htmlFor="font">{t("brand.font")}</label>
+            <p className="hint">{t("brand.fontHint")}</p>
             <select id="font" value={form.font} onChange={(e) => set("font", e.target.value)}>
               {FONTS.map((font) => (
                 <option key={font}>{font}</option>
@@ -215,8 +234,8 @@ export default function Brand() {
             </select>
           </div>
           <div className="field">
-            <label>Tone</label>
-            <p className="hint">One click. This is what the AI hears — you do not have to write a brief.</p>
+            <label>{t("brand.tone")}</label>
+            <p className="hint">{t("brand.toneHint")}</p>
             <div className="choice-row tones">
               {TONES.map((item) => (
                 <button
@@ -225,12 +244,12 @@ export default function Brand() {
                   className={`choice ${form.tone_of_voice === item.text ? "on" : ""}`}
                   onClick={() => set("tone_of_voice", item.text)}
                 >
-                  <b>{item.label}</b>
+                  <b>{t(item.labelKey)}</b>
                 </button>
               ))}
             </div>
             <button className="btn ghost" type="button" onClick={() => setOwnNote((v) => !v)}>
-              {ownNote ? "Hide extra note" : "+ Add your own note"}
+              {ownNote ? t("brand.hideNote") : t("brand.addNote")}
             </button>
             {ownNote && (
               <textarea
@@ -238,31 +257,45 @@ export default function Brand() {
                 onChange={(e) => set("tone_note", e.target.value)}
                 rows={2}
                 maxLength={400}
-                placeholder="Never say ‘limited time’. We are a neighbourhood shop."
+                placeholder={t("brand.notePh")}
                 style={{ marginTop: 10 }}
               />
             )}
           </div>
 
-          <h2 style={{ marginTop: 32 }}>About your business</h2>
-          <p className="hint">Optional. Skip anything you do not have. None of this blocks Create.</p>
+          <h2 style={{ marginTop: 32 }}>{t("brand.about")}</h2>
+          <p className="hint">{t("brand.aboutHint")}</p>
           <div className="field">
-            <label htmlFor="business_name">Business name</label>
+            <label htmlFor="business_name">{t("brand.businessName")}</label>
             <input
               id="business_name"
               value={form.business_name}
               onChange={(e) => set("business_name", e.target.value)}
-              placeholder="Your coffee shop"
+              placeholder={t("brand.businessPh")}
             />
           </div>
           <div className="field">
-            <label htmlFor="logo">Logo</label>
-            <p className="hint">From your phone is fine. PNG or JPG, under 2 MB. Not SVG.</p>
-            <input id="logo" type="file" accept="image/png,image/jpeg" onChange={(e) => onLogo(e.target.files?.[0])} />
+            <label htmlFor="logo">{t("brand.logo")}</label>
+            <p className="hint">{t("brand.logoHint")}</p>
+            <div className="logo-pick">
+              {logoSrc && <img src={logoSrc} alt="" className="logo-pick-thumb" />}
+              <div>
+                {logoSrc && <p className="ok">{t("brand.logoOn")}</p>}
+                <label className="btn ghost" htmlFor="logo" style={{ display: "inline-block", marginTop: logoSrc ? 8 : 0 }}>
+                  {logoSrc ? t("brand.replaceLogo") : t("brand.addLogo")}
+                </label>
+                {logoSrc && (
+                  <button className="btn ghost" type="button" style={{ marginLeft: 8, marginTop: 8 }} onClick={removeLogo}>
+                    {t("brand.removeLogo")}
+                  </button>
+                )}
+                <input id="logo" className="sr-only" type="file" accept="image/png,image/jpeg" onChange={(e) => onLogo(e.target.files?.[0])} />
+              </div>
+            </div>
           </div>
           <div className="field">
-            <label>What do you run? — optional</label>
-            <p className="hint">Only picks the kind of scenes (chair / pour / floor). Not a category for ads. Skip if none fit.</p>
+            <label>{t("brand.vertical")}</label>
+            <p className="hint">{t("brand.verticalHint")}</p>
             <div className="choice-row">
               {TYPES.map((item) => (
                 <button
@@ -271,8 +304,8 @@ export default function Brand() {
                   className={`choice ${form.vertical === item.id ? "on" : ""}`}
                   onClick={() => set("vertical", form.vertical === item.id ? "" : item.id)}
                 >
-                  <b>{item.label}</b>
-                  <span className="hint">{item.hint}</span>
+                  <b>{t(item.labelKey)}</b>
+                  <span className="hint">{t(item.hintKey)}</span>
                 </button>
               ))}
             </div>
@@ -280,13 +313,13 @@ export default function Brand() {
               <input
                 value={form.vertical_note}
                 onChange={(e) => set("vertical_note", e.target.value)}
-                placeholder="What kind of business is this?"
+                placeholder={t("brand.verticalOther")}
                 maxLength={80}
               />
             )}
           </div>
           <div className="field">
-            <label htmlFor="instagram">Instagram</label>
+            <label htmlFor="instagram">{t("brand.instagram")}</label>
             <input
               id="instagram"
               value={form.instagram}
@@ -295,22 +328,26 @@ export default function Brand() {
             />
           </div>
           <div className="field">
-            <label htmlFor="website">Website</label>
+            <label htmlFor="website">{t("brand.website")}</label>
             <input id="website" value={form.website} onChange={(e) => set("website", e.target.value)} placeholder="https://" />
           </div>
 
-          <p className="hint">The name and logo you enter are treated as yours. Auteur does not check trademarks.</p>
+          <p className="hint">{t("brand.legal")}</p>
           {error && <p className="err">{error}</p>}
-          {saved && <p className="ok">Saved. The next Idea, pictures and voice will use this.</p>}
+          {saved && <p className="ok">{t("brand.saved")}</p>}
           <button className="btn" style={{ marginTop: 12 }}>
-            Save brand kit
+            {t("brand.save")}
           </button>
         </form>
 
         <aside>
-          <p className="hint">Not the Reel. Just how your brand feels — colours, type, tone.</p>
+          <p className="hint">{t("brand.previewHint")}</p>
           <div className="brand-preview" style={{ background: form.secondary_color, color: "#1a1612" }}>
-            {logoSrc && <img src={logoSrc} alt="" className="brand-logo" />}
+            {logoSrc ? (
+              <img src={logoSrc} alt="" className="brand-logo" />
+            ) : (
+              <p className="hint" style={{ color: "inherit", opacity: 0.55 }}>{t("brand.logo")}: {t("brand.notSet")}</p>
+            )}
             <p
               style={{
                 fontFamily: form.font,
@@ -320,16 +357,38 @@ export default function Brand() {
                 color: form.primary_color,
               }}
             >
-              {form.business_name.trim() || "Your coffee shop"}
+              {form.business_name.trim() || t("brand.businessPh")}
             </p>
             <hr style={{ border: 0, borderTop: `3px solid ${form.primary_color}`, margin: "16px 0" }} />
-            <p>“{tone?.label || "Your tone"}”</p>
+            <div className="preview-swatches">
+              <span>
+                <i style={{ background: form.primary_color }} />
+                {t("brand.main")} {form.primary_color}
+              </span>
+              <span>
+                <i style={{ background: form.secondary_color, boxShadow: "inset 0 0 0 1px rgba(0,0,0,.15)" }} />
+                {t("brand.soft")} {form.secondary_color}
+              </span>
+            </div>
+            <p style={{ marginTop: 12, fontFamily: form.font }}>
+              {t("brand.previewFont")}: {form.font}
+            </p>
+            <p style={{ marginTop: 8 }}>“{tone ? t(tone.labelKey) : t("brand.notSet")}”</p>
             {form.tone_note && <p className="hint" style={{ color: "inherit", marginTop: 8 }}>{form.tone_note}</p>}
+            <p style={{ marginTop: 12 }}>
+              {t("brand.previewType")}: {verticalLabel || t("brand.notSet")}
+            </p>
+            <p style={{ marginTop: 6 }}>
+              {t("brand.instagram")}: {form.instagram.trim() || t("brand.notSet")}
+            </p>
+            <p style={{ marginTop: 6 }}>
+              {t("brand.website")}: {form.website.trim() || t("brand.notSet")}
+            </p>
           </div>
           {learnedFrom < 3 && (
             <p className="hint" style={{ marginTop: 16 }}>
-              After three finished Reels, Auteur will write what usually works for you at the top of this page.{" "}
-              <Link to="/app">Make one</Link>
+              {t("brand.afterThree")}{" "}
+              <Link to="/app">{t("brand.makeOne")}</Link>
             </p>
           )}
         </aside>

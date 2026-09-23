@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import LanguageSwitch from "../components/LanguageSwitch";
+import { useLocale } from "../i18n/locale";
 
 type Preview = {
   title: string;
@@ -13,6 +15,7 @@ type Preview = {
 
 export default function Preview() {
   const { token } = useParams();
+  const { t, te, locale } = useLocale();
   const [data, setData] = useState<Preview | null>(null);
   const [error, setError] = useState("");
 
@@ -24,8 +27,8 @@ export default function Preview() {
         if (!res.ok) throw new Error(body.error || "This preview has expired.");
         setData(body);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "This preview has expired."));
-  }, [token]);
+      .catch((err) => setError(err instanceof Error ? te(err.message) : t("preview.expired")));
+  }, [token, te, t]);
 
   return (
     <div className="landing">
@@ -33,12 +36,13 @@ export default function Preview() {
         <Link to="/" className="brand">
           Aut<span>eur</span>
         </Link>
+        <LanguageSwitch />
       </header>
       {error && <p className="err">{error}</p>}
-      {!error && !data && <p className="hint">Opening preview…</p>}
+      {!error && !data && <p className="hint">{t("preview.opening")}</p>}
       {data && (
         <>
-          <p className="hint">Preview — not posted yet</p>
+          <p className="hint">{t("preview.notPosted")}</p>
           <h1 style={{ fontSize: "clamp(32px, 5vw, 48px)" }}>{data.title}</h1>
           {data.concept && <p className="lede">{data.concept}</p>}
           {data.hasVideo && (
@@ -50,14 +54,14 @@ export default function Preview() {
                 <img
                   key={sceneId}
                   src={`/share/${token}/image/${sceneId}`}
-                  alt={`Slide ${sceneId}`}
+                  alt={t("preview.slide", { n: sceneId })}
                   style={{ width: 180, height: 180, objectFit: "cover", borderRadius: 16 }}
                 />
               ))}
             </div>
           )}
           <p className="hint" style={{ marginTop: 24 }}>
-            This link expires {new Date(data.expiresAt).toLocaleString()}. Download stays in the studio.
+            {t("preview.expires", { when: new Date(data.expiresAt).toLocaleString(locale === "uk" ? "uk-UA" : "en-GB") })}
           </p>
         </>
       )}

@@ -68,6 +68,39 @@ export type CaptionCue = {
   text: string;
 };
 
+export type RegenNote = { reason?: string; note?: string };
+
+const REASON_LINE: Record<string, string> = {
+  wrong_angle: "wrong angle",
+  too_salesy: "too salesy",
+  not_our_audience: "wrong audience",
+  boring_hook: "boring hook",
+  too_long_short: "wrong length",
+  wrong_tone: "wrong tone",
+  weak_cta: "weak call to action",
+  not_our_voice: "not their voice",
+  wrong_style: "wrong visual style",
+  wrong_colors: "wrong colours",
+  doesnt_match_brand: "does not match the brand",
+  low_quality: "low quality",
+  wrong_pace: "wrong pace",
+  sounds_robotic: "sounds robotic",
+  wrong_gender_accent: "wrong voice or accent",
+  bad_timing: "bad caption timing",
+  hard_to_read: "hard to read",
+  other: "something else they wrote",
+};
+
+export function regenInstruction(feedback?: RegenNote) {
+  const reason = String(feedback?.reason || "").trim();
+  const note = String(feedback?.note || "").trim();
+  if (!reason && !note) return "";
+  const label = reason && reason !== "other" ? REASON_LINE[reason] || reason : "";
+  const bits = [label, note].filter(Boolean);
+  if (!bits.length) return "";
+  return `They rejected the last version. Take this into account and do not repeat it: ${bits.join(" — ")}.`;
+}
+
 function parseLearned(value?: string | null): LearnedSummary | null {
   if (!value) return null;
   try {
@@ -159,9 +192,9 @@ async function jsonCompletion<T>(system: string, user: string, fallback: T): Pro
 
 const IMAGE_KIND_GUIDE: Record<string, string> = {
   photo: "Still photo post: the facts they wrote, plus something interesting to look at. Four specific photographs from their words — not a beige empty room.",
-  invite: "Finished invitation image from the whole brief. Words and picture are one design. Same language as the brief.",
-  info: "Information post: the fact they wrote, shown as an interesting real photograph — the closed door, the room, the return. No burned-in type.",
-  offer: "Offer post: the offer as a tempting real moment from their words, not a price card. No burned-in type.",
+  invite: "Finished invitation flyer: photography and words are one designed page (title, programme, date), like ChatGPT would design — not a stock photo with a caption.",
+  info: "Information post: a designed page from their fact — photography plus short readable type, one layout.",
+  offer: "Offer post: a designed page from their offer — photography plus short readable type, not a price sticker on a stock photo.",
 };
 
 function mockIdea(prompt: string, type: string, brand?: BrandKit | null, imageIntent = ""): Idea {
@@ -259,7 +292,136 @@ const PLACEHOLDER_FRAMES = [
 
 export type IdeaResult = Idea & { invite?: InviteCard };
 
-export function stillPicturePrompt(brief: string, idea: Idea, role: string, index = 1, total = 1, kind = "photo") {
+export type PosterArt = {
+  headline: string;
+  subhead: string;
+  lines: string[];
+  program: { time: string; title: string; detail: string }[];
+  closing: string;
+  photography: string;
+  layout: string;
+  language: string;
+};
+
+function cleanWords(value: unknown) {
+  return String(value || "")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/[·•]/g, "-")
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function mockPoster(brief: string, idea: Idea, kind: string): PosterArt {
+  return {
+    headline: cleanWords(idea.title) || "You're invited",
+    subhead: kind === "invite" ? "An invitation" : kind === "offer" ? "An offer" : "",
+    lines: [cleanWords(idea.hook)].filter(Boolean),
+    program: [],
+    closing: "",
+    photography: cleanWords(idea.visualDirection) || `A real moment from: ${brief.slice(0, 160)}`,
+    layout:
+      "Editorial flyer: photography in one part of the frame, type in designed blocks, generous empty space. Not a stock portrait with a paragraph stuck on top.",
+    language: /[а-яіїєґ]/i.test(brief) ? "uk" : "en",
+  };
+}
+
+export async function designPoster(brief: string, idea: Idea, kind: string, feedback?: RegenNote) {
+  const fallback = mockPoster(brief, idea, kind);
+  if (kind === "photo") {
+    return { data: fallback, provider: "auteur-studio", model: "preview", cost: 0 };
+  }
+  return jsonCompletion<PosterArt>(
+    `You write the copy for a printed flyer. We typeset it ourselves — keep every fact from the brief.
+Fix spelling and grammar. Same language as the brief. Real words with normal spaces (never "foryourself").
+Programme = every time + title + short detail they listed. Do not drop an item.
+lines = date, place, and short body — not a novel.
+photography = the scene only, no words in the photo.`,
+    `Kind: ${kind}
+Brief:\n${brief.slice(0, 1800)}
+Idea: ${JSON.stringify({ title: idea.title, hook: idea.hook, visualDirection: idea.visualDirection })}
+${regenInstruction(feedback) ? regenInstruction(feedback) : ""}
+Return JSON: { language, headline, subhead, lines: string[], program: [{ time, title, detail }], closing, photography, layout }.
+Do not invent names, times or places.`,
+    fallback
+  );
+}
+
+function posterCopy(art: PosterArt) {
+  const program = (art.program || [])
+    .filter((item) => cleanWords(item.time) || cleanWords(item.title))
+    .map((item) => [cleanWords(item.time), cleanWords(item.title), cleanWords(item.detail)].filter(Boolean).join(" — "));
+  return [
+    art.headline && `Title: ${cleanWords(art.headline)}`,
+    art.subhead && `Subtitle: ${cleanWords(art.subhead)}`,
+    ...(art.lines || []).map((line) => cleanWords(line)).filter(Boolean).map((line) => `Line: ${line}`),
+    ...program.map((line) => `Programme: ${line}`),
+    art.closing && `Closing: ${cleanWords(art.closing)}`,
+  ].filter(Boolean) as string[];
+}
+
+export function stillPhotoOnly(art: PosterArt, kind = "photo") {
+  if (kind === "invite") {
+    return "A full-page cream invitation background, watercolor style: pale paper, delicate green leaves and small blush flowers around the edges, airy and empty in the centre for type. No people, no faces, no furniture product shot, no letters, no numbers, no signs, no logos, no poster layout.";
+  }
+  return [
+    "One photograph only. No letters, no numbers, no words, no signs, no logos, no poster, no typography, no UI.",
+    art.photography && `Show: ${cleanWords(art.photography)}`,
+    "Soft daylight. Not a document, not a screenshot.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+export function stillPictureFromPoster(art: PosterArt, kind: string, feedback?: RegenNote) {
+  const words = posterCopy(art);
+  return [
+    "One finished designed flyer, as a studio designer would make in ChatGPT — photography and type are one page, not a photo with a caption glued on.",
+    art.layout && `Layout: ${cleanWords(art.layout)}`,
+    art.photography && `Photograph only this, in part of the frame: ${cleanWords(art.photography)}`,
+    words.length
+      ? `Paint only these words, in ${art.language === "uk" ? "Ukrainian" : "the brief's language"}. Each word is separate, with a normal space. Never fuse words, never add extra letters:\n${words.join("\n")}`
+      : "",
+    "If a word will not letter cleanly, move it or leave it off. Prefer a few correct words over many broken ones.",
+    "Type may be larger or smaller. If a line does not fit, wrap it or place it elsewhere. Do not squeeze, crop or run off the edge.",
+    kind === "invite" ? "This is an invitation flyer, not a yoga stock photo with text." : "",
+    regenInstruction(feedback),
+    "No app UI, no watermark, no browser chrome.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+export async function writeImagePrompt(brief: string, idea: Idea, kind: string, feedback?: RegenNote) {
+  const asked = brief.replace(/\*\*/g, "").replace(/[_#`]/g, "").replace(/\s+/g, " ").trim().slice(0, 1800);
+  const fallback = {
+    prompt: stillPicturePrompt(asked, idea, "one finished picture from the request", 1, 1, kind, feedback),
+  };
+  return jsonCompletion<{ prompt: string }>(
+    `You write the image prompt ChatGPT would send to an image model. The user's request is the only source of facts.
+Return one prompt that asks for a single finished picture: designed page, photography and words together.
+Words on the image must be real words with normal spaces, proofread, same language. Keep a margin so nothing is cropped.
+Do not invent names, times or places. Do not tell the model to dump the raw brief.`,
+    `Kind: ${kind}
+Request:\n${asked}
+Idea title: ${idea.title}
+${regenInstruction(feedback) || ""}
+Return JSON: { prompt } — the image prompt only.`,
+    fallback
+  );
+}
+
+export function stillPicturePrompt(
+  brief: string,
+  idea: Idea,
+  role: string,
+  index = 1,
+  total = 1,
+  kind = "photo",
+  feedback?: RegenNote
+) {
   const asked = brief
     .replace(/\*\*/g, "")
     .replace(/[_#`]/g, "")
@@ -270,21 +432,24 @@ export function stillPicturePrompt(brief: string, idea: Idea, role: string, inde
   const withCopy = kind === "invite" || kind === "info" || kind === "offer";
   return [
     withCopy
-      ? "One finished designed post. The photograph and the words are the same picture — not a photo beside a text card, not pieces glued together."
-      : "One finished interesting photograph from their brief. Not a collage of separate parts.",
-    `Their whole brief:\n${asked}`,
+      ? "Create one finished designed picture from this request. Do what they asked — layout, words and photograph together."
+      : "Create one finished photograph from this request.",
+    asked,
     withCopy &&
-      "Write the key facts from that brief onto the image, in the same language, with normal spaces between words: title, date, place, programme if they listed it.",
-    withCopy && "Type sits in the scene (on a table, in the light, on the wall) as one poster. Clear, readable letters.",
-    `Variation ${index} of ${total}: ${role}.`,
-    idea.visualDirection && `Mood from the idea: ${idea.visualDirection}`,
-    "No app UI, no watermark, no browser chrome.",
+      "Fill the whole canvas edge to edge. Keep a clear empty margin at the bottom so the last line is fully visible. If a line does not fit, wrap it or move it — never clip, crop or run words off the edge. Same language as the request. Proofread. No app UI, no watermark.",
+    regenInstruction(feedback),
   ]
     .filter(Boolean)
-    .join(" ");
+    .join("\n\n");
 }
 
-export async function generateIdea(prompt: string, type: string, brand?: BrandKit | null, imageIntent = "") {
+export async function generateIdea(
+  prompt: string,
+  type: string,
+  brand?: BrandKit | null,
+  imageIntent = "",
+  feedback?: RegenNote
+) {
   const fallback: IdeaResult = {
     ...mockIdea(prompt, type, brand, imageIntent),
     ...(imageIntent === "invite" ? { invite: guessPoster(prompt, "invite") } : {}),
@@ -300,20 +465,24 @@ export async function generateIdea(prompt: string, type: string, brand?: BrandKi
         ? "Format: still Instagram images. OpenAI gets the whole brief and returns a finished picture. We do not assemble pieces afterwards."
         : "Format: vertical short-form video unless told otherwise."
     }${kindGuide ? `\n${kindGuide}` : ""}\n${brandContext(brand)}`,
-    `Content type: ${type}${imageIntent ? `\nImage kind: ${imageIntent}` : ""}\nUser request: ${prompt}\nReturn JSON with keys: ${keys}.${
+    `Content type: ${type}${imageIntent ? `\nImage kind: ${imageIntent}` : ""}\nUser request: ${prompt}${
+      regenInstruction(feedback) ? `\n${regenInstruction(feedback)}` : ""
+    }\nReturn JSON with keys: ${keys}.${
       imageIntent === "invite"
-        ? " Never translate. Copy name, dates, place and programme titles exactly, including spaces. intro/closing only if they wrote them. program only if they listed times. visualDirection = one concrete photograph from their words (objects, people, light), not mood adjectives."
-        : " visualDirection = one concrete photograph from their words, not a generic mood. Do not invent a different story."
+        ? " Never translate. Proofread names, dates, place and programme; keep facts, fix spelling, keep normal spaces between words. intro/closing only if they wrote them. program only if they listed times. visualDirection = how a designed flyer is composed (photo area + type blocks), not a single stock portrait with a caption."
+        : imageIntent === "info" || imageIntent === "offer"
+          ? " visualDirection = a designed post: photography plus type as one layout, not a stock photo with a paragraph on top. Proofread. Do not invent a different story."
+          : " visualDirection = one concrete photograph from their words, not a generic mood. Do not invent a different story."
     }`,
     fallback
   );
 }
 
-export async function generateScript(prompt: string, idea: Idea, brand?: BrandKit | null) {
+export async function generateScript(prompt: string, idea: Idea, brand?: BrandKit | null, feedback?: RegenNote) {
   const fallback = mockScript(prompt, idea, brand);
   return jsonCompletion<Script>(
     `Write a 30-second vertical video script. 4–6 scenes. Voiceover should sound spoken, not marketed.\n${brandContext(brand)}`,
-    `Request: ${prompt}\nIdea: ${JSON.stringify(idea)}\nReturn JSON: { durationSec, cta, scenes: [{ id, time, onScreen, voiceover, visualPrompt }] }`,
+    `Request: ${prompt}\nIdea: ${JSON.stringify(idea)}${regenInstruction(feedback) ? `\n${regenInstruction(feedback)}` : ""}\nReturn JSON: { durationSec, cta, scenes: [{ id, time, onScreen, voiceover, visualPrompt }] }`,
     fallback
   );
 }
@@ -321,7 +490,7 @@ export async function generateScript(prompt: string, idea: Idea, brand?: BrandKi
 export async function generateVisuals(
   script: Script,
   brand?: BrandKit | null,
-  kind: "video" | "still" = "video",
+  kind: "video" | "still" | "poster" = "video",
   persist?: (visual: Visual) => Promise<Visual>
 ) {
   const openai = client();
@@ -363,7 +532,7 @@ export async function generateVisuals(
   };
 }
 
-export async function generateOneVisual(scene: ScriptScene, brand?: BrandKit | null, kind: "video" | "still" = "video") {
+export async function generateOneVisual(scene: ScriptScene, brand?: BrandKit | null, kind: "video" | "still" | "poster" = "video") {
   const openai = client();
   const frame = await generateSceneFrame(scene, brand, kind);
   if (openai && frame.visual.placeholder) {
@@ -375,18 +544,19 @@ export async function generateOneVisual(scene: ScriptScene, brand?: BrandKit | n
 }
 
 function imageModels() {
-  const preferred = config.openaiImageModel || "gpt-image-1";
-  return [...new Set([preferred, "gpt-image-1", "dall-e-3"])];
+  const preferred = config.openaiImageModel || "gpt-image-2.5-sunburst";
+  return [...new Set([preferred, "gpt-image-2.5-sunburst", "gpt-image-1", "dall-e-3"])];
 }
 
-function imageSize(model: string, kind: "video" | "still") {
+function imageSize(model: string, kind: "video" | "still" | "poster") {
   if (kind === "still") return "1024x1024" as const;
+  if (kind === "poster") return model === "dall-e-3" ? ("1024x1792" as const) : ("1024x1536" as const);
   return model === "dall-e-3" ? ("1024x1792" as const) : ("1024x1536" as const);
 }
 
 function humanImageError(message: string) {
   if (/does not exist/i.test(message)) {
-    return "This OpenAI project has no image model. Enable gpt-image-1 in the project, or set OPENAI_IMAGE_MODEL.";
+    return "This OpenAI project has no image model. Enable gpt-image-2.5-sunburst in the project, or set OPENAI_IMAGE_MODEL.";
   }
   if (/billing|quota|insufficient/i.test(message)) {
     return "OpenAI image billing is not enabled on this key.";
@@ -394,7 +564,7 @@ function humanImageError(message: string) {
   return "We couldn’t generate these frames. Try a simpler description.";
 }
 
-async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, kind: "video" | "still" = "video") {
+async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, kind: "video" | "still" | "poster" = "video") {
   const openai = client();
   const fallback = PLACEHOLDER_FRAMES[(Math.max(1, scene.id) - 1) % PLACEHOLDER_FRAMES.length];
   const placeholder = {
@@ -407,17 +577,20 @@ async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, k
   if (!openai) return placeholder;
 
   const prompt =
-    kind === "still"
+    kind === "poster"
+      ? scene.visualPrompt
+      : kind === "still"
       ? `${scene.visualPrompt}. Square 1:1 finished image.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}${brand.secondary_color ? ` with ${brand.secondary_color} quiet space` : ""}.` : ""}${brand?.vertical ? ` A real ${brand.vertical}.` : ""}`
       : `${scene.visualPrompt}. Vertical 9:16 cinematic still, filmic, no text overlay.${brand?.primary_color ? ` Colour grade towards ${brand.primary_color}${brand.secondary_color ? ` with ${brand.secondary_color} quiet space` : ""}.` : ""}${brand?.vertical ? ` A real ${brand.vertical}, not a stock set.` : ""}`;
 
   const once = async (model: string) => {
+    const gptImage = /^gpt-image/i.test(model);
     const image = await openai.images.generate({
       model,
-      prompt: prompt.slice(0, model === "gpt-image-1" ? 32000 : 4000),
+      prompt: prompt.slice(0, gptImage ? 32000 : 4000),
       size: imageSize(model, kind),
       n: 1,
-      ...(model === "gpt-image-1" ? { output_format: "jpeg", quality: "medium" } : {}),
+      ...(gptImage ? { output_format: "png", quality: "high" } : {}),
     });
     const item = image.data?.[0];
     const url = item?.url || (item?.b64_json ? `data:image/jpeg;base64,${item.b64_json}` : "");

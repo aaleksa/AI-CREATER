@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, fetchMedia, refreshMe, type InviteCard, type Project } from "../lib/api";
+import BrandToggle from "../components/BrandToggle";
+import { formatBrandHint, useLocale } from "../i18n/locale";
 
 const VIDEO_STEPS = [
-  { id: "idea", label: "Idea", cost: 5 },
-  { id: "script", label: "Script", cost: 10 },
-  { id: "visuals", label: "Visuals", cost: 40 },
-  { id: "voice", label: "Voice", cost: 30 },
-  { id: "captions", label: "Captions", cost: 10 },
-  { id: "render", label: "Create", cost: 55 },
+  { id: "idea", cost: 5 },
+  { id: "script", cost: 10 },
+  { id: "visuals", cost: 40 },
+  { id: "voice", cost: 30 },
+  { id: "captions", cost: 10 },
+  { id: "render", cost: 55 },
 ] as const;
 
 const EMPTY_INVITE: InviteCard = {
@@ -91,44 +93,51 @@ function doneThrough(project: Project, step: string) {
 function PictureCompare({
   versions,
   srcs,
+  liveSrc,
   onRestore,
   onPreview,
   previewId,
   busy,
+  poster,
+  t,
 }: {
   versions: { id: string; accepted: boolean }[];
   srcs: Record<string, string>;
+  liveSrc?: string;
   onRestore: (versionId: string) => void;
   onPreview: (versionId: string) => void;
   previewId: string | null;
   busy: boolean;
+  poster?: boolean;
+  t: (path: string, vars?: Record<string, string | number>) => string;
 }) {
   if (versions.length < 2) return null;
   return (
     <div style={{ marginTop: 16 }}>
-      <p className="hint">Compare the last two. Using the older one is free — you already paid for it.</p>
+      <p className="hint">{t("studio.compareLast")}</p>
       <div className="compare-grid">
-        {versions.map((version) => {
-          const src = srcs[version.id];
+        {versions.map((version, index) => {
+          const src = srcs[version.id] || (version.accepted ? liveSrc : "");
           const showing = previewId === version.id || (!previewId && version.accepted);
+          const label = version.accepted ? t("studio.current") : t("studio.takeN", { n: index + 1 });
           return (
             <div key={version.id} className={`compare-card${showing ? " on" : ""}`}>
-              <p className="hint">{version.accepted ? "Current" : "Previous"}</p>
+              <p className="hint">{label}</p>
               {src ? (
                 <button
                   type="button"
                   className="compare-still-btn"
                   onClick={() => onPreview(version.id)}
-                  aria-label={version.accepted ? "Show current picture" : "Show previous picture"}
+                  aria-label={label}
                 >
-                  <img className="compare-still" src={src} alt={version.accepted ? "Current picture" : "Previous picture"} />
+                  <img className={`compare-still${poster ? " poster" : ""}`} src={src} alt={label} />
                 </button>
               ) : (
-                <p className="hint">This take isn’t on disk any more.</p>
+                <p className="hint">{t("studio.gone")}</p>
               )}
               {!version.accepted && src && (
                 <button className="btn ghost" type="button" disabled={busy} onClick={() => onRestore(version.id)}>
-                  Use this version
+                  {t("studio.useVersion")}
                 </button>
               )}
             </div>
@@ -144,20 +153,22 @@ function VersionCompare({
   versions,
   onRestore,
   busy,
+  t,
 }: {
   step: "idea" | "script";
   versions: { id: string; accepted: boolean; payload: { title?: string; concept?: string; hook?: string; cta?: string; scenes?: { id: number; voiceover: string }[] } | null }[];
   onRestore: (step: "idea" | "script", id: string) => void;
   busy: boolean;
+  t: (path: string, vars?: Record<string, string | number>) => string;
 }) {
   if (versions.length < 2) return null;
   return (
     <div style={{ marginTop: 16 }}>
-      <p className="hint">Compare the last two. Using an older one is free and clears what follows.</p>
+      <p className="hint">{t("studio.ideaCompare")}</p>
       <div className="compare-grid">
-        {versions.map((version) => (
+        {versions.map((version, index) => (
           <div key={version.id} className={`compare-card${version.accepted ? " on" : ""}`}>
-            <p className="hint">{version.accepted ? "Current" : "Previous"}</p>
+            <p className="hint">{version.accepted ? t("studio.current") : t("studio.takeN", { n: index + 1 })}</p>
             {step === "idea" ? (
               <>
                 <p><b>{version.payload?.title}</b></p>
@@ -171,7 +182,7 @@ function VersionCompare({
             )}
             {!version.accepted && (
               <button className="btn ghost" type="button" disabled={busy} onClick={() => onRestore(step, version.id)}>
-                Use this version
+                {t("studio.useVersion")}
               </button>
             )}
           </div>
@@ -183,6 +194,7 @@ function VersionCompare({
 
 export default function Studio() {
   const { id } = useParams();
+  const { t, te } = useLocale();
   const [project, setProject] = useState<Project | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -191,6 +203,7 @@ export default function Studio() {
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [brief, setBrief] = useState("");
   const [briefSaved, setBriefSaved] = useState(false);
+  const [briefSaving, setBriefSaving] = useState(false);
   const [publishable, setPublishable] = useState("");
   const [reasons, setReasons] = useState<string[]>([]);
   const [imageSrcs, setImageSrcs] = useState<Record<number, string>>({});
@@ -203,22 +216,33 @@ export default function Studio() {
   const [kitHint, setKitHint] = useState("");
   const [inviteDraft, setInviteDraft] = useState<InviteCard>(EMPTY_INVITE);
   const [inviteSaved, setInviteSaved] = useState(false);
+  const [brandSaved, setBrandSaved] = useState(false);
 
   useEffect(() => {
     if (!id) return;
+    let cancelled = false;
     api.project(id).then((d) => {
+      if (cancelled) return;
       setProject(d.project);
       setBrief(d.project.prompt);
       if (d.project.invite) setInviteDraft(draftFromInvite(d.project.invite));
-    }).catch((e) => setError(e.message));
+    }).catch((e) => {
+      if (!cancelled) setError(e.message);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  useEffect(() => {
     api
       .brand()
       .then((d) => {
         const progress = d.brandKit?.completeness;
-        setKitHint(progress && progress.percent < 70 ? progress.hint : "");
+        setKitHint(progress && progress.percent < 70 ? formatBrandHint(t, progress) : "");
       })
       .catch(() => setKitHint(""));
-  }, [id]);
+  }, [t]);
 
   useEffect(() => {
     if (!id || !project?.hasVideo) {
@@ -323,12 +347,15 @@ export default function Studio() {
 
   const isImage = project?.type === "image_post";
   const isInvite = Boolean(isImage && project?.imageIntent === "invite");
+  const isPoster = Boolean(isImage && (project?.imageIntent === "invite" || project?.imageIntent === "info" || project?.imageIntent === "offer"));
   const STEPS = isImage
     ? [
-        { id: "idea", label: "Idea", cost: 5 },
-        { id: "visuals", label: isInvite ? "Invitation" : "Pictures", cost: 8 },
+        { id: "idea", cost: 5 },
+        { id: "visuals", cost: 8 },
       ]
     : VIDEO_STEPS;
+  const stepLabel = (id: string) =>
+    id === "visuals" ? t(isInvite ? "steps.invitation" : isImage ? "steps.pictures" : "steps.visuals") : t(`steps.${id}`);
   const next = useMemo(() => STEPS.find((s) => project && !doneThrough(project, s.id)), [project, isImage, isInvite]);
   const lastDone = useMemo(() => [...STEPS].reverse().find((s) => project && doneThrough(project, s.id)), [project, isImage, isInvite]);
   const extraPrice = (step: string, sceneId?: number) => {
@@ -362,7 +389,7 @@ export default function Studio() {
       setRegenReason("");
       setRegenNote("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Step failed.");
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
     } finally {
       setBusy(null);
     }
@@ -375,7 +402,7 @@ export default function Studio() {
         const { project: saved } = await api.updatePrompt(id, brief);
         setProject(saved);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not save the brief.");
+        setError(err instanceof Error ? te(err.message) : t("studio.failBrief"));
         return;
       }
     }
@@ -389,21 +416,21 @@ export default function Studio() {
         setProject(saved);
         if (saved.invite) setInviteDraft(draftFromInvite(saved.invite));
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not save the invitation details.");
+        setError(err instanceof Error ? te(err.message) : t("studio.failInvite"));
         return;
       }
     }
     const price = extraPrice(step, sceneId);
     if (price.extra) {
       const ok = window.confirm(
-        `Keep this version (free), or try again at 2× — ${price.credits} credits? We pay the AI on every extra try.`
+        t("studio.confirm2x", { credits: price.credits })
       );
       if (!ok) return;
     } else if (regenerate && !sceneId && (step === "idea" || step === "script")) {
       const ok = window.confirm(
         step === "idea"
-          ? `This remakes the idea and clears what follows. ${price.credits} credits.`
-          : `This remakes the script and clears frames, voice and video. ${price.credits} credits.`
+          ? t("studio.confirmBrief", { credits: price.credits })
+          : t("studio.confirmCascade", { credits: price.credits })
       );
       if (!ok) return;
     }
@@ -419,7 +446,7 @@ export default function Studio() {
   async function goRegen(withReason: boolean) {
     if (!pendingRegen) return;
     if (withReason && regenReason === "other" && regenNote.trim().length < 2) {
-      setError("Say what was wrong — a few words is enough.");
+      setError(t("studio.needNote"));
       return;
     }
     await execute(pendingRegen.step, true, pendingRegen.sceneId, withReason && regenReason ? { reason: regenReason, note: regenNote } : undefined);
@@ -429,10 +456,10 @@ export default function Studio() {
     if (!id) return;
     const ok = window.confirm(
       step === "idea"
-        ? "Use this idea? It clears what follows. Free — you already paid for this version."
+        ? t("studio.restoreIdea")
         : step === "visuals"
-          ? "Use this picture? Free — you already paid for it."
-          : "Use this script? It clears frames, voice and video. Free — you already paid for this version."
+          ? t("studio.restorePicture")
+          : t("studio.restoreScript")
     );
     if (!ok) return;
     setBusy(sceneId ? `restore-visual-${sceneId}` : `restore-${step}`);
@@ -442,7 +469,7 @@ export default function Studio() {
       setPreviewVersionId(null);
       setProject(nextProject);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not restore that version.");
+      setError(err instanceof Error ? te(err.message) : t("studio.failRestore"));
     } finally {
       setBusy(null);
     }
@@ -457,7 +484,7 @@ export default function Studio() {
       setShareCopied(true);
       setTimeout(() => setShareCopied(false), 2500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create a preview link.");
+      setError(err instanceof Error ? te(err.message) : t("studio.failShare"));
     }
   }
 
@@ -468,7 +495,7 @@ export default function Studio() {
       const { project: nextProject } = await api.saveFeedback(id, publishable, reasons);
       setProject(nextProject);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save that.");
+      setError(err instanceof Error ? te(err.message) : t("studio.failFeedback"));
     }
   }
 
@@ -483,37 +510,55 @@ export default function Studio() {
       setInviteSaved(true);
       setTimeout(() => setInviteSaved(false), 2500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save the invitation.");
+      setError(err instanceof Error ? te(err.message) : t("studio.failInvite"));
     } finally {
       setBusy(null);
     }
   }
 
   async function saveBrief() {
-    if (!id) return;
+    if (!id || briefSaving) return;
     setError("");
+    setBriefSaved(false);
+    setBriefSaving(true);
     try {
       const { project: nextProject } = await api.updatePrompt(id, brief);
       setProject(nextProject);
+      setBrief(nextProject.prompt);
       setBriefSaved(true);
       setTimeout(() => setBriefSaved(false), 2500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save the brief.");
+      setError(err instanceof Error ? te(err.message) : t("studio.failBrief"));
+    } finally {
+      setBriefSaving(false);
     }
   }
 
-  if (!project) return <p className="hint">{error || "Opening the studio…"}</p>;
+  async function saveUseBrand(next: boolean) {
+    if (!id || next === Boolean(project?.useBrand ?? true)) return;
+    setError("");
+    try {
+      const { project: nextProject } = await api.updateUseBrand(id, next);
+      setProject(nextProject);
+      setBrandSaved(true);
+      setTimeout(() => setBrandSaved(false), 2500);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failBrief"));
+    }
+  }
+
+  if (!project) return <p className="hint">{error || t("studio.opening")}</p>;
 
   const makingLabel =
     busy === "render"
-      ? "Rendering mp4…"
+      ? t("studio.makingReel")
       : busy === "voice"
-        ? "Recording voice…"
+        ? t("studio.makingVoice")
         : busy === "visuals" && isInvite
-          ? "Making the invitation…"
+          ? t("studio.makingInvite")
           : busy === "visuals" && isImage
-            ? "Making the picture…"
-            : "Making…";
+            ? t("studio.makingPicture")
+            : t("studio.making");
 
   return (
     <div>
@@ -521,18 +566,18 @@ export default function Studio() {
         {project.type.replaceAll("_", " ")}
         {isImage && project.imageIntent
           ? ` · ${
-              { photo: "just a photo", invite: "invitation", info: "information", offer: "offer" }[project.imageIntent] ||
+              { photo: t("studio.intentPhoto"), invite: t("studio.intentInvite"), info: t("studio.intentInfo"), offer: t("studio.intentOffer") }[project.imageIntent] ||
               project.imageIntent
             }`
           : ""}
       </p>
-      {kitHint && (
+      {kitHint && (project.useBrand ?? true) && (
         <p className="hint">
-          {kitHint}. <Link to="/app/brand">Brand kit</Link>
+          {kitHint}. <Link to="/app/brand">{t("studio.brandKit")}</Link>
         </p>
       )}
       <div className="field">
-        <label htmlFor="brief">What you asked for — change it if this isn’t right</label>
+        <label htmlFor="brief">{t("studio.briefLabel")}</label>
         <textarea
           id="brief"
           value={brief}
@@ -542,18 +587,33 @@ export default function Studio() {
         />
       </div>
       <div className="row" style={{ marginBottom: 20 }}>
-        <button className="btn ghost" type="button" disabled={brief.trim() === project.prompt} onClick={saveBrief}>
-          Save brief
+        <button className="btn ghost" type="button" disabled={briefSaving} onClick={saveBrief}>
+          {briefSaving ? t("studio.savingBrief") : t("studio.saveBrief")}
         </button>
-        {briefSaved && <span className="ok">Saved. Regenerate idea to use the new brief.</span>}
+        {briefSaved && <span className="ok">{t("studio.briefSaved")}</span>}
       </div>
+      {error && (
+        <p className="err" style={{ marginTop: -8, marginBottom: 16 }}>
+          {error}
+        </p>
+      )}
+      <BrandToggle
+        value={project.useBrand ?? true}
+        onChange={saveUseBrand}
+        ask={t("studio.useBrandAsk")}
+        onLabel={t("studio.useBrandOn")}
+        onHint={t("home.useBrandHint")}
+        offLabel={t("studio.useBrandOff")}
+        offHint={t("home.skipBrandHint")}
+      />
+      {brandSaved && <p className="ok">{t("studio.brandToggleSaved")}</p>}
       <div className="steps">
         {STEPS.map((s, i) => {
           const isDone = doneThrough(project, s.id);
           const isOn = next?.id === s.id;
           return (
             <span key={s.id} className={`step ${isDone ? "done" : ""} ${isOn ? "on" : ""}`}>
-              {i + 1}. {s.label}
+              {i + 1}. {stepLabel(s.id)}
             </span>
           );
         })}
@@ -561,7 +621,7 @@ export default function Studio() {
 
       <div className="studio">
         <div>
-          <div className={`phone${isImage ? " post" : ""}${isInvite ? " invite" : ""}`} style={typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : undefined}>
+          <div className={`phone${isImage ? " post" : ""}${isPoster ? " poster" : ""}${isInvite ? " invite" : ""}`} style={typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : undefined}>
             {project.hasVideo && videoSrc ? (
               <video className="phone-video" src={videoSrc} controls playsInline />
             ) : (
@@ -575,7 +635,7 @@ export default function Studio() {
                 {!frame && <div className="phone-frame" style={{ background: "linear-gradient(160deg,#2b1d14,#c45c26)" }} />}
                 {frameIsPlaceholder && (
                   <div className="caption" style={{ top: 18, bottom: "auto", fontSize: 14, fontFamily: "var(--sans, inherit)" }}>
-                    Couldn’t generate — regenerate this picture (8cr)
+                    {t("studio.placeholderFail")}
                   </div>
                 )}
                 {!isInvite && <div className="caption">{caption}</div>}
@@ -593,7 +653,7 @@ export default function Studio() {
                   {project.visuals && (
                     <>
                       {project.visuals.find((v) => v.sceneId === s.id)?.placeholder && (
-                        <p className="hint">Couldn’t generate — regenerate this picture (8cr)</p>
+                        <p className="hint">{t("studio.placeholderFail")}</p>
                       )}
                       <button
                         className="btn ghost"
@@ -601,21 +661,21 @@ export default function Studio() {
                         onClick={() => run("visuals", true, s.id)}
                       >
                         {busy === `visual-${s.id}`
-                          ? "Making…"
+                          ? t("studio.makingShort")
                           : extraPrice("visuals", s.id).extra
-                            ? `Another try · ${extraPrice("visuals", s.id).credits} credits (2×)`
-                            : `Regenerate this picture · ${extraPrice("visuals", s.id).credits} credits`}
+                            ? t("studio.anotherTry", { credits: extraPrice("visuals", s.id).credits })
+                            : t("studio.regenPicture", { credits: extraPrice("visuals", s.id).credits })}
                       </button>
-                      {project.versions?.visuals?.find((version) => !version.accepted) && (
+                      {[...(project.versions?.visuals || [])].reverse().find((version) => !version.accepted) && (
                         <button
                           className="btn ghost"
                           disabled={Boolean(busy) || Boolean(pendingRegen)}
                           onClick={() => {
-                            const previous = project.versions?.visuals?.find((version) => !version.accepted);
+                            const previous = [...(project.versions?.visuals || [])].reverse().find((version) => !version.accepted);
                             if (previous) restore("visuals", previous.id, s.id);
                           }}
                         >
-                          {busy === `restore-visual-${s.id}` ? "Restoring…" : "Use previous picture · free"}
+                          {busy === `restore-visual-${s.id}` ? t("studio.restoring") : t("studio.usePreviousFree")}
                         </button>
                       )}
                     </>
@@ -627,14 +687,10 @@ export default function Studio() {
         </div>
 
         <div className="panel">
-          <h2>{next ? `Step — ${next.label}` : "Ready"}</h2>
+          <h2>{next ? t("studio.stepTitle", { label: stepLabel(next.id) }) : t("steps.ready")}</h2>
           {!project.idea && (
             <p className="lede">
-              {isInvite
-                ? "We’ll send your whole brief to OpenAI and get one finished picture. Redo it if you want another take."
-                : isImage
-                  ? "We’ll propose a look before making pictures."
-                  : "We’ll propose a concept before writing a word of script."}
+              {isInvite ? t("studio.introInvite") : isImage ? t("studio.introImage") : t("studio.introVideo")}
             </p>
           )}
           {project.idea && !project.visuals && isImage && (
@@ -642,31 +698,31 @@ export default function Studio() {
               <p><b>{project.idea.title}</b></p>
               <p className="lede">{project.idea.concept}</p>
               <p className="hint">{project.idea.visualDirection}</p>
-              <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} />
+              <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} t={t} />
             </>
           )}
           {isInvite && project.idea && (
-            <p className="hint">Pictures sends your whole brief to OpenAI as one prompt and returns one picture. Redo that picture if you want another take.</p>
+            <p className="hint">{t("studio.inviteHint")}</p>
           )}
           {project.idea && !project.script && !isImage && (
             <>
               <p><b>{project.idea.title}</b></p>
               <p className="lede">{project.idea.concept}</p>
               <p className="hint">{project.idea.visualDirection}</p>
-              <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} />
+              <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} t={t} />
             </>
           )}
           {!isImage && project.script && !project.visuals && (
             <>
-              <p className="lede">A 30-second voiceover, already broken into scenes.</p>
-              <VersionCompare step="script" versions={project.versions?.script || []} onRestore={restore} busy={Boolean(busy)} />
+              <p className="lede">{t("studio.scriptReady")}</p>
+              <VersionCompare step="script" versions={project.versions?.script || []} onRestore={restore} busy={Boolean(busy)} t={t} />
             </>
           )}
           {!isImage && project.visuals && !project.audioUrl && (
             <p className="lede">
               {placeholderCount
-                ? `${placeholderCount} frame${placeholderCount === 1 ? "" : "s"} couldn’t be generated. Regenerate them for 8 credits each before Voice, or the Reel will use colour cards.`
-                : "Frames are in. If one shot missed, regenerate that frame for 8 credits — not the whole set. Next we record a voiceover."}
+                ? t(placeholderCount === 1 ? "studio.framesFail" : "studio.framesFailMany", { count: placeholderCount })
+                : t("studio.framesOk")}
             </p>
           )}
           {project.audioUrl && !project.captions && (
@@ -676,34 +732,33 @@ export default function Studio() {
               {audioSrc && <audio controls src={audioSrc} style={{ width: "100%", marginTop: 12 }} />}
             </>
           )}
-          {project.captions && !project.hasVideo && <p className="lede">Captions are timed. Create writes a 9:16 mp4 you can download.</p>}
+          {project.captions && !project.hasVideo && <p className="lede">{t("studio.captionsReady")}</p>}
           {project.hasImages && (
             <>
               <p className="ok">
-                {isInvite ? "Your invitation is ready." : "Your picture is ready."} {project.creditsUsed} credits used.
+                {t(isInvite ? "studio.inviteReady" : "studio.pictureReady", { credits: project.creditsUsed })}
               </p>
-              <p className="hint">
-                {isInvite
-                  ? "Download the invitation. We keep it for 90 days. Recreating after that uses credits again."
-                  : "Download the picture now. We keep it for 90 days. Recreating after that uses credits again."}
-              </p>
+              <p className="hint">{t(isInvite ? "studio.inviteKeep" : "studio.pictureKeep")}</p>
               {(project.versions?.visuals || []).length < 2 ? (
                 <p className="hint" style={{ marginTop: 12 }}>
-                  Not this one? Try again — then you can look at both and keep the one you prefer, free.
+                  {t("studio.compareHint")}
                 </p>
               ) : (
                 <PictureCompare
                   versions={project.versions?.visuals || []}
                   srcs={versionSrcs}
+                  liveSrc={imageSrcs[project.visuals?.[0]?.sceneId ?? 1]}
                   previewId={previewVersionId}
                   busy={Boolean(busy)}
+                  poster={isPoster}
                   onPreview={setPreviewVersionId}
                   onRestore={(versionId) => restore("visuals", versionId)}
+                  t={t}
                 />
               )}
               <div className="row" style={{ marginTop: 12 }}>
                 <button className="btn ghost" type="button" onClick={sharePreview}>
-                  {shareCopied ? "Preview link copied" : "Share a preview"}
+                  {shareCopied ? t("studio.shareCopied") : t("studio.share")}
                 </button>
                 {isInvite
                   ? project.visuals
@@ -711,7 +766,7 @@ export default function Studio() {
                       .slice(0, 1)
                       .map((visual) => (
                         <a key={visual.sceneId} className="btn" href={imageSrcs[visual.sceneId]} download="invitation.jpg">
-                          Download invitation
+                          {t("studio.downloadInvite")}
                         </a>
                       ))
                   : project.visuals?.map((visual, i) => {
@@ -719,21 +774,21 @@ export default function Studio() {
                       if (!src || visual.placeholder) return null;
                       return (
                         <a key={visual.sceneId} className="btn" href={src} download={`still-${i + 1}.jpg`}>
-                          Download {i + 1}
+                          {t("studio.downloadN", { n: i + 1 })}
                         </a>
                       );
                     })}
               </div>
               {project.feedback ? (
-                <p className="ok" style={{ marginTop: 16 }}>Thanks — that helps the next post.</p>
+                <p className="ok" style={{ marginTop: 16 }}>{t("studio.thanksPost")}</p>
               ) : (
                 <div style={{ marginTop: 20 }}>
-                  <p className="lede">Would you publish this post?</p>
+                  <p className="lede">{t("studio.publishPost")}</p>
                   <div className="row" style={{ marginTop: 8 }}>
                     {[
-                      ["yes", "Yes"],
-                      ["edits", "Yes, after minor edits"],
-                      ["no", "No"],
+                      ["yes", "studio.yes"],
+                      ["edits", "studio.edits"],
+                      ["no", "studio.no"],
                     ].map(([value, label]) => (
                       <button
                         key={value}
@@ -741,14 +796,20 @@ export default function Studio() {
                         className={`btn ${publishable === value ? "accent" : "ghost"}`}
                         onClick={() => setPublishable(value)}
                       >
-                        {label}
+                        {t(label)}
                       </button>
                     ))}
                   </div>
                   {publishable && publishable !== "yes" && (
                     <div style={{ marginTop: 12 }}>
-                      <p className="hint">What was wrong?</p>
-                      {["Images", "Idea", "Brand style", "Too generic", "Not useful"].map((reason) => (
+                      <p className="hint">{t("studio.whatWrong")}</p>
+                      {[
+                        ["Images", "studio.fbImages"],
+                        ["Idea", "studio.fbIdea"],
+                        ["Brand style", "studio.fbBrand"],
+                        ["Too generic", "studio.fbGeneric"],
+                        ["Not useful", "studio.fbUseful"],
+                      ].map(([reason, key]) => (
                         <label key={reason} className="hint" style={{ display: "block", marginTop: 6 }}>
                           <input
                             type="checkbox"
@@ -759,14 +820,14 @@ export default function Studio() {
                               )
                             }
                           />{" "}
-                          {reason}
+                          {t(key)}
                         </label>
                       ))}
                     </div>
                   )}
                   {publishable && (
                     <button className="btn" style={{ marginTop: 12 }} type="button" onClick={sendFeedback}>
-                      Send
+                      {t("studio.send")}
                     </button>
                   )}
                 </div>
@@ -775,31 +836,28 @@ export default function Studio() {
           )}
           {project.hasVideo && (
             <>
-              <p className="ok">Your Reel is ready. {project.creditsUsed} credits used.</p>
-              <p className="hint">
-                Download this Reel now. We keep the mp4 for 90 days. Voice and frames may be cleared after 7 days.
-                Recreating after that uses credits again.
-              </p>
+              <p className="ok">{t("studio.reelReady", { credits: project.creditsUsed })}</p>
+              <p className="hint">{t("studio.reelKeep")}</p>
               <div className="row" style={{ marginTop: 18 }}>
                 {videoSrc && (
                   <a className="btn" href={videoSrc} download="reel.mp4">
-                    Download mp4
+                    {t("studio.downloadMp4")}
                   </a>
                 )}
                 <button className="btn ghost" type="button" onClick={sharePreview}>
-                  {shareCopied ? "Preview link copied" : "Share a preview"}
+                  {shareCopied ? t("studio.shareCopied") : t("studio.share")}
                 </button>
               </div>
               {project.feedback ? (
-                <p className="ok" style={{ marginTop: 16 }}>Thanks — that helps the next Reel.</p>
+                <p className="ok" style={{ marginTop: 16 }}>{t("studio.thanksReel")}</p>
               ) : (
                 <div style={{ marginTop: 20 }}>
-                  <p className="lede">Would you publish this Reel?</p>
+                  <p className="lede">{t("studio.publishReel")}</p>
                   <div className="row" style={{ marginTop: 8 }}>
                     {[
-                      ["yes", "Yes"],
-                      ["edits", "Yes, after minor edits"],
-                      ["no", "No"],
+                      ["yes", "studio.yes"],
+                      ["edits", "studio.edits"],
+                      ["no", "studio.no"],
                     ].map(([value, label]) => (
                       <button
                         key={value}
@@ -807,14 +865,22 @@ export default function Studio() {
                         className={`btn ${publishable === value ? "accent" : "ghost"}`}
                         onClick={() => setPublishable(value)}
                       >
-                        {label}
+                        {t(label)}
                       </button>
                     ))}
                   </div>
                   {publishable && publishable !== "yes" && (
                     <div style={{ marginTop: 12 }}>
-                      <p className="hint">What was wrong?</p>
-                      {["Voice", "Script", "Images", "Captions", "Brand style", "Too generic", "Not useful"].map((reason) => (
+                      <p className="hint">{t("studio.whatWrong")}</p>
+                      {[
+                        ["Voice", "studio.fbVoice"],
+                        ["Script", "studio.fbScript"],
+                        ["Images", "studio.fbImages"],
+                        ["Captions", "studio.fbCaptions"],
+                        ["Brand style", "studio.fbBrand"],
+                        ["Too generic", "studio.fbGeneric"],
+                        ["Not useful", "studio.fbUseful"],
+                      ].map(([reason, key]) => (
                         <label key={reason} className="hint" style={{ display: "block", marginTop: 6 }}>
                           <input
                             type="checkbox"
@@ -825,14 +891,14 @@ export default function Studio() {
                               )
                             }
                           />{" "}
-                          {reason}
+                          {t(key)}
                         </label>
                       ))}
                     </div>
                   )}
                   {publishable && (
                     <button className="btn" style={{ marginTop: 12 }} type="button" onClick={sendFeedback}>
-                      Send
+                      {t("studio.send")}
                     </button>
                   )}
                 </div>
@@ -845,19 +911,19 @@ export default function Studio() {
               {busy && busy === next.id
                 ? makingLabel
                 : extraPrice(next.id).extra
-                  ? `Make ${next.label.toLowerCase()} · ${extraPrice(next.id).credits} credits (2×)`
-                  : `Make ${next.label.toLowerCase()} · ${extraPrice(next.id).credits} credits`}
+                  ? t("studio.makeStep2x", { label: stepLabel(next.id).toLowerCase(), credits: extraPrice(next.id).credits })
+                  : t("studio.makeStep", { label: stepLabel(next.id).toLowerCase(), credits: extraPrice(next.id).credits })}
             </button>
           )}
           {pendingRegen && STEP_REASONS[pendingRegen.step] && (
             <div style={{ marginTop: 16 }}>
-              <p className="lede">Why didn’t this work? Optional — skip if you’d rather just try again.</p>
+              <p className="lede">{t("studio.whyFail")}</p>
               <div className="field" style={{ marginTop: 8 }}>
                 <select value={regenReason} onChange={(e) => setRegenReason(e.target.value)}>
-                  <option value="">Choose a reason</option>
+                  <option value="">{t("studio.chooseReason")}</option>
                   {STEP_REASONS[pendingRegen.step].map((reason) => (
                     <option key={reason.id} value={reason.id}>
-                      {reason.label}
+                      {t(`reasons.${reason.id}`)}
                     </option>
                   ))}
                 </select>
@@ -869,13 +935,13 @@ export default function Studio() {
                     onChange={(e) => setRegenNote(e.target.value)}
                     maxLength={500}
                     rows={2}
-                    placeholder="A few words is enough"
+                    placeholder={t("studio.reasonNote")}
                   />
                 </div>
               )}
               <div className="row" style={{ marginTop: 8 }}>
                 <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => goRegen(false)}>
-                  Skip
+                  {t("studio.skip")}
                 </button>
                 <button
                   className="btn"
@@ -883,7 +949,7 @@ export default function Studio() {
                   disabled={Boolean(busy) || (regenReason === "other" && regenNote.trim().length < 2)}
                   onClick={() => goRegen(Boolean(regenReason))}
                 >
-                  Try again
+                  {t("studio.tryAgain")}
                 </button>
               </div>
             </div>
@@ -898,15 +964,14 @@ export default function Studio() {
               {busy === lastDone.id
                 ? makingLabel
                 : extraPrice(lastDone.id).extra
-                  ? `Keep this, or another try · ${extraPrice(lastDone.id).credits} credits (2×)`
-                  : `Not this ${lastDone.label.toLowerCase()}? Try again · ${extraPrice(lastDone.id).credits} credits`}
+                  ? t("studio.keepOrTry", { credits: extraPrice(lastDone.id).credits })
+                  : t("studio.notThis", { label: stepLabel(lastDone.id).toLowerCase(), credits: extraPrice(lastDone.id).credits })}
             </button>
           )}
           {STEPS.some((s) => doneThrough(project, s.id)) && (
             <div style={{ marginTop: 18 }}>
               <p className="hint">
-                Keep this version — that’s free. Two retries at the usual price. After that you can still try, at 2×,
-                if you want. A later redo clears what follows.
+                {t("studio.keepFree")}
               </p>
               {STEPS.filter((s) => doneThrough(project, s.id)).map((s) => (
                 <button
@@ -919,8 +984,8 @@ export default function Studio() {
                   {busy === s.id
                     ? makingLabel
                     : extraPrice(s.id).extra
-                      ? `Another ${s.label.toLowerCase()} · ${extraPrice(s.id).credits} (2×)`
-                      : `Regenerate ${s.label.toLowerCase()} · ${extraPrice(s.id).credits}`}
+                      ? t("studio.anotherStep", { label: stepLabel(s.id).toLowerCase(), credits: extraPrice(s.id).credits })
+                      : t("studio.regenStep", { label: stepLabel(s.id).toLowerCase(), credits: extraPrice(s.id).credits })}
                 </button>
               ))}
             </div>
@@ -928,17 +993,16 @@ export default function Studio() {
           {error && (
             <p className="err">
               {error}
-              {error.toLowerCase().includes("credit") && (
+              {(error.toLowerCase().includes("credit") || error.includes("кредит")) && (
                 <>
                   {" "}
-                  <Link to="/app/billing">Buy credits</Link>
+                  <Link to="/app/billing">{t("studio.buyCredits")}</Link>
                 </>
               )}
             </p>
           )}
           <p className="hint" style={{ marginTop: 18 }}>
-            Used on this {isInvite ? "invitation" : isImage ? "post" : "Reel"}: {project.creditsUsed} credits ·{" "}
-            {isImage ? "image 13" : "full video 150"}
+            {t(isInvite ? "studio.usedInvite" : isImage ? "studio.usedImage" : "studio.usedReel", { credits: project.creditsUsed })}
           </p>
         </div>
       </div>

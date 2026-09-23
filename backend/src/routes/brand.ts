@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { v4 as uuid } from "uuid";
-import { brandLogoType, hasBrandLogo, logoKindFromBytes, writeBrandLogo } from "../services/media.js";
+import { brandLogoType, hasBrandLogo, logoKindFromBytes, removeBrandLogo, writeBrandLogo } from "../services/media.js";
 import { maybeRefreshLearnedSummary, readyCount } from "../services/learning.js";
 
 function hex(value: unknown, fallback: string) {
@@ -33,6 +33,7 @@ function completeness(row: Record<string, unknown>, userId: string) {
   const next = checks.find((item) => !item.ok);
   return {
     percent,
+    nextKey: next?.key || "",
     hint: next ? `Brand kit ${percent}% complete — ${next.hint}` : `Brand kit ${percent}% complete`,
   };
 }
@@ -116,6 +117,12 @@ brandRouter.post("/logo", (req, res) => {
   }
   writeBrandLogo(req.user!.id, buffer, kind);
   db.prepare("UPDATE brand_kits SET logo_url = '/brand/logo', updated_at = datetime('now') WHERE user_id = ?").run(req.user!.id);
+  res.json({ brandKit: serializeBrand(kitOf(req.user!.id), req.user!.id) });
+});
+
+brandRouter.delete("/logo", (req, res) => {
+  removeBrandLogo(req.user!.id);
+  db.prepare("UPDATE brand_kits SET logo_url = '', updated_at = datetime('now') WHERE user_id = ?").run(req.user!.id);
   res.json({ brandKit: serializeBrand(kitOf(req.user!.id), req.user!.id) });
 });
 

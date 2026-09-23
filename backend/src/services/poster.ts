@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Resvg } from "@resvg/resvg-js";
-import type { BrandKit } from "./ai.js";
+import type { BrandKit, PosterArt } from "./ai.js";
 import type { InviteCard, InviteItem } from "./invite.js";
+import { guessInvite } from "./invite.js";
 import { stillBgFile, stillFile, writeStillFromPng } from "./media.js";
 
 function escapeXml(value: string) {
@@ -57,19 +58,21 @@ function hasCyrillic(...values: string[]) {
   return values.some((value) => /[А-Яа-яІіЇїЄєҐґ]/.test(value));
 }
 
-function inviteFonts(cyrillic: boolean) {
+function inviteFonts(_cyrillic: boolean) {
   const latin = [
     "/System/Library/Fonts/Supplemental/Georgia.ttf",
     "/System/Library/Fonts/Supplemental/Georgia Bold.ttf",
     "/System/Library/Fonts/NewYork.ttf",
+    "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
   ];
   const unicode = [
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
     "/Library/Fonts/Arial Unicode.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
   ];
-  return (cyrillic ? [...unicode, ...latin] : [...latin, ...unicode]).filter((file) => fs.existsSync(file));
+  return [...unicode, ...latin].filter((file) => fs.existsSync(file));
 }
 
 function hexLum(color: string) {
@@ -81,11 +84,16 @@ function hexLum(color: string) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
+function paperColor(brand?: BrandKit | null) {
+  const color = brand?.secondary_color || "";
+  return hexLum(color) > 0.75 && color ? color : "#F6F1E8";
+}
+
 function lineBlock(lines: string[], x: number, y: number, size: number, fill: string, weight = 500, anchor = "start") {
   return lines
     .map(
       (line, index) =>
-        `<text x="${x}" y="${y + index * (size + 8)}" text-anchor="${anchor}" font-size="${size}" font-weight="${weight}" fill="${fill}">${escapeXml(line)}</text>`
+        `<text x="${x}" y="${y + index * (size + 8)}" text-anchor="${anchor}" font-family="Arial Unicode MS, Arial, Georgia, DejaVu Serif, sans-serif" font-size="${size}" font-weight="${weight}" fill="${fill}">${escapeXml(line)}</text>`
     )
     .join("");
 }
@@ -174,7 +182,7 @@ function photoGround(background: string | undefined, paper: string) {
 function buildFlyer(invite: InviteCard, brand?: BrandKit | null, background?: string, shots: string[] = []) {
   const ink = "#2C382C";
   const mute = "#3F463C";
-  const paper = hexLum(brand?.secondary_color || "") > 0.75 ? brand!.secondary_color : "#F6F1E8";
+  const paper = paperColor(brand);
   const accent = brand?.primary_color || "#3D5A40";
   const cyr = hasCyrillic(invite.name, invite.intro, invite.closing, invite.address, ...invite.program.map((item) => item.title + item.detail));
   const programme = cyr ? "У програмі" : "Programme";
@@ -238,7 +246,7 @@ function buildFlyer(invite: InviteCard, brand?: BrandKit | null, background?: st
 function buildCard(invite: InviteCard, brand?: BrandKit | null, background?: string) {
   const ink = "#2C382C";
   const mute = "#3F463C";
-  const paper = hexLum(brand?.secondary_color || "") > 0.75 ? brand!.secondary_color : "#F6F1E8";
+  const paper = paperColor(brand);
   const accent = brand?.primary_color || "#3D5A40";
   const brandName = brand?.business_name || "";
   const title = fit(invite.name, 960, 52, 3);
@@ -309,6 +317,249 @@ export async function composeInvitePoster(projectId: string, invite: InviteCard,
     font: fonts.length
       ? { fontFiles: fonts, defaultFontFamily: path.parse(fonts[0]).name.replace(" Bold", "") }
       : undefined,
+  });
+  await writeStillFromPng(projectId, 1, renderer.render().asPng());
+  return stillFile(projectId, 1);
+}
+
+function wrapWords(text: string, maxChars: number) {
+  const words = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const pieces = word.length > maxChars ? word.match(new RegExp(`.{1,${maxChars}}`, "g")) || [word] : [word];
+    for (const piece of pieces) {
+      const next = current ? `${current} ${piece}` : piece;
+      if (next.length > maxChars && current) {
+        lines.push(current);
+        current = piece;
+      } else current = next;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function allLines(text: string, maxWidth: number, size: number) {
+  if (!text) return [] as string[];
+  const em = hasCyrillic(text) ? 0.62 : 0.54;
+  return wrapWords(text, Math.max(8, Math.floor(maxWidth / (size * em))));
+}
+
+function printable(value: unknown) {
+  return String(value || "")
+    .replace(/[\u2018\u2019\u201A\u2032]/g, "'")
+    .replace(/[\u201C\u201D\u2033]/g, '"')
+    .replace(/[\u2013\u2014\u2212]/g, "-")
+    .replace(/[·•◦▪●]/g, "-")
+    .replace(/[\u00A0\u202F]/g, " ")
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}\u{200B}]/gu, " ")
+    .replace(/[^\x20-\x7E\u00C0-\u024F\u0400-\u04FF\u0500-\u052FІіЇїЄєҐґ'".:,;!?()\-/]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function recoverPhrase(raw: string, brief: string) {
+  const text = printable(raw);
+  if (!text) return "";
+  const compact = text.replace(/\s+/g, "").toLowerCase();
+  const words = printable(brief).split(" ").filter(Boolean);
+  for (let i = 0; i < words.length; i += 1) {
+    for (let j = i + 1; j <= Math.min(words.length, i + 10); j += 1) {
+      const slice = words.slice(i, j).join(" ");
+      if (slice.replace(/\s+/g, "").toLowerCase() === compact) return slice;
+    }
+  }
+  return unfuse(text);
+}
+
+function unfuse(text: string) {
+  return text
+    .replace(/PAUSEFOR/gi, "PAUSE FOR")
+    .replace(/FORYOURSELF/gi, "FOR YOURSELF")
+    .replace(/TAKECARE/gi, "TAKE CARE")
+    .replace(/SELFCARE/gi, "SELF-CARE")
+    .replace(/WOMENET'?S|WOMEN'S/gi, "Women's")
+    .replace(/RETREATREAT/gi, "Retreat")
+    .replace(/LONDONO+N/gi, "London")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\b(PAUSE|CARE|TIME|DAY)(FOR|OF|TO|YOUR|SELF)/gi, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stackTitle(name: string) {
+  const words = unfuse(name).split(" ").filter(Boolean);
+  if (words.length <= 3) return words;
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > 12 && current) {
+      lines.push(current);
+      current = word;
+    } else current = next;
+  }
+  if (current) lines.push(current);
+  return lines.slice(0, 4);
+}
+
+function fontSetup(files: string[]) {
+  const named = files[0] ? path.parse(files[0]).name.replace(" Bold", "") : "Arial Unicode MS";
+  const family = /unicode/i.test(named) ? "Arial Unicode MS" : named;
+  return {
+    loadSystemFonts: true,
+    fontFiles: files,
+    defaultFontFamily: family,
+  };
+}
+
+function betterCopy(ai: string, guessed: string, brief: string) {
+  const fromBrief = recoverPhrase(ai, brief);
+  const g = printable(guessed);
+  const a = printable(fromBrief || ai);
+  if (!a) return g;
+  if (!g) return a;
+  const spaces = (value: string) => (value.match(/ /g) || []).length;
+  return spaces(g) >= spaces(a) ? g : a;
+}
+
+function mergeInvite(art: PosterArt, brief: string): InviteCard {
+  const guessed = guessInvite(brief);
+  const program = (guessed.program.length ? guessed.program : art.program || []).map((item) => ({
+    time: printable(item.time),
+    title: recoverPhrase(item.title, brief) || printable(item.title),
+    detail: recoverPhrase(item.detail, brief) || printable(item.detail),
+  }));
+  return {
+    name: unfuse(betterCopy(art.headline, guessed.name, brief) || guessed.name),
+    date: guessed.date,
+    time: guessed.time,
+    place: guessed.place,
+    address: guessed.address,
+    intro: guessed.intro || recoverPhrase((art.lines || [])[0] || "", brief),
+    closing: betterCopy(art.closing, guessed.closing, brief),
+    lines: (guessed.lines.length ? guessed.lines : art.lines || []).map((line) => recoverPhrase(line, brief)).filter(Boolean),
+    program: program.filter((item) => item.time || item.title).slice(0, 6),
+  };
+}
+
+function buildChatFlyer(invite: InviteCard, brand?: BrandKit | null, background = "", uk = false) {
+  const W = 1080;
+  const H = 1350;
+  const ink = "#2C382C";
+  const mute = "#4A5348";
+  const paper = "#F6F1E8";
+  const blush = "#F3E0E4";
+  const accent = brand?.primary_color && hexLum(brand.primary_color) < 0.7 ? brand.primary_color : "#3D5A40";
+  const programme = uk ? "У програмі" : "Programme";
+  const headline = unfuse(invite.name || (uk ? "Запрошення" : "You're invited"));
+  const titleLines = stackTitle(headline);
+  const titleSize = titleLines.length > 3 ? 42 : 56;
+  const tag = allLines(unfuse(invite.closing || (uk ? "Час для себе" : "Take care of yourself")), 280, 16);
+  const sub = unfuse(invite.lines[0] || "");
+  const subLines = allLines(sub, 430, 20);
+  const lede = allLines(unfuse(invite.intro), 430, 16);
+  const extra = invite.lines.slice(1, 4).map((line) => allLines(unfuse(line), 430, 16));
+
+  let leftY = 92 + titleLines.length * (titleSize + 6) + 36;
+  const subBlock = sub
+    ? `<rect x="48" y="${leftY - 28}" width="${Math.min(470, 48 + subLines[0].length * 11)}" height="${subLines.length * 28 + 28}" rx="18" fill="${blush}"/>
+       ${lineBlock(subLines, 68, leftY, 20, ink, 600)}`
+    : "";
+  if (sub) leftY += subLines.length * 28 + 36;
+  const introSvg = lineBlock(lede, 56, leftY, 16, mute, 500);
+  leftY += lede.length * 24 + 18;
+  const extraSvg = extra
+    .map((lines) => {
+      if (leftY + lines.length * 24 > 860) return "";
+      const svg = lineBlock(lines, 56, leftY, 16, mute, 500);
+      leftY += lines.length * 24 + 10;
+      return svg;
+    })
+    .join("");
+
+  const foot = [invite.date, [invite.place, invite.address].filter(Boolean).join(", "), invite.closing].filter(Boolean);
+  const footH = Math.max(56, 28 + foot.length * 22);
+  const contentBottom = H - footH - 24;
+  const programBottom = contentBottom - 8;
+
+  let itemY = 300;
+  const rawHeights = invite.program.map((item) => {
+    const names = allLines(item.title, 300, 17);
+    const details = allLines(item.detail, 300, 13);
+    return Math.max(78, 32 + names.length * 22 + details.length * 18);
+  });
+  const rawTotal = rawHeights.reduce((sum, h) => sum + h, 0);
+  const room = Math.max(120, programBottom - itemY);
+  const shrink = rawTotal > room ? room / rawTotal : 1;
+
+  const programSvg = invite.program
+    .map((item: InviteItem, index) => {
+      const names = allLines(unfuse(item.title), 300, shrink < 0.9 ? 14 : 17);
+      const details = allLines(unfuse(item.detail), 300, shrink < 0.9 ? 12 : 13);
+      const icon = programIcon(iconKind(item.title), 612, itemY + 16, ink);
+      const time = item.time
+        ? `<text x="682" y="${itemY + 2}" font-family="Arial Unicode MS, Arial, Georgia, sans-serif" font-size="14" font-weight="700" fill="${accent}">${escapeXml(item.time)}</text>`
+        : "";
+      const head = lineBlock(names, 682, itemY + 22, shrink < 0.9 ? 14 : 17, ink, 650);
+      const body = lineBlock(details, 682, itemY + 22 + names.length * 18, shrink < 0.9 ? 12 : 13, mute, 500);
+      itemY += rawHeights[index] * shrink;
+      return `${icon}${time}${head}${body}`;
+    })
+    .join("");
+
+  const footY = H - footH + 8;
+  const footSvg = foot
+    .map((line, index) => lineBlock(allLines(line, 960, 15), 56, footY + index * 22, 15, ink, 600))
+    .join("");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+  <rect width="${W}" height="${H}" fill="${paper}"/>
+  ${background ? `<image href="${background}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="xMidYMid slice"/><rect width="${W}" height="${H}" fill="${paper}" fill-opacity="0.38"/>` : ""}
+  ${ornaments(accent)}
+  ${lineBlock(titleLines, 56, 88, titleSize, ink, 650)}
+  ${lineBlock(tag, 1024, 88, 16, mute, 500, "end")}
+  ${subBlock}
+  ${introSvg}
+  ${extraSvg}
+  <text x="590" y="268" font-family="Arial Unicode MS, Arial, Georgia, sans-serif" font-size="20" font-weight="650" fill="${accent}">${escapeXml(programme)}</text>
+  ${programSvg}
+  ${footSvg}
+</svg>`;
+}
+
+export async function composeDesignedPoster(
+  projectId: string,
+  art: PosterArt,
+  brand?: BrandKit | null,
+  kind = "invite",
+  brief = ""
+) {
+  captureInviteBackground(projectId);
+  const bgPath = stillBgFile(projectId);
+  const live = stillFile(projectId, 1);
+  if (!fs.existsSync(bgPath) && fs.existsSync(live) && fs.statSync(live).size > 0) {
+    fs.copyFileSync(live, bgPath);
+  }
+  let background = "";
+  if (fs.existsSync(bgPath) && fs.statSync(bgPath).size > 0) {
+    background = `data:image/jpeg;base64,${fs.readFileSync(bgPath).toString("base64")}`;
+  }
+  const invite = mergeInvite(art, brief);
+  const uk = art.language === "uk" || hasCyrillic(invite.name, invite.intro, ...invite.lines);
+  const svg = kind === "invite" || invite.program.length >= 2 ? buildChatFlyer(invite, brand, background, uk) : buildCard(invite, brand, background);
+  const fonts = inviteFonts(
+    hasCyrillic(invite.name, invite.intro, invite.closing, invite.address, ...invite.lines, ...invite.program.flatMap((item) => [item.title, item.detail]))
+  );
+  const renderer = new Resvg(svg, {
+    fitTo: { mode: "width", value: 1080 },
+    font: fontSetup(fonts),
   });
   await writeStillFromPng(projectId, 1, renderer.render().asPng());
   return stillFile(projectId, 1);

@@ -5,7 +5,7 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || "dev-secret-change-me",
   openaiKey: process.env.OPENAI_API_KEY || "",
   openaiModel: process.env.OPENAI_MODEL || "gpt-4o-mini",
-  openaiImageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
+  openaiImageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2.5-sunburst",
   openaiMaxInputChars: Number(process.env.OPENAI_MAX_INPUT_CHARS || 100000),
   stripeSecret: process.env.STRIPE_SECRET_KEY || "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",

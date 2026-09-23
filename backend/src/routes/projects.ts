@@ -56,7 +56,8 @@ projectsRouter.post("/", (req, res) => {
     res.status(400).json({ error: intent.error });
     return;
   }
-  const project = createProject(req.user!.id, type as (typeof FORMAT_TYPES)[number], parsed.text, intent.intent);
+  const useBrand = req.body?.useBrand !== false && req.body?.useBrand !== 0;
+  const project = createProject(req.user!.id, type as (typeof FORMAT_TYPES)[number], parsed.text, intent.intent, useBrand);
   res.status(201).json({ project: serializeProject(project) });
 });
 
@@ -151,16 +152,31 @@ projectsRouter.patch("/:id", (req, res) => {
     res.status(404).json({ error: "Project not found." });
     return;
   }
-  const parsed = readPrompt(req.body?.prompt);
-  if ("error" in parsed) {
-    res.status(400).json({ error: parsed.error });
+  const hasPrompt = req.body?.prompt != null;
+  const hasBrand = req.body?.useBrand != null;
+  if (!hasPrompt && !hasBrand) {
+    res.status(400).json({ error: "Tell us what you want to create — a sentence is enough, more is fine." });
     return;
   }
-  db.prepare("UPDATE projects SET prompt = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?").run(
-    parsed.text,
-    id,
-    req.user!.id
-  );
+  if (hasPrompt) {
+    const parsed = readPrompt(req.body?.prompt);
+    if ("error" in parsed) {
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+    db.prepare("UPDATE projects SET prompt = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?").run(
+      parsed.text,
+      id,
+      req.user!.id
+    );
+  }
+  if (hasBrand) {
+    db.prepare("UPDATE projects SET use_brand = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?").run(
+      req.body.useBrand === false || req.body.useBrand === 0 ? 0 : 1,
+      id,
+      req.user!.id
+    );
+  }
   const next = db.prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?").get(id, req.user!.id) as Record<string, unknown>;
   res.json({ project: serializeProject(next) });
 });

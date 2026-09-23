@@ -1,84 +1,76 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+import BrandToggle from "../components/BrandToggle";
+import { detectLocale, formatBrandHint, translate, useLocale } from "../i18n/locale";
 
-const FORMATS = [
-  { id: "video", emoji: "🎬", title: "Video", blurb: "A short film, decided for you.", ready: false },
-  { id: "instagram_reel", emoji: "📱", title: "Instagram Reel", blurb: "30 seconds, vertical, finished.", ready: true },
-  { id: "tiktok", emoji: "🎵", title: "TikTok", blurb: "Same studio, native pacing.", ready: true },
-  { id: "image_post", emoji: "🖼️", title: "Image / Post", blurb: "Still photos. No voice, no video.", ready: true },
-  { id: "advertisement", emoji: "📢", title: "Advertisement", blurb: "Coming after Reels.", ready: false },
-  { id: "social_post", emoji: "✍️", title: "Social media post", blurb: "Coming after Reels.", ready: false },
-];
-
-const EXAMPLES: Record<string, string> = {
-  instagram_reel: "Create a 30-second Reel about the best places to visit in London.",
-  tiktok: "Make a TikTok promoting my coffee shop’s morning ritual.",
+const FORMAT_IDS = ["video", "instagram_reel", "tiktok", "image_post", "advertisement", "social_post"] as const;
+const READY = new Set(["instagram_reel", "tiktok", "image_post"]);
+const EMOJI: Record<string, string> = {
+  video: "🎬",
+  instagram_reel: "📱",
+  tiktok: "🎵",
+  image_post: "🖼️",
+  advertisement: "📢",
+  social_post: "✍️",
 };
-
-const IMAGE_KINDS = [
-  {
-    id: "photo",
-    label: "Just a photo",
-    hint: "Say what should be in the picture — we’ll add a bit of life around it.",
-    example: "A quiet morning table at my café — steam, warm light, one empty chair.",
-  },
-  {
-    id: "invite",
-    label: "Invitation",
-    hint: "Write the event as you would send it. We keep your words and make interesting pictures from them.",
-    example: "Invite to Saturday 11am colour workshop at the salon. Friends welcome.",
-  },
-  {
-    id: "info",
-    label: "Information",
-    hint: "Say the fact — and anything else you want in the pictures.",
-    example: "We’re closed Monday 6 May. Back Tuesday 9am.",
-  },
-  {
-    id: "offer",
-    label: "Offer",
-    hint: "Say the offer — and the look, the place, who it’s for.",
-    example: "A warm photo post for my salon’s Tuesday walk-in offer.",
-  },
-] as const;
-
-const IMAGE_EXAMPLES = IMAGE_KINDS.map((kind) => kind.example);
+const KIND_IDS = ["photo", "invite", "info", "offer"] as const;
 
 export default function Home() {
   const nav = useNavigate();
+  const { t, te, locale } = useLocale();
   const [type, setType] = useState("instagram_reel");
   const [imageIntent, setImageIntent] = useState("photo");
-  const [prompt, setPrompt] = useState(EXAMPLES.instagram_reel);
+  const [prompt, setPrompt] = useState(() => translate(detectLocale(), "examples.instagram_reel"));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [kitHint, setKitHint] = useState("");
-  const selected = useMemo(() => FORMATS.find((f) => f.id === type), [type]);
-  const kind = IMAGE_KINDS.find((item) => item.id === imageIntent) || IMAGE_KINDS[0];
+  const [useBrand, setUseBrand] = useState(true);
   const isImage = type === "image_post";
+  const selectedReady = READY.has(type);
+  const selectedTitle = t(`formats.${type}.title`);
+  const kindHint = t(`kinds.${imageIntent}.hint`);
+
+  const examples = useMemo(
+    () => ({
+      instagram_reel: t("examples.instagram_reel"),
+      tiktok: t("examples.tiktok"),
+    }),
+    [t, locale]
+  );
+  const kindExamples = useMemo(
+    () => Object.fromEntries(KIND_IDS.map((id) => [id, t(`kinds.${id}.example`)])) as Record<string, string>,
+    [t, locale]
+  );
+
+  useEffect(() => {
+    const sample = isImage ? kindExamples[imageIntent] : examples[type as keyof typeof examples];
+    const samples = [...Object.values(examples), ...Object.values(kindExamples)];
+    if (sample && (samples.includes(prompt) || !prompt.trim())) setPrompt(sample);
+  }, [locale]); // keep the user's own brief when they switch language
 
   useEffect(() => {
     api
       .brand()
       .then((d) => {
         const progress = d.brandKit?.completeness;
-        setKitHint(progress && progress.percent < 70 ? progress.hint : "");
+        setKitHint(progress && progress.percent < 70 ? formatBrandHint(t, progress) : "");
       })
       .catch(() => setKitHint(""));
-  }, []);
+  }, [t, locale]);
 
   async function start() {
-    if (!selected?.ready) {
-      setError("This format is next. Start with a Reel, TikTok, or still images.");
+    if (!selectedReady) {
+      setError(t("home.formatBlocked"));
       return;
     }
     setBusy(true);
     setError("");
     try {
-      const { project } = await api.createProject(type, prompt, isImage ? imageIntent : undefined);
+      const { project } = await api.createProject(type, prompt, isImage ? imageIntent : undefined, useBrand);
       nav(`/app/studio/${project.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start.");
+      setError(err instanceof Error ? te(err.message) : t("home.fallback"));
     } finally {
       setBusy(false);
     }
@@ -86,87 +78,91 @@ export default function Home() {
 
   return (
     <div className="hero-home">
-      <p className="hint">The studio</p>
-      <h1 style={{ fontSize: "clamp(40px, 6vw, 64px)" }}>What do you want to create?</h1>
-      <p className="lede">
-        Pick a format. Write what you want. A sentence can be enough — but if the offer, the place or who it’s for
-        matters, say that too.
-      </p>
-      {kitHint && (
+      <p className="hint">{t("home.kicker")}</p>
+      <h1 style={{ fontSize: "clamp(40px, 6vw, 64px)" }}>{t("home.title")}</h1>
+      <p className="lede">{t("home.lede")}</p>
+      {kitHint && useBrand && (
         <p className="hint">
-          {kitHint}. <Link to="/app/brand">Open brand kit</Link>
+          {kitHint}. <Link to="/app/brand">{t("home.openKit")}</Link>
         </p>
       )}
 
       <div className="format-grid">
-        {FORMATS.map((format) => (
-          <button
-            key={format.id}
-            className={`format-card ${format.ready ? "" : "soon"} ${type === format.id ? "on" : ""}`}
-            onClick={() => {
-              setType(format.id);
-              setError("");
-              if (format.id === "image_post") {
-                setImageIntent("photo");
-                setPrompt(IMAGE_KINDS[0].example);
-                return;
-              }
-              setPrompt(EXAMPLES[format.id] || prompt);
-            }}
-            style={type === format.id && format.ready ? { borderColor: "var(--accent-2)" } : undefined}
-          >
-            <div className="emoji">{format.emoji}</div>
-            <div>
-              <h3>{format.title}</h3>
-              <p>{format.ready ? format.blurb : "Not in the first studio"}</p>
-            </div>
-          </button>
-        ))}
+        {FORMAT_IDS.map((id) => {
+          const ready = READY.has(id);
+          return (
+            <button
+              key={id}
+              className={`format-card ${ready ? "" : "soon"} ${type === id ? "on" : ""}`}
+              onClick={() => {
+                setType(id);
+                setError("");
+                if (id === "image_post") {
+                  setImageIntent("photo");
+                  setPrompt(kindExamples.photo);
+                  return;
+                }
+                setPrompt(examples[id as keyof typeof examples] || prompt);
+              }}
+              style={type === id && ready ? { borderColor: "var(--accent-2)" } : undefined}
+            >
+              <div className="emoji">{EMOJI[id]}</div>
+              <div>
+                <h3>{t(`formats.${id}.title`)}</h3>
+                <p>{ready ? t(`formats.${id}.blurb`) : t("home.soon")}</p>
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       {isImage && (
         <div className="image-kinds">
-          <p className="hint">What kind of post?</p>
+          <p className="hint">{t("home.kindAsk")}</p>
           <div className="choice-row kinds">
-            {IMAGE_KINDS.map((item) => (
+            {KIND_IDS.map((id) => (
               <button
-                key={item.id}
+                key={id}
                 type="button"
-                className={`choice ${imageIntent === item.id ? "on" : ""}`}
+                className={`choice ${imageIntent === id ? "on" : ""}`}
                 onClick={() => {
-                  setImageIntent(item.id);
-                  if (IMAGE_EXAMPLES.includes(prompt) || !prompt.trim()) {
-                    setPrompt(item.example);
+                  setImageIntent(id);
+                  if (Object.values(kindExamples).includes(prompt) || !prompt.trim()) {
+                    setPrompt(kindExamples[id]);
                   }
                 }}
               >
-                <b>{item.label}</b>
-                <span>{item.hint}</span>
+                <b>{t(`kinds.${id}.label`)}</b>
+                <span>{t(`kinds.${id}.hint`)}</span>
               </button>
             ))}
           </div>
         </div>
       )}
 
+      <BrandToggle
+        value={useBrand}
+        onChange={setUseBrand}
+        ask={t("home.useBrandAsk")}
+        onLabel={t("home.useBrand")}
+        onHint={t("home.useBrandHint")}
+        offLabel={t("home.skipBrand")}
+        offHint={t("home.skipBrandHint")}
+      />
+
       <div className="prompt-stage">
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           maxLength={2000}
-          placeholder={
-            isImage
-              ? kind.hint
-              : "Create a 30-second Reel about… Add the offer, the street, or who it’s for when a sentence isn’t enough."
-          }
+          placeholder={isImage ? kindHint : t("home.placeholderReel")}
         />
         <div className="row">
           <span className="hint">
-            {isImage
-              ? `${kind.hint} We send the whole brief to OpenAI and get one finished picture. 13 credits · Free starts with 200`
-              : "A sentence can be enough. Add more when you need to — offer, place, who it’s for (up to 2,000 characters). A Reel is 150 credits · image 13 · Free starts with 200"}
+            {isImage ? t("home.hintImage", { hint: kindHint }) : t("home.hintReel")}
           </span>
           <button className="btn accent" onClick={start} disabled={busy}>
-            {busy ? "Opening studio…" : `Continue with ${selected?.title}`}
+            {busy ? t("home.opening") : t("home.continue", { title: selectedTitle })}
           </button>
         </div>
         {error && <p className="err">{error}</p>}

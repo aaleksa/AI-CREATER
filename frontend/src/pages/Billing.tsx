@@ -1,13 +1,22 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, clearSession } from "../lib/api";
+import { useLocale } from "../i18n/locale";
 
-function gbp(pence: number) {
-  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(pence / 100);
+function gbp(amount: number, locale: string) {
+  return new Intl.NumberFormat(locale === "uk" ? "uk-UA" : "en-GB", { style: "currency", currency: "GBP" }).format(amount / 100);
 }
+
+const PLAN_DESC: Record<string, string> = {
+  free: "billing.planFree",
+  creator: "billing.planCreator",
+  pro: "billing.planPro",
+  business: "billing.planBusiness",
+};
 
 export default function Billing() {
   const nav = useNavigate();
+  const { t, te, locale } = useLocale();
   const [plans, setPlans] = useState<{ id: string; name: string; price_gbp: number; monthly_credits: number; description: string }[]>([]);
   const [packs, setPacks] = useState<{ id: string; credits: number; price_gbp: number; label: string }[]>([]);
   const [credits, setCredits] = useState<{
@@ -31,8 +40,8 @@ export default function Billing() {
   }
 
   useEffect(() => {
-    load().catch((e) => setMsg(e.message));
-  }, []);
+    load().catch((e) => setMsg(te(e.message)));
+  }, [te]);
 
   async function buy(body: { planId?: string; packId?: string }) {
     const { url, mode } = await api.checkout(body);
@@ -41,53 +50,60 @@ export default function Billing() {
       return;
     }
     await load();
-    setMsg("Credits added. Stripe keys are optional — studio mode grants them instantly.");
+    setMsg(t("billing.studioGrant"));
     window.dispatchEvent(new Event("auteur:refresh"));
   }
 
+  const econ = credits?.economics;
+
   return (
     <div>
-      <h1 className="page-title" style={{ fontSize: 48 }}>Credits</h1>
-      <p className="lede">
-        A finished Reel costs 150 credits. An Image / Post is 13 (idea 5 + one picture at 8). Prices stay frozen until we measure real AI cost.
-      </p>
+      <h1 className="page-title" style={{ fontSize: 48 }}>{t("billing.title")}</h1>
+      <p className="lede">{t("billing.lede")}</p>
       <div className="credits-pill" style={{ marginTop: 20 }}>
-        Balance <b>{credits?.balance?.credits ?? 0}</b>
+        {t("billing.balance")} <b>{credits?.balance?.credits ?? 0}</b>
       </div>
-      {credits?.economics && (
+      {econ && (
         <p className="hint" style={{ marginTop: 12 }}>
-          Your Reel is 150 credits. Estimated API cost to us
-          {credits.economics.readyReels
-            ? ` is £${credits.economics.costPerReadyReelGbp.toFixed(3)} per finished Reel`
-            : ""}
-          , including failed and regenerated calls — not a price you pay. Text £{credits.economics.actualCostGbp.text.toFixed(3)} ·
-          images £{credits.economics.actualCostGbp.image.toFixed(3)} · voice £{credits.economics.actualCostGbp.tts.toFixed(3)} ·
-          render £{credits.economics.actualCostGbp.render.toFixed(3)}.
+          {econ.readyReels
+            ? t("billing.econReady", {
+                per: econ.costPerReadyReelGbp.toFixed(3),
+                text: econ.actualCostGbp.text.toFixed(3),
+                image: econ.actualCostGbp.image.toFixed(3),
+                tts: econ.actualCostGbp.tts.toFixed(3),
+                render: econ.actualCostGbp.render.toFixed(3),
+              })
+            : t("billing.econNone", {
+                text: econ.actualCostGbp.text.toFixed(3),
+                image: econ.actualCostGbp.image.toFixed(3),
+                tts: econ.actualCostGbp.tts.toFixed(3),
+                render: econ.actualCostGbp.render.toFixed(3),
+              })}
         </p>
       )}
       {msg && <p className="hint">{msg}</p>}
 
       <div className="list" style={{ maxWidth: 640, marginTop: 24 }}>
         {[
-          ["Idea", 5],
-          ["Script", 10],
-          ["Visuals", 40],
-          ["Voice (with audio)", 30],
-          ["Captions", 10],
-          ["Create (mp4)", 55],
+          [t("billing.idea"), 5],
+          [t("billing.script"), 10],
+          [t("billing.visuals"), 40],
+          [t("billing.voice"), 30],
+          [t("billing.captions"), 10],
+          [t("billing.createMp4"), 55],
         ].map(([label, cost]) => (
           <div className="item" key={String(label)}>
             <span>{label}</span>
-            <span className="hint">{cost} credits</span>
+            <span className="hint">{t("billing.creditsN", { n: Number(cost) })}</span>
           </div>
         ))}
         <div className="item">
-          <span><b>Full Reel</b></span>
-          <span className="hint">150 credits</span>
+          <span><b>{t("billing.fullReel")}</b></span>
+          <span className="hint">{t("billing.creditsN", { n: 150 })}</span>
         </div>
         <div className="item">
-          <span><b>Image / Post</b> (photo, invitation, information, offer)</span>
-          <span className="hint">13 credits</span>
+          <span><b>{t("billing.imagePost")}</b></span>
+          <span className="hint">{t("billing.creditsN", { n: 13 })}</span>
         </div>
       </div>
 
@@ -95,33 +111,33 @@ export default function Billing() {
         {plans.map((plan) => (
           <div className={`plan ${plan.id === "creator" ? "featured" : ""}`} key={plan.id}>
             <h3>{plan.name}</h3>
-            <div className="price">{plan.price_gbp === 0 ? "£0" : gbp(plan.price_gbp)}</div>
-            <p className="hint">{plan.monthly_credits.toLocaleString()} credits / month</p>
-            <p>{plan.description}</p>
+            <div className="price">{plan.price_gbp === 0 ? "£0" : gbp(plan.price_gbp, locale)}</div>
+            <p className="hint">{t("billing.perMonth", { n: plan.monthly_credits.toLocaleString(locale === "uk" ? "uk-UA" : "en-GB") })}</p>
+            <p>{PLAN_DESC[plan.id] ? t(PLAN_DESC[plan.id]) : plan.description}</p>
             {plan.id !== "free" && (
               <button className="btn" style={{ marginTop: 16 }} onClick={() => buy({ planId: plan.id })}>
-                Choose {plan.name}
+                {t("billing.choose", { name: plan.name })}
               </button>
             )}
           </div>
         ))}
       </div>
 
-      <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>Buy credits</h2>
-      <p className="hint">A pack is cheaper per Reel than a subscription. Subscribe if you publish every week; buy a pack if you only make a few.</p>
+      <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>{t("billing.buyTitle")}</h2>
+      <p className="hint">{t("billing.buyHint")}</p>
       <div className="list" style={{ maxWidth: 640, marginTop: 12 }}>
         {packs.map((pack) => (
           <div className="item" key={pack.id}>
-            <span>{pack.label}</span>
+            <span>{t("billing.pack", { n: pack.credits.toLocaleString(locale === "uk" ? "uk-UA" : "en-GB") })}</span>
             <button className="btn ghost" onClick={() => buy({ packId: pack.id })}>
-              {gbp(pack.price_gbp)}
+              {gbp(pack.price_gbp, locale)}
             </button>
           </div>
         ))}
       </div>
 
-      <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>Each AI request</h2>
-      <p className="hint">Provider, model, credits spent, and our actual cost — so you can see what a Reel really costs us.</p>
+      <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>{t("billing.eachTitle")}</h2>
+      <p className="hint">{t("billing.eachHint")}</p>
       <div className="list" style={{ marginTop: 12 }}>
         {(credits?.generations || []).map((g) => (
           <div className="item" key={g.id}>
@@ -133,26 +149,26 @@ export default function Billing() {
             </span>
           </div>
         ))}
-        {!credits?.generations?.length && <p className="empty">No generations yet.</p>}
+        {!credits?.generations?.length && <p className="empty">{t("billing.emptyGen")}</p>}
       </div>
 
-      <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>Account</h2>
-      <p className="hint">Deletes your Reels, brand kit, credits and email from this studio. This cannot be undone.</p>
+      <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>{t("billing.account")}</h2>
+      <p className="hint">{t("billing.deleteHint")}</p>
       <button
         className="btn ghost"
         style={{ marginTop: 12 }}
         onClick={async () => {
-          if (!window.confirm("Delete your Auteur account and all Reels on this studio?")) return;
+          if (!window.confirm(t("billing.deleteConfirm"))) return;
           try {
             await api.deleteAccount();
             clearSession();
             nav("/");
           } catch (err) {
-            setMsg(err instanceof Error ? err.message : "Could not delete the account.");
+            setMsg(err instanceof Error ? te(err.message) : t("billing.deleteFail"));
           }
         }}
       >
-        Delete my account
+        {t("billing.delete")}
       </button>
     </div>
   );

@@ -1,4 +1,21 @@
 import { Component, type ReactNode } from "react";
+import { useLocale } from "../i18n/locale";
+
+function Crash({ message }: { message: string }) {
+  const { t, te } = useLocale();
+  return (
+    <div style={{ padding: 40, maxWidth: 520 }}>
+      <p className="hint">{t("crash.hint")}</p>
+      <h1 className="page-title" style={{ fontSize: 36 }}>
+        {te(message) || t("crash.broke")}
+      </h1>
+      <p className="lede">{t("crash.lede")}</p>
+      <a className="btn accent" href="/app">
+        {t("crash.back")}
+      </a>
+    </div>
+  );
+}
 
 export default class ScreenError extends Component<{ children: ReactNode }, { message: string }> {
   state = { message: "" };
@@ -9,17 +26,6 @@ export default class ScreenError extends Component<{ children: ReactNode }, { me
 
   render() {
     if (!this.state.message) return this.props.children;
-    return (
-      <div style={{ padding: 40, maxWidth: 520 }}>
-        <p className="hint">The studio hit a problem.</p>
-        <h1 className="page-title" style={{ fontSize: 36 }}>
-          {this.state.message}
-        </h1>
-        <p className="lede">Refresh the page. If it stays blank, go back to Create.</p>
-        <a className="btn accent" href="/app">
-          Back to Create
-        </a>
-      </div>
-    );
+    return <Crash message={this.state.message} />;
   }
 }

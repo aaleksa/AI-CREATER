@@ -1,3 +1,5 @@
+import { currentLocale, translateError } from "../i18n/locale";
+
 const TOKEN = "auteur.token";
 
 export type User = { id: string; email: string; name: string };
@@ -28,7 +30,7 @@ export type BrandKitRow = Record<string, string> & {
   learned_lines?: string[];
   ready?: boolean;
   ready_projects?: number;
-  completeness?: { percent: number; hint: string };
+  completeness?: { percent: number; hint: string; nextKey?: string };
   tone_note?: string;
   vertical_note?: string;
 };
@@ -67,6 +69,7 @@ export type Project = {
   type: string;
   prompt: string;
   imageIntent?: string;
+  useBrand?: boolean;
   invite?: InviteCard | null;
   status: string;
   currentStep: string;
@@ -98,23 +101,30 @@ export type Project = {
 };
 export type StepVersion<T> = { id: string; accepted: boolean; createdAt: string; payload: T | null };
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+function localeHeaders(extra?: HeadersInit): HeadersInit {
   const token = localStorage.getItem(TOKEN);
+  const locale = currentLocale();
+  return {
+    "Content-Type": "application/json",
+    "Accept-Language": locale === "uk" ? "uk" : "en",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(extra || {}),
+  };
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const locale = currentLocale();
   let res: Response;
   try {
     res = await fetch(path, {
       ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(init?.headers || {}),
-      },
+      headers: localeHeaders(init?.headers),
     });
   } catch {
-    throw new ApiError("Studio is offline. Start the API and try again.", 503);
+    throw new ApiError(translateError(locale, "Studio is offline. Start the API and try again."), 503);
   }
   const data = (await res.json().catch(() => ({}))) as { error?: string };
-  if (!res.ok) throw new ApiError(data.error || "Request failed", res.status);
+  if (!res.ok) throw new ApiError(translateError(locale, data.error || "Request failed"), res.status);
   return data as T;
 }
 
@@ -126,10 +136,12 @@ export const api = {
   me: () => request<Me>("/auth/me"),
   projects: () => request<{ projects: Project[]; fullVideoCost: number }>("/projects"),
   project: (id: string) => request<{ project: Project; costs: Record<string, number>; fullVideoCost: number }>(`/projects/${id}`),
-  createProject: (type: string, prompt: string, imageIntent?: string) =>
-    request<{ project: Project }>("/projects", { method: "POST", body: JSON.stringify({ type, prompt, imageIntent }) }),
+  createProject: (type: string, prompt: string, imageIntent?: string, useBrand = true) =>
+    request<{ project: Project }>("/projects", { method: "POST", body: JSON.stringify({ type, prompt, imageIntent, useBrand }) }),
   updatePrompt: (id: string, prompt: string) =>
     request<{ project: Project }>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify({ prompt }) }),
+  updateUseBrand: (id: string, useBrand: boolean) =>
+    request<{ project: Project }>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify({ useBrand }) }),
   updateInvite: (id: string, invite: InviteCard) =>
     request<{ project: Project }>(`/projects/${id}/invite`, { method: "PATCH", body: JSON.stringify({ invite }) }),
   runStep: (
@@ -169,6 +181,7 @@ export const api = {
     request<{ brandKit: BrandKitRow }>("/brand", { method: "PUT", body: JSON.stringify(body) }),
   uploadLogo: (image: string) =>
     request<{ brandKit: BrandKitRow }>("/brand/logo", { method: "POST", body: JSON.stringify({ image }) }),
+  deleteLogo: () => request<{ brandKit: BrandKitRow }>("/brand/logo", { method: "DELETE" }),
   resetLearning: () => request<{ brandKit: BrandKitRow }>("/brand/learning/reset", { method: "POST" }),
   plans: () =>
     request<{
@@ -209,8 +222,14 @@ export function refreshMe() {
 }
 
 export async function fetchMedia(path: string) {
+  const locale = currentLocale();
   const token = localStorage.getItem(TOKEN);
-  const res = await fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-  if (!res.ok) throw new ApiError("File not ready", res.status);
+  const res = await fetch(path, {
+    headers: {
+      "Accept-Language": locale === "uk" ? "uk" : "en",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!res.ok) throw new ApiError(translateError(locale, "File not ready"), res.status);
   return res.blob();
 }

@@ -3,7 +3,7 @@
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
 **Версія документа:** 1.13  
-**Мова інтерфейсу першої версії:** English  
+**Мова інтерфейсу:** English і українська (перемикач EN / УК, зберігається в браузері)  
 **Валюта:** GBP (£)
 
 Документ фіксує: продуктову рамку, **зафіксовані технічні рішення MVP** (§1.4), **що вже є в коді**, етап **закритої бети** окремо від публічного запуску, і як розширювати далі.
@@ -235,15 +235,15 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 
 ### 4.1 Вимоги до екранів
 
-**Landing.** Заголовок-обіцянка, CTA «Create a Reel». Поки немає mp4 — не показувати як готовий продукт. Коли файл є: **закрита бета за інвайтом**, публічний лендінг — окремий етап (§1.5). Copy не зменшувати до «сторіборда».
+**Landing.** Заголовок-обіцянка, CTA «Create a Reel». Поки немає mp4 — не показувати як готовий продукт. Коли файл є: **закрита бета за інвайтом**, публічний лендінг — окремий етап (§1.5). Copy не зменшувати до «сторіборда». Перемикач **EN / УК** на лендінгу, auth і в сайдбарі; вибір у `localStorage` (`auteur.lang`). Бриф і відповідь AI лишаються мовою запиту.
 
 **Auth.** Ім’я (тільки signup), email, пароль. Помилки зрозумілою мовою.
 
-**Create.** Сітка 6 форматів. Reel / TikTok / Image Post — активні. Video, Ad, Social — «soon». Промпт — від 8 до 2 000 символів. Copy: речення може вистачити; якщо ні — офер, місце, для кого. Reel 150 cr · Image / Post 13 cr.
+**Create.** Сітка 6 форматів. Reel / TikTok / Image Post — активні. Video, Ad, Social — «soon». Промпт — від 8 до 2 000 символів. Copy: речення може вистачити; якщо ні — офер, місце, для кого. Reel 150 cr · Image / Post 13 cr. Перемикач **Use brand kit / Ignore** (`use_brand`, дефолт так): без бренду ідея й картинки йдуть лише з брифу. Те саме в студії — regenerate, щоб застосувати.
 
 **Studio.** Reel/TikTok: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: квадратний прев’ю 1:1, кроки Idea → Pictures, без Voice/Captions/Create. Бриф зверху — textarea, `Save brief` (PATCH, 0 credits); щоб застосувати — regenerate idea. Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб кнопка лишається: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі: бейдж *Couldn’t generate — regenerate this picture (8cr)*. Після Create (Reel) — Download mp4; після Pictures — Download JPG. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
 
-**Brand Kit.** Дві групи: *How it looks & sounds* (кольори, шрифт, тон-чипси + optional note) і *About your business* (ім’я, **upload лого**, vertical, сайт, Instagram) — друге опційне. Vertical: salon / café / fitness / **other** + вільний текст; мікрокопі: лише каркас сцен, не обов’язково. Жива прев’ю-картка (CSS, 0 AI). Індикатор «Brand kit N% complete — …». Learned-картка зверху + **Reset learning** (одразу перераховує з готової історії, не чекає 3 нові Reels). Лого: `POST /brand/logo` — **max 2 MB, лише `image/png` / `image/jpeg`**, SVG заборонено; `GET /brand/logo` віддає файл з `Content-Type` png/jpeg і `X-Content-Type-Options: nosniff`, ніколи `image/svg+xml`, у UI лише `<img>`. Невалідний hex не ламає picker. Disclaimer про знаки.
+**Brand Kit.** Дві групи: *How it looks & sounds* (кольори, шрифт, тон-чипси + optional note) і *About your business* (ім’я, **upload лого**, vertical, сайт, Instagram) — друге опційне. Vertical: salon / café / fitness / **other** + вільний текст; мікрокопі: лише каркас сцен, не обов’язково. Жива прев’ю-картка (CSS, 0 AI). Індикатор «Brand kit N% complete — …». Learned-картка зверху + **Reset learning** (одразу перераховує з готової історії, не чекає 3 нові Reels). Лого: `POST /brand/logo` — **max 2 MB, лише `image/png` / `image/jpeg`**, SVG заборонено; `DELETE /brand/logo` стирає файл; `GET /brand/logo` віддає файл з `Content-Type` png/jpeg і `X-Content-Type-Options: nosniff`, ніколи `image/svg+xml`, у UI лише `<img>`. Невалідний hex не ламає picker. Disclaimer про знаки.
 
 **Billing.** 4 плани, 3 пакети, таблиця вартості кроків (150 = повний Reel, 13 = Image / Post), історія generation. Користувач бачить credits_used і орієнтовну £. Планові £/міс підписати **FROZEN**, доки бета не дасть логи TTS+рендеру.
 
@@ -607,7 +607,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 { "regenerate": true, "sceneId": 3, "feedbackReason": "wrong_colors", "feedbackNote": "хочемо тепліші тони" }
 ```
 
-`feedbackReason` необов’язковий. Якщо є — перед регенерацією рядок у `step_feedback` і `rejection_reason` на попередній версії. Окремий ендпоінт не потрібен.
+`feedbackReason` необов’язковий. Якщо є — перед регенерацією рядок у `step_feedback` і `rejection_reason` на попередній версії, **і той самий текст іде в промпт наступної генерації** (картинка / ідея / сценарій: «вони відхилили попереднє, не повторюй»). Окремий ендпоінт не потрібен.
 
 ### 6.12 Публічний preview-лінк (не шедулер, не соцмережа)
 
@@ -619,7 +619,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 - `GET /projects/:id/preview?token=` — той самий JSON без auth.
 - Не постійний Download URL і не S3. Після TTL — 404. Кнопка в студії: *Share a preview*.
 
-Порівняння версій Idea/Script/**Visuals**: `GET` проєкту віддає дві останні в `versions`; `POST /projects/:id/versions/{idea|script|visuals}/:versionId/restore` ставить обрану `accepted=1`, **0 credits**. Idea/script — каскад як regenerate. Visuals — за `{ sceneId }` відкочує один кадр з файлового знімка `still-{sceneId}-{versionId}.jpg` (mp4 скидається). Image / Post після другої Pictures показує обидві картинки; `GET /projects/:id/image/:sceneId/versions/:versionId` віддає знімок.
+Порівняння версій Idea/Script/**Visuals**: `GET` проєкту віддає **усі** знімки кроку в `versions`; `POST /projects/:id/versions/{idea|script|visuals}/:versionId/restore` ставить обрану `accepted=1`, **0 credits**. Idea/script — каскад як regenerate. Visuals — за `{ sceneId }` відкочує один кадр з файлового знімка `still-{sceneId}-{versionId}.jpg` (mp4 скидається). Image / Post показує всі takes; `GET /projects/:id/image/:sceneId/versions/:versionId` віддає знімок.
 
 ---
 
@@ -657,6 +657,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | GET | `/brand` | так | `{ brandKit }` + completeness + learned_lines |
 | PUT | `/brand` | так | зберегти kit |
 | POST | `/brand/logo` | так | `{ image: data-url }` → файл у `data/media/brand/{userId}`; **≤2 MB, лише PNG/JPEG** (перевірка magic bytes); SVG/WebP → 400 |
+| DELETE | `/brand/logo` | так | стерти файл і `logo_url` |
 | GET | `/brand/logo` | так | файл лого як `<img>`; `Content-Type` png/jpeg, не `image/svg+xml` |
 | POST | `/brand/learning/reset` | так | стерти і **одразу перерахувати** `learned_summary_json` з історії |
 | GET | `/billing/plans` | ні | плани + packs (**провізорні**) |

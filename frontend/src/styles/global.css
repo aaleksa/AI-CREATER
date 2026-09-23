@@ -70,6 +70,27 @@ button { cursor: pointer; }
   color: var(--muted);
 }
 .nav a.active, .nav a:hover { background: rgba(244,239,232,.06); color: var(--ink); }
+.lang-switch {
+  display: inline-flex;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px;
+}
+.lang-switch button {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.lang-switch button.on {
+  background: rgba(244, 239, 232, 0.08);
+  color: var(--ink);
+}
+.lang-switch.compact { margin-bottom: 12px; }
 .side-foot { margin-top: auto; font-size: 13px; color: var(--muted); }
 .side-foot button.ghost-link {
   background: none;
@@ -205,9 +226,18 @@ button { cursor: pointer; }
   aspect-ratio: 1 / 1;
   max-width: 360px;
 }
-.phone.post.invite { aspect-ratio: 4 / 5; max-width: 320px; }
+.phone.post.invite,
+.phone.post.poster {
+  aspect-ratio: 2 / 3;
+  max-width: 320px;
+}
 .phone.post.invite .phone-frame,
-.phone.post.poster .phone-frame { animation: none; }
+.phone.post.poster .phone-frame {
+  animation: none;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
 .invite-fields { margin-top: 16px; }
 .invite-fields .field { margin-bottom: 10px; }
 .invite-fields textarea { min-height: 96px; resize: vertical; }
@@ -275,7 +305,7 @@ button { cursor: pointer; }
 .ok { color: var(--ok); }
 .brand-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
   gap: 24px;
   margin-top: 28px;
   align-items: start;
@@ -287,12 +317,51 @@ button { cursor: pointer; }
   box-shadow: var(--shadow);
 }
 .brand-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  border-radius: 10px;
+  background: #fff;
+  display: block;
+}
+.logo-pick {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.logo-pick-thumb {
   width: 56px;
   height: 56px;
   object-fit: contain;
   border-radius: 10px;
   background: #fff;
-  display: block;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+.preview-swatches {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.preview-swatches span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.preview-swatches i {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-block;
 }
 .choice-row {
   display: grid;
@@ -313,6 +382,8 @@ button { cursor: pointer; }
 .choice-row.kinds { grid-template-columns: repeat(4, 1fr); margin-top: 10px; }
 .choice-row.kinds .choice span { color: var(--muted); font-size: 12px; line-height: 1.35; }
 .image-kinds { margin: 8px 0 4px; }
+.brand-toggle { margin: 16px 0 8px; max-width: 720px; }
+.brand-toggle .choice span { color: var(--muted); font-size: 12px; line-height: 1.35; }
 @media (max-width: 900px) {
   .choice-row.kinds { grid-template-columns: 1fr 1fr; }
 }
@@ -321,7 +392,7 @@ button { cursor: pointer; }
 }
 .compare-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 10px;
   margin-top: 10px;
 }
@@ -347,6 +418,10 @@ button { cursor: pointer; }
   object-fit: cover;
   border-radius: 10px;
   background: #1a1612;
+}
+.compare-still.poster {
+  aspect-ratio: 2 / 3;
+  object-fit: contain;
 }
 @media (max-width: 700px) {
   .compare-grid { grid-template-columns: 1fr; }

@@ -10,6 +10,7 @@ import {
   generateVisuals,
   generateVoice,
   generateOneVisual,
+  regenInstruction,
   stillPicturePrompt,
   type BrandKit,
   type CaptionCue,
@@ -60,7 +61,7 @@ export function readCreateImageIntent(type: string, raw: unknown): { intent: Ima
   return { error: "Choose photo, invitation, information or offer." };
 }
 
-function imageCarousel(prompt: string, idea: Idea, intent: ImageIntent | "" = "photo"): Script {
+function imageCarousel(prompt: string, idea: Idea, intent: ImageIntent | "" = "photo", feedback?: { reason?: string; note?: string }): Script {
   const kind = intent || "photo";
   return {
     durationSec: 0,
@@ -71,7 +72,7 @@ function imageCarousel(prompt: string, idea: Idea, intent: ImageIntent | "" = "p
         time: "Picture",
         onScreen: "Finished picture",
         voiceover: "",
-        visualPrompt: stillPicturePrompt(prompt, idea, "one finished picture from the whole brief", 1, 1, kind),
+        visualPrompt: stillPicturePrompt(prompt, idea, "one finished picture from the whole brief", 1, 1, kind, feedback),
       },
     ],
   };
@@ -219,12 +220,10 @@ function lastVersions(projectId: string, step: string) {
   const rows = db
     .prepare(
       `SELECT id, payload_json, accepted, created_at FROM project_step_versions
-       WHERE project_id = ? AND step = ? ORDER BY created_at DESC LIMIT 2`
+       WHERE project_id = ? AND step = ? ORDER BY created_at ASC`
     )
     .all(projectId, step) as { id: string; payload_json: string; accepted: number; created_at: string }[];
   return rows
-    .slice()
-    .reverse()
     .map((row) => ({
       id: row.id,
       accepted: Number(row.accepted) === 1,
@@ -248,6 +247,7 @@ export function serializeProject(row: Record<string, unknown>) {
     type: row.type,
     prompt: row.prompt,
     imageIntent: row.image_intent || "",
+    useBrand: Number(row.use_brand) !== 0,
     invite: row.invite_json ? parseInvite(parse(row.invite_json)) : null,
     status: running ? "generating" : row.status,
     currentStep: row.current_step,
@@ -377,12 +377,18 @@ export function saveFeedback(userId: string, projectId: string, publishable: str
   return serializeProject(getProject(projectId, userId));
 }
 
-export function createProject(userId: string, type: FormatType, prompt: string, imageIntent: ImageIntent | "" = "") {
+export function createProject(
+  userId: string,
+  type: FormatType,
+  prompt: string,
+  imageIntent: ImageIntent | "" = "",
+  useBrand = true
+) {
   const id = uuid();
   db.prepare(
-    `INSERT INTO projects (id, user_id, type, prompt, image_intent, status, current_step)
-     VALUES (?, ?, ?, ?, ?, 'draft', 'prompt')`
-  ).run(id, userId, type, prompt, imageIntent);
+    `INSERT INTO projects (id, user_id, type, prompt, image_intent, use_brand, status, current_step)
+     VALUES (?, ?, ?, ?, ?, ?, 'draft', 'prompt')`
+  ).run(id, userId, type, prompt, imageIntent, useBrand ? 1 : 0);
   return getProject(id, userId);
 }
 
@@ -399,7 +405,7 @@ export async function runStep(
   } = {}
 ) {
   const project = getProject(projectId, userId);
-  const brand = brandFor(userId);
+  const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
   const sceneId = Number.isFinite(opts.sceneId) ? Number(opts.sceneId) : undefined;
   if (sceneId && step !== "visuals") {
     throw Object.assign(new Error("Only visuals can regenerate a single frame."), { status: 400 });
@@ -465,7 +471,7 @@ export async function runStep(
   if ((step === "visuals" || step === "voice" || step === "captions" || step === "render") && !script && !isImagePost(type)) {
     throw Object.assign(new Error("Generate the script first."), { status: 400 });
   }
-  const imageScript = isImagePost(type) && idea ? imageCarousel(prompt, idea, imageIntent) : script;
+  const imageScript = isImagePost(type) && idea ? imageCarousel(prompt, idea, imageIntent, feedback) : script;
   if (step === "visuals" && sceneId && imageScript && !imageScript.scenes.find((item) => item.id === sceneId)) {
     throw Object.assign(new Error("Unknown scene."), { status: 400 });
   }
@@ -527,7 +533,7 @@ export async function runStep(
 
     if (step === "idea") {
       providerTouched = true;
-      const result = await generateIdea(prompt, type, brand, imageIntent);
+      const result = await generateIdea(prompt, type, brand, imageIntent, feedback);
       updates.idea_json = JSON.stringify(pickIdea(result.data));
       if (isInvitePoster(type, imageIntent)) {
         updates.invite_json = JSON.stringify(preferBriefInvite(result.data.invite, prompt, "invite"));
@@ -538,7 +544,7 @@ export async function runStep(
       actualCost = result.cost;
     } else if (step === "script" && idea) {
       providerTouched = true;
-      const result = await generateScript(prompt, idea, brand);
+      const result = await generateScript(prompt, idea, brand, feedback);
       updates.script_json = JSON.stringify(result.data);
       updates.current_step = "script";
       provider = result.provider;
@@ -546,7 +552,14 @@ export async function runStep(
       actualCost = result.cost;
     } else if (step === "visuals" && imageScript) {
       providerTouched = true;
-      const kind = isImagePost(type) ? "still" : "video";
+      const poster = isImagePost(type) && isTextPoster(type, imageIntent || "photo");
+      const kind = poster ? "poster" : isImagePost(type) ? "still" : "video";
+      const avoid = regenInstruction(feedback);
+      if (avoid) {
+        for (const scene of imageScript.scenes) {
+          if (!scene.visualPrompt.includes(avoid)) scene.visualPrompt = `${scene.visualPrompt} ${avoid}`;
+        }
+      }
       if (isImagePost(type)) {
         updates.script_json = JSON.stringify(imageScript);
       }

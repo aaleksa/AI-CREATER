@@ -1,23 +1,24 @@
 import { Link } from "react-router-dom";
+import LanguageSwitch from "../components/LanguageSwitch";
+import { useLocale } from "../i18n/locale";
 
 export default function Landing() {
+  const { t } = useLocale();
   return (
     <div className="landing">
       <header className="topbar">
         <div className="brand">Aut<span>eur</span></div>
         <div className="row">
-          <Link to="/login" className="btn ghost">Sign in</Link>
-          <Link to="/signup" className="btn">Start creating</Link>
+          <LanguageSwitch />
+          <Link to="/login" className="btn ghost">{t("landing.signIn")}</Link>
+          <Link to="/signup" className="btn">{t("landing.start")}</Link>
         </div>
       </header>
-      <h1>Tell us what you want to create. We’ll do the rest.</h1>
-      <p className="lede">
-        You run a salon, café or gym. Write what you want — a sentence can be enough,
-        but add the offer, the street or who it’s for when one line isn’t. Auteur finishes a 30-second Reel or still photos you can post.
-      </p>
-      <Link to="/signup" className="btn accent">Create a Reel</Link>
+      <h1>{t("landing.headline")}</h1>
+      <p className="lede">{t("landing.lede")}</p>
+      <Link to="/signup" className="btn accent">{t("landing.cta")}</Link>
       <p className="hint" style={{ marginTop: 28 }}>
-        First studio: Instagram Reels, TikTok, and still images. Ads and YouTube come next.
+        {t("landing.hint")}
       </p>
     </div>
   );
