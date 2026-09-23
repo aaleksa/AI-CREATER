@@ -548,7 +548,11 @@ export async function generateIdea(
         ? "Format: still Instagram images. OpenAI gets the whole brief and returns a finished picture. We do not assemble pieces afterwards."
         : "Format: vertical short-form video unless told otherwise."
     }${kindGuide ? `\n${kindGuide}` : ""}\n${brandContext(brand)}`,
-    `Content type: ${type}${imageIntent ? `\nImage kind: ${imageIntent}` : ""}\nUser request: ${prompt}${
+    `Content type: ${
+      type === "tiktok" || type.includes("reel")
+        ? "short vertical video (Instagram or TikTok — same 30-second file)"
+        : type
+    }${imageIntent ? `\nImage kind: ${imageIntent}` : ""}\nUser request: ${prompt}${
       regenInstruction(feedback) ? `\n${regenInstruction(feedback)}` : ""
     }\nReturn JSON with keys: ${keys}.${
       imageIntent === "invite"

@@ -14,8 +14,8 @@ export const ERROR_UK: Record<string, string> = {
     "Скажіть, що хочете створити — речення досить, більше теж добре.",
   "That’s too long. Keep it under 2,000 characters.": "Задовго. До 2 000 символів.",
   "Unknown format.": "Невідомий формат.",
-  "This format is next. Start with a Reel, TikTok, or still images.":
-    "Цей формат буде далі. Почніть з Reel, TikTok або картинки.",
+  "This format is next. Start with a short video or still images.":
+    "Цей формат буде далі. Почніть з короткого відео або картинки.",
   "Choose photo, invitation, information or offer.": "Оберіть фото, запрошення, інформацію або офер.",
   "Project not found.": "Проєкт не знайдено.",
   "Could not delete this.": "Не вдалося видалити.",

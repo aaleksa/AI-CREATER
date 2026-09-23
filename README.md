@@ -6,9 +6,9 @@ Auteur is not a Canva clone. It is a simple AI content studio: the user never ch
 
 UI: **English and Ukrainian** (EN / УК, stored in the browser). The brief stays in the language they wrote.
 
-Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.14).
+Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.15).
 
-The first studio is **Instagram Reels, TikTok, and still Image / Posts**. A Reel is 150 credits; a still post is 13 (idea + one picture). Ads and YouTube stay later.
+The first studio is **one short video** (30 seconds, Instagram or TikTok — same file) and still **Image / Posts**. A video is 150 credits; a still post is 13 (idea + one picture). Ads and YouTube stay later.
 
 ## Product
 
@@ -16,7 +16,7 @@ The first studio is **Instagram Reels, TikTok, and still Image / Posts**. A Reel
 | --- | --- |
 | Landing | Promise, not a tool list. Language switch. |
 | Sign up / Sign in | Account + **200** free credits |
-| Create | Format, optional photo / invite / info / offer, brand on/off, saved briefs to insert |
+| Create | Short video or Image, optional photo / invite / info / offer, brand on/off, saved briefs to insert |
 | Studio | Reel: six steps. Image: Idea → Pictures. Brief, copy brief, brand chips |
 | Brand kit | Logo (optional), colours, font, tone, niche, Instagram |
 | Credits | Plans, extra packs, real AI cost log |

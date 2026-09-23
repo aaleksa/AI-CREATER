@@ -47,7 +47,7 @@ projectsRouter.post("/", (req, res) => {
   }
   if (!MVP_READY.includes(type as (typeof FORMAT_TYPES)[number])) {
     res.status(400).json({
-      error: "This format is next. Start with a Reel, TikTok, or still images.",
+      error: "This format is next. Start with a short video or still images.",
     });
     return;
   }

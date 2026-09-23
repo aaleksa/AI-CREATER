@@ -4,12 +4,11 @@ import { api, type BrandKitRow, type Project } from "../lib/api";
 import BrandToggle from "../components/BrandToggle";
 import { detectLocale, translate, useLocale } from "../i18n/locale";
 
-const FORMAT_IDS = ["video", "instagram_reel", "tiktok", "image_post", "advertisement", "social_post"] as const;
-const READY = new Set(["instagram_reel", "tiktok", "image_post"]);
+const FORMAT_IDS = ["video", "instagram_reel", "image_post", "advertisement", "social_post"] as const;
+const READY = new Set(["instagram_reel", "image_post"]);
 const EMOJI: Record<string, string> = {
   video: "🎬",
   instagram_reel: "📱",
-  tiktok: "🎵",
   image_post: "🖼️",
   advertisement: "📢",
   social_post: "✍️",
@@ -35,7 +34,6 @@ export default function Home() {
   const examples = useMemo(
     () => ({
       instagram_reel: t("examples.instagram_reel"),
-      tiktok: t("examples.tiktok"),
     }),
     [t, locale]
   );

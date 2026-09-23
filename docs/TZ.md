@@ -2,7 +2,7 @@
 
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
-**Версія документа:** 1.14  
+**Версія документа:** 1.15  
 **Мова інтерфейсу:** English і українська (перемикач EN / УК, зберігається в браузері)  
 **Валюта:** GBP (£)
 
@@ -45,7 +45,7 @@ Brand Kit — головна фіча саме для цієї персони: c
 
 ### 1.2 Що вважається успіхом MVP
 
-Користувач (власник малого бізнесу) заходить → обирає Instagram Reel або TikTok → пише одне речення → проходить 6 кроків → **отримує готовий 30-секундний вертикальний відеофайл (mp4)** → credits списані → в логах є собівартість кожного AI-виклику.
+Користувач (власник малого бізнесу) заходить → обирає **Коротке відео** → пише одне речення → проходить 6 кроків → **отримує готовий 30-секундний вертикальний відеофайл (mp4)** для Instagram або TikTok → credits списані → в логах є собівартість кожного AI-виклику.
 
 «Студійний прев’ю без файлу» **не** є успіхом MVP. Це генератор сторібордів. Поки немає TTS + базового рендеру — продукт не показувати зовнішнім користувачам як «готовий Reel».
 
@@ -101,7 +101,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 | Блок | У коді зараз | Обов’язково для прийняття MVP |
 | --- | --- | --- |
 | Лендінг, auth, JWT, 200 free credits | так | так |
-| Create: Reel / TikTok / Image Post + промпт | так | так |
+| Create: Short video / Image Post + промпт | так | так |
 | 6 кроків студії, credits, Brand Kit, Library | так | так |
 | `ai_generations` (собівартість) | так | так; плюс показ користувачу (§1.3.3) |
 | Idea / Script / Visuals / Captions | так (текст + кадри; captions = scene-level) | так; word-level не вимагається в MVP |
@@ -141,8 +141,8 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 | ID | Назва | MVP |
 | --- | --- | --- |
 | `video` | Video | екран є, створення заблоковане |
-| `instagram_reel` | Instagram Reel | повний пайплайн + **mp4** |
-| `tiktok` | TikTok | повний пайплайн + **mp4** |
+| `instagram_reel` | **Коротке відео** (Reel / TikTok — один файл) | повний пайплайн + **mp4** |
+| `tiktok` | не на Create; старі проєкти = той самий пайплайн | повний пайплайн + **mp4** |
 | `image_post` | Image / Post | Idea + **1 готова картинка** з повного брифу (JPG), **13 cr** |
 | `advertisement` | Advertisement | «Coming after Reels» |
 | `social_post` | Social media post | «Coming after Reels» |
@@ -151,7 +151,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 
 Повідомлення, якщо формат ще не готовий:
 
-> This format is next. Start with a Reel, TikTok, or still images.
+> This format is next. Start with a short video or still images.
 
 ---
 
@@ -161,7 +161,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 
 1. Користувач відкриває лендінг, тисне **Start creating**.
 2. Реєструється (ім’я, email, пароль ≥ 6 символів) → отримує **200 credits**, план Free, порожній Brand Kit.
-3. Бачить «What do you want to create?», обирає **Instagram Reel**.
+3. Бачить «What do you want to create?», обирає **Коротке відео**.
 4. Пише, що хоче створити. **Одне речення зазвичай вистачає**; якщо ні — короткий абзац (офер, адреса, для кого), до 2 000 символів. Не бриф на сторінку і не обов’язок «рівно одне речення».  
    Приклад: `Create a 30-second Reel about the best places to visit in London.`  
    Або довше: `Reel for my salon in Shoreditch. Tuesday walk-ins 20% off. Warm, not salesy. Show the chair, not stock hair.`
@@ -239,9 +239,9 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 
 **Auth.** Ім’я (тільки signup), email, пароль. Помилки зрозумілою мовою.
 
-**Create.** Сітка 6 форматів. Reel / TikTok / Image Post — активні. Video, Ad, Social — «soon». Промпт — від 8 до 2 000 символів. Copy: речення може вистачити; якщо ні — офер, місце, для кого. Reel 150 cr · Image / Post 13 cr. Перемикач **Use brand kit / Ignore** (`use_brand`, дефолт так): з брендом у промпт картинки йдуть назва, кольори, шрифт, тон і ніша; без бренду — лише бриф. Те саме в студії — regenerate, щоб застосувати. UI показує, які поля кіту підуть на картинку.
+**Create.** Сітка 5 форматів. **Коротке відео** / Image Post — активні. Video, Ad, Social — «soon». TikTok окремим чіпом **не** показуємо: той самий 30-секундний mp4. Промпт — від 8 до 2 000 символів. Copy: речення може вистачити; якщо ні — офер, місце, для кого. Reel 150 cr · Image / Post 13 cr. Перемикач **Use brand kit / Ignore** (`use_brand`, дефолт так): з брендом у промпт картинки йдуть назва, кольори, шрифт, тон і ніша; без бренду — лише бриф. Те саме в студії — regenerate, щоб застосувати. UI показує, які поля кіту підуть на картинку.
 
-**Studio.** Reel/TikTok: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: invite/info/offer — прев’ю **2:3** (`contain`, без обрізання низу); фото — 1:1. Кроки Idea → Pictures, без Voice/Captions/Create. Зверху лише **Бриф** (textarea), `Save brief` (PATCH, 0 cr) і `Copy brief` (з fallback, якщо браузер блокує clipboard). Рядок `image post · …` і нагадування «кіт N% — додайте лого» **не показуємо** (лого опційне). На Create — список збережених брифів, клік вставляє. Після Pictures: Download JPG; takes поруч; *Share* і *Would you publish?* **сховані** (`SHOW_SHARE_AND_PUBLISH`). Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
+**Studio.** Коротке відео: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: invite/info/offer — прев’ю **2:3** (`contain`, без обрізання низу); фото — 1:1. Кроки Idea → Pictures, без Voice/Captions/Create. Зверху лише **Бриф** (textarea), `Save brief` (PATCH, 0 cr) і `Copy brief` (з fallback, якщо браузер блокує clipboard). Рядок `image post · …` і нагадування «кіт N% — додайте лого» **не показуємо** (лого опційне). На Create — список збережених брифів, клік вставляє. Після Pictures: Download JPG; takes поруч; *Share* і *Would you publish?* **сховані** (`SHOW_SHARE_AND_PUBLISH`). Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
 
 **Brand Kit.** Дві групи: *How it looks & sounds* (кольори, шрифт, тон-чипси + optional note) і *About your business* (ім’я, **upload лого**, vertical, сайт, Instagram) — друге опційне. Vertical: salon / café / fitness / **other** + вільний текст; мікрокопі: лише каркас сцен, не обов’язково. Жива прев’ю-картка (CSS, 0 AI). Індикатор «Brand kit N% complete — …». Learned-картка зверху + **Reset learning** (одразу перераховує з готової історії, не чекає 3 нові Reels). Лого: `POST /brand/logo` — **max 2 MB, лише `image/png` / `image/jpeg`**, SVG заборонено; `DELETE /brand/logo` стирає файл; `GET /brand/logo` віддає файл з `Content-Type` png/jpeg і `X-Content-Type-Options: nosniff`, ніколи `image/svg+xml`, у UI лише `<img>`. Невалідний hex не ламає picker. Disclaimer про знаки.
 
