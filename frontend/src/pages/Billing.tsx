@@ -7,6 +7,9 @@ function gbp(amount: number, locale: string) {
   return new Intl.NumberFormat(locale === "uk" ? "uk-UA" : "en-GB", { style: "currency", currency: "GBP" }).format(amount / 100);
 }
 
+/** Provider, model and £ cost stay in the API log — not for a salon owner. */
+const SHOW_AI_COST_LOG = false;
+
 const PLAN_DESC: Record<string, string> = {
   free: "billing.planFree",
   creator: "billing.planCreator",
@@ -20,6 +23,7 @@ export default function Billing() {
   const [plans, setPlans] = useState<{ id: string; name: string; price_gbp: number; monthly_credits: number; description: string }[]>([]);
   const [packs, setPacks] = useState<{ id: string; credits: number; price_gbp: number; label: string }[]>([]);
   const [checkoutEnabled, setCheckoutEnabled] = useState(false);
+  const [planId, setPlanId] = useState("free");
   const [credits, setCredits] = useState<{
     balance: { credits: number } | null;
     transactions: { id: string; amount: number; description: string; created_at: string }[];
@@ -34,10 +38,11 @@ export default function Billing() {
   const [msg, setMsg] = useState("");
 
   async function load() {
-    const [p, c] = await Promise.all([api.plans(), api.credits()]);
+    const [p, c, me] = await Promise.all([api.plans(), api.credits(), api.me()]);
     setPlans(p.plans);
     setPacks(p.packs);
     setCheckoutEnabled(Boolean(p.checkoutEnabled));
+    setPlanId(me.subscription?.plan_id || "free");
     setCredits(c);
   }
 
@@ -56,7 +61,7 @@ export default function Billing() {
     window.dispatchEvent(new Event("auteur:refresh"));
   }
 
-  const econ = credits?.economics;
+  const econ = SHOW_AI_COST_LOG ? credits?.economics : null;
 
   return (
     <div>
@@ -111,8 +116,9 @@ export default function Billing() {
 
       <div className="plans">
         {plans.map((plan) => (
-          <div className={`plan ${plan.id === "creator" ? "featured" : ""}`} key={plan.id}>
+          <div className={`plan ${plan.id === planId ? "featured" : ""}`} key={plan.id}>
             <h3>{plan.name}</h3>
+            {plan.id === planId && <p className="hint">{t("billing.yourPlan")}</p>}
             <div className="price">{plan.price_gbp === 0 ? "£0" : gbp(plan.price_gbp, locale)}</div>
             <p className="hint">{t("billing.perMonth", { n: plan.monthly_credits.toLocaleString(locale === "uk" ? "uk-UA" : "en-GB") })}</p>
             <p>{PLAN_DESC[plan.id] ? t(PLAN_DESC[plan.id]) : plan.description}</p>
@@ -143,21 +149,25 @@ export default function Billing() {
         ))}
       </div>
 
-      <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>{t("billing.eachTitle")}</h2>
-      <p className="hint">{t("billing.eachHint")}</p>
-      <div className="list" style={{ marginTop: 12 }}>
-        {(credits?.generations || []).map((g) => (
-          <div className="item" key={g.id}>
-            <span>
-              {g.type} · {g.provider}/{g.model} · {g.status}
-            </span>
-            <span className="hint">
-              {g.credits_used} cr · £{Number(g.actual_cost_gbp || 0).toFixed(3)}
-            </span>
+      {SHOW_AI_COST_LOG && (
+        <>
+          <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>{t("billing.eachTitle")}</h2>
+          <p className="hint">{t("billing.eachHint")}</p>
+          <div className="list" style={{ marginTop: 12 }}>
+            {(credits?.generations || []).map((g) => (
+              <div className="item" key={g.id}>
+                <span>
+                  {g.type} · {g.provider}/{g.model} · {g.status}
+                </span>
+                <span className="hint">
+                  {g.credits_used} cr · £{Number(g.actual_cost_gbp || 0).toFixed(3)}
+                </span>
+              </div>
+            ))}
+            {!credits?.generations?.length && <p className="empty">{t("billing.emptyGen")}</p>}
           </div>
-        ))}
-        {!credits?.generations?.length && <p className="empty">{t("billing.emptyGen")}</p>}
-      </div>
+        </>
+      )}
 
       <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>{t("billing.account")}</h2>
       <p className="hint">{t("billing.deleteHint")}</p>
