@@ -6,7 +6,7 @@ Auteur is not a Canva clone. It is a simple AI content studio: the user never ch
 
 UI: **English and Ukrainian** (EN / УК, stored in the browser). The brief stays in the language they wrote.
 
-Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.20).
+Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.26).
 
 The first studio is **one short video** (30 seconds, Instagram or TikTok — same file) and still **Image / Posts**. A Reel is 150 credits; a still post is 13 (idea + one picture). **Video** and **Advertisement** stay as two separate Create stubs (TZ §2.3). Social post is a third stub.
 
@@ -19,7 +19,7 @@ The first studio is **one short video** (30 seconds, Instagram or TikTok — sam
 | Create | Short video or Image, optional photo / invite / info / offer, brand on/off, saved briefs to insert |
 | Studio | Reel: six steps. Image: Idea → Pictures. Brief, copy brief, brand chips |
 | Brand kit | Logo (optional), colours, font, tone, niche, Instagram |
-| Credits | Plans, extra packs, real AI cost log |
+| Credits | Plans (current one highlighted), pack prices. Checkout hidden until Stripe. AI cost log hidden |
 | Library | Every project — open, copy the brief, or **delete** |
 
 A finished Reel costs **150 credits** (5 + 10 + 40 + 30 + 10 + 55). A still post costs **13** (5 + 8). Delete does not refund credits.
@@ -33,7 +33,7 @@ Plans (provisional until real unit cost is measured):
 
 ## Image / Post (now)
 
-- One finished picture from the **whole brief**, not four assembled slides.
+- One finished OpenAI picture per Image / Post (photo, invite, info, offer). We do not compose a text layer. Invite / info / offer: the model paints the words on the image.
 - Model: `OPENAI_IMAGE_MODEL` (default **gpt-image-2.5-sunburst**, same family as the OpenAI Images playground).
 - Invite / info / offer: portrait **1024×1536**, shown 2:3 without cropping the footer.
 - If **Use brand kit** is on, the picture prompt gets name, colours, font, tone, niche. Logo is optional — no nag in Studio.
@@ -58,9 +58,9 @@ SQLite  →  users, plans, credit_balances, credit_transactions,
            ai_generations, subscriptions, brand_kits, projects
 ```
 
-Stripe is wired for subscriptions and credit packs. Without `STRIPE_SECRET_KEY`, checkout runs in studio mode and grants credits immediately so you can test the loop.
+Stripe Checkout exists, but **without `STRIPE_SECRET_KEY` it is closed** (Choose/Buy hidden, `POST /billing/checkout` returns 403). Closed beta stays on Free 400; we add credits by hand. There is no studio grant that changes the plan.
 
-`ai_generations` stores `user_id`, `type`, `provider`, `model`, `actual_cost_gbp`, `credits_used`, `status` — so you can see the real cost of every AI call.
+`ai_generations` still stores every AI call. The Credits screen does **not** list it (`SHOW_AI_COST_LOG=false`).
 
 ## Run locally
 
@@ -73,9 +73,9 @@ Open [http://localhost:5173](http://localhost:5173).
 
 Optional in `backend/.env`:
 
-- `OPENAI_API_KEY` — live copy, pictures, and TTS
+- `OPENAI_API_KEY` — live copy, **required for Pictures / Reel frames**, and TTS
 - `OPENAI_IMAGE_MODEL` — playground model id (`gpt-image-2.5-sunburst` or `gpt-image-2.5-flare`)
-- `STRIPE_SECRET_KEY` — real Checkout instead of studio grants
+- `STRIPE_SECRET_KEY` — opens Checkout; without it, buy buttons stay hidden
 
 Do not commit `.env`. Do not spend OpenAI credits unless you mean to.
 

@@ -2,7 +2,7 @@
 
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
-**Версія документа:** 1.20  
+**Версія документа:** 1.26  
 **Мова інтерфейсу:** English і українська (перемикач EN / УК, зберігається в браузері)  
 **Валюта:** GBP (£)
 
@@ -60,7 +60,7 @@ Brand Kit — головна фіча саме для цієї персони: c
 
 1. **Brand Kit, який навчається.** Не тільки hex і тон у формі. Після 2–3 роликів система дивиться попередні Reels цього бізнесу (хуки, темп, слова, кадри, що користувач не відхилив) і підкручує наступні. Статичні кольори — v1-мінімум; навчання з історії — обов’язковий напрям одразу після першого mp4, інакше Kit = таблиця з CSS.
 2. **Вузька ніша малого бізнесу, не генераліст.** Готові сценарні каркаси під салони, кав’ярні, фітнес (не маркетплейс на 100 шаблонів, а 3 вертикалі). Генералістські конкуренти цього не роблять добре.
-3. **Прозора собівартість як UX для бізнесу**, не лише внутрішній лог власника Auteur. На billing користувач бачить: цей Reel коштував N credits / орієнтовно £X собівартості API. Малий бізнес хоче контролювати витрати. Агентствам це теж зайде пізніше — у v1 показуємо власнику кав’ярні.
+3. **Прозора собівартість** — у БД (`ai_generations`). На беті таблицю викликів **ховаємо** (`SHOW_AI_COST_LOG=false` у Billing): це внутрішня цифра, не екран салону. API `/billing/credits` усе одно віддає generations. Показати знову — коли бета попросить, не зараз.
 
 Без цих трьох пунктів продукт — прошарок над чужим API.
 
@@ -104,8 +104,8 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 | Лендінг, auth, JWT, 400 free credits | так | так |
 | Create: Short video / Image Post + промпт | так | так |
 | 6 кроків студії, credits, Brand Kit, Library | так | так |
-| `ai_generations` (собівартість) | так | так; плюс показ користувачу (§1.3.3) |
-| Idea / Script / Visuals / Captions | так (текст + кадри; captions = scene-level) | так; word-level не вимагається в MVP |
+| `ai_generations` (собівартість) | так (API) | так у логах. UI на Credits **схований** |
+| Idea / Script / Visuals / Captions | так. Visuals **потребують** `OPENAI_API_KEY` (інакше 400). Captions = scene-level | так; word-level не вимагається в MVP |
 | Voice | TTS → `voice.mp3` (`audio_url`); JSON = direction | так; без файлу крок не done |
 | Create | ffmpeg → `reel.mp4` 1080×1920, плеєр + Download | так |
 | Регенерація кроку / одного кадру | `regenerate` + `sceneId` (8 cr) | так — §7.2–7.3 |
@@ -113,6 +113,8 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 | Вертикаль Brand Kit | `salon` / `cafe` / `fitness` | так |
 | S3, постійний Download URL, HQ | немає | **не MVP** |
 | Закрита бета / публічний лендінг | код є; зовні не запускали | бета §1.5 перед ads |
+| `poster.ts` / compose | файл є, **не** в пайплайні | не підключати; картинка = відповідь OpenAI |
+| Поля флаєра в Studio | код без UI | не потрібні: текст уже на JPG |
 
 **Критичне правило:** не показувати продукт *публічно* з обіцянкою «готовий Reel», доки немає файлу. TTS (OpenAI `tts-1`) + ffmpeg — **зафіксовані** (§1.4), не «фаза 2» і не відкритий вибір. Зовнішні *платні* користувачі — після закритої бети (§1.5).
 
@@ -121,7 +123,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 - завантаження в AWS S3;
 - кнопка Download з постійним URL;
 - вища якість / стабілізація / музика;
-- Stripe webhook замість studio mode.
+- Stripe webhook, коли з’явиться публічний checkout (зараз без ключа — **403**, не studio-grant).
 
 ### 2.2 Свідомо не робимо в v1
 
@@ -175,7 +177,7 @@ Kling також уміє зробити відео одразу з тексту
 
 **2. Картинка / пост** (`image_post`) — **вже працює**, 13 credits.
 
-Одне фото: звичайне, запрошення, інформація або офер. Без голосу і без відео. На виході JPG. Kling тут не потрібен.
+Без голосу і без відео. Один JPG **цілком з OpenAI** (фото, запрошення, інфо, офер). Ми нічого не накладаємо. Kling не потрібен.
 
 **3. Реклама** (`advertisement`) — **заглушка**. Окрема кнопка, не зливається з Коротким відео.
 
@@ -243,7 +245,7 @@ Kling також уміє зробити відео одразу з тексту
 
 - підписка Creator / Pro / Business нараховує місячний пакет (**залучення**);
 - Buy credits — разові пакети (**маржа**) — стратегія в §9.4;
-- без Stripe-ключа — studio mode (нарахування одразу, тільки для розробки).
+- без `STRIPE_SECRET_KEY` checkout **закритий**: кнопки Choose / Buy сховані, `POST /billing/checkout` → **403**. Credits на беті — Free 400 або вручну. Studio-grant (нарахувати план без Stripe) **прибрано**.
 
 ### 3.5 Щасливий шлях (Image / Post)
 
@@ -255,12 +257,27 @@ Kling також уміє зробити відео одразу з тексту
    - **Offer** — офер, коли діє, для кого.
    Чип **не** новий `type`. Промпт картинок завжди з повного брифу — не шаблон «одна атмосфера».
 3. Пише бриф. Можна довгий: що показати, яка інформація, програма. Приклади: photo `A quiet morning table at my café.`; invite повний текст івенту з годинами; info `Closed Monday 6 May.`; offer `Tuesday walk-in offer.`
-4. Студія — **2 кроки**:
-   1. **Idea** (5 cr). Для **invite** витягує основу (назва, дата, час, місце) і з брифу — address / intro / closing, якщо вони там є; програму — лише якщо є години. Нічого не вигадує.
-   2. **Pictures** (**8 cr**) — **одна** готова картинка з повного брифу в OpenAI. Не збираємо постер. Можна перезняти цей кадр.
-5. Разом **13 credits**. `script` / `voice` / `captions` / `render` — 400.
-6. JPG `still-1.jpg`. *Would you publish this post?* і *Share a preview* у UI **сховані**, доки не знадобляться на беті.
-7. Без voice і mp4. Готовий артефакт — одна картинка з брифу.
+4. Студія — **2 кроки** (13 credits разом). `script` / `voice` / `captions` / `render` — 400.
+   1. **Idea** (5 cr). Концепція. Для **invite** ще `invite_json` (факти з брифу; на картинку не йде).
+   2. **Pictures** (**8 cr**) — один запит в OpenAI, один готовий JPG. Модель малює **всю** сторінку: фото і, якщо треба, слова. Ми **не** складаємо шар. Можна перезняти цей кадр.
+5. Download `still-1.jpg`. *Would you publish?* і *Share* **сховані**.
+6. Без voice і mp4.
+
+### 3.6 Картинки — як є
+
+Для **photo, invite, info, offer** одне й те саме: Pictures віддає **повний знімок з OpenAI**. Окремого фону і нашого тексту немає і **не плануємо** в цьому документі.
+
+| Kind | Idea | Pictures | Файл |
+| --- | --- | --- | --- |
+| **photo** | концепція | OpenAI, **1:1** | `still-1.jpg` = відповідь моделі |
+| **invite** | концепція + `invite_json` (лише в БД) | OpenAI **1024×1536**: флаєр цілком, літери в пікселях | той самий JPG |
+| **info / offer** | концепція, без `invite_json` | те саме: факт / офер малює модель | той самий JPG |
+
+Власник пише бриф, тисне Idea → Pictures, завантажує JPG. Полів «дата / адреса» на екрані немає. `PATCH /invite` пише JSON і **не** перемальовує файл.
+
+`poster.ts` (`composeInvitePoster` тощо) у репо є, пайплайн його **не** кличе. Не підключати, поки явно не змінять цей параграф.
+
+Кадри **Короткого відео** — інше: промпт просить фото без літер; слова — голос і SRT.
 
 ---
 
@@ -283,7 +300,7 @@ Kling також уміє зробити відео одразу з тексту
 | 11 | Brand Kit | `/app/brand` | JWT |
 | 12 | Credits / плани | `/app/billing` | JWT |
 | 13 | Buy credits | блок на billing | JWT |
-| 14 | Собівартість (UX для бізнесу) | блок на billing | JWT |
+| 14 | Лог AI-вартості | той самий billing; **схований** | JWT / API |
 | 15 | Library | `/app/library` | JWT |
 
 Кроки 5–10 — один маршрут студії з прогрес-баром, не окремі URL.
@@ -296,11 +313,11 @@ Kling також уміє зробити відео одразу з тексту
 
 **Create.** Сітка 5 форматів — **§2.3**. **Коротке відео** / Картинка — активні. **Відео** і **Реклама** — окремі заглушки, не одна кнопка. Social — теж «soon». TikTok окремим чіпом **не** показуємо. Промпт — від 8 до 2 000 символів. Copy: речення може вистачити; якщо ні — офер, місце, для кого. Reel 150 cr · Image / Post 13 cr. Перемикач **Use brand kit / Ignore** (`use_brand`, дефолт так): з брендом у промпт картинки йдуть назва, кольори, шрифт, тон і ніша; без бренду — лише бриф. Те саме в студії — regenerate, щоб застосувати. UI показує, які поля кіту підуть на картинку.
 
-**Studio.** Коротке відео: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: invite/info/offer — прев’ю **2:3** (`contain`, без обрізання низу); фото — 1:1. Кроки Idea → Pictures, без Voice/Captions/Create. Зверху лише **Бриф** (textarea), `Save brief` (PATCH, 0 cr) і `Copy brief` (з fallback, якщо браузер блокує clipboard). Рядок `image post · …` і нагадування «кіт N% — додайте лого» **не показуємо** (лого опційне). На Create — список збережених брифів, клік вставляє. Після Pictures: Download JPG; takes поруч; *Share* і *Would you publish?* **сховані** (`SHOW_SHARE_AND_PUBLISH`). Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
+**Studio.** Коротке відео: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: **photo** — 1:1. **invite / info / offer** — прев’ю **2:3** `contain`. На екрані JPG з OpenAI цілком. Полів флаєра немає; `PATCH …/invite` лише JSON. Зверху лише **Бриф** (textarea), `Save brief` (PATCH, 0 cr) і `Copy brief` (з fallback, якщо браузер блокує clipboard). Рядок `image post · …` і нагадування «кіт N% — додайте лого» **не показуємо** (лого опційне). На Create — список збережених брифів, клік вставляє. Після Pictures: Download JPG; takes поруч; *Share* і *Would you publish?* **сховані** (`SHOW_SHARE_AND_PUBLISH`). Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
 
 **Brand Kit.** Дві групи: *How it looks & sounds* (кольори, шрифт, тон-чипси + optional note) і *About your business* (ім’я, **upload лого**, vertical, сайт, Instagram) — друге опційне. Vertical: salon / café / fitness / **other** + вільний текст; мікрокопі: лише каркас сцен, не обов’язково. Жива прев’ю-картка (CSS, 0 AI). Індикатор «Brand kit N% complete — …». Learned-картка зверху + **Reset learning** (одразу перераховує з готової історії, не чекає 3 нові Reels). Лого: `POST /brand/logo` — **max 2 MB, лише `image/png` / `image/jpeg`**, SVG заборонено; `DELETE /brand/logo` стирає файл; `GET /brand/logo` віддає файл з `Content-Type` png/jpeg і `X-Content-Type-Options: nosniff`, ніколи `image/svg+xml`, у UI лише `<img>`. Невалідний hex не ламає picker. Disclaimer про знаки.
 
-**Billing.** 4 плани, 3 пакети, таблиця вартості кроків (150 = повний Reel, 13 = Image / Post), історія generation. Користувач бачить credits_used і орієнтовну £. Планові £/міс підписати **FROZEN**, доки бета не дасть логи TTS+рендеру.
+**Billing.** 4 плани (поточний виділено, `yourPlan`), 3 пакети з £, таблиця кроків 150 / 13. **Choose / Buy сховані**, поки немає `STRIPE_SECRET_KEY`. Лог generation **не показуємо** (`SHOW_AI_COST_LOG=false`). Видалити акаунт — кнопка тут (`DELETE /auth/account`). Окремої сторінки Account немає. Ціни **FROZEN**.
 
 **Library.** Список проєктів: промпт, тип, статус, credits, дата. Відкрити в студії, **скопіювати бриф**, **видалити** (`DELETE /projects/:id` — файли й версії; кредити не повертаються, confirm у UI). Якщо термін вийшов — статус `expired` і підказка, що Create знову платний. Перед витісненням через ліміт плану — попередження, не тихе зникнення.
 
@@ -340,7 +357,7 @@ Text AI  Image AI   TTS
 | TTS | OpenAI `tts-1` / `nova`; dev: macOS `say` |
 | Рендер | ffmpeg через `ffmpeg-static`, 1080×1920 |
 | Медіа | `backend/data/media/{projectId}/` |
-| Платежі | Stripe Checkout (опційно) |
+| Платежі | Stripe Checkout, якщо є ключ. Без ключа — 403, UI без покупки |
 
 ### 5.2 Міграція на Xano
 
@@ -354,7 +371,7 @@ Text AI  Image AI   TTS
 | --- | --- | --- |
 | `voice.mp3`, `scene-*.jpg`, `captions.srt` | **7 днів** після `updated_at` | можна зібрати mp4 знову з credits, місце на диску |
 | `reel.mp4` | **90 днів** після Create, або одразу після успішного S3 | зберігання дешеве; регенерація = 55 cr + залежності |
-| `still-*.jpg` | **90 днів** (як mp4) | для Image Post це готовий файл, не проміжний кадр відео |
+| `still-*.jpg` | **90 днів** (як mp4) | Download Image Post = файл OpenAI |
 | Після S3 | локальна копія mp4 можна стерти; рядок проєкту й `output_url` лишаються | |
 
 Ліміт **готових mp4 на диску** — від плану. **TTL 90 днів для mp4 однаковий для Free і Business** — свідомо проста політика; довший архів Business з’явиться разом із S3, не як окремий локальний TTL.
@@ -376,7 +393,7 @@ Text AI  Image AI   TTS
 
 Один Node-процес, ffmpeg як child process. **Максимум 2 одночасні Create.** Третій і далі чекають у черзі процесу (не 503 одразу). Закриття вкладки **не скасовує** рендер: робота живе на бекенді. Credits за Create резервуються **до** ffmpeg (як інші кроки). Для закритої бети 5–10 людей цього достатньо. Окрема черга (Bull/Redis) — **після бети**, не блокер інвайтів.
 
-**Метрика №1 бети (рендер):** у `ai_generations.meta_json` / колонки `started_at`, `finished_at`, `duration_ms` для кожного кроку; для render ще `queueWaitMs`, `encodeMs`. Якщо середній `queueWaitMs` > 30 с — винести рендер з API-процесу до публічного запуску. Окремо дивитись TTS vs DALL·E vs ffmpeg: захлин може бути в послідовних OpenAI, не в ffmpeg.
+**Метрика №1 бети (рендер):** у `ai_generations.meta_json` / колонки `started_at`, `finished_at`, `duration_ms` для кожного кроку; для render ще `queueWaitMs`, `encodeMs`. Якщо середній `queueWaitMs` > 30 с — винести рендер з API-процесу до публічного запуску. Окремо дивитись TTS vs OpenAI Images vs ffmpeg: захлин може бути в послідовних OpenAI, не в ffmpeg.
 
 ---
 
@@ -512,7 +529,7 @@ Text AI  Image AI   TTS
 | type | text | див. формати |
 | prompt | text | речення користувача |
 | image_intent | text | лише `image_post`: `photo` / `invite` / `info` / `offer`; інакше порожньо |
-| invite_json | text | поля флаєра Invitation (програма, дата, місце); порожньо для інших kind |
+| invite_json | text | Лише `invite`: поля з Idea. На JPG **не** впливають. Порожньо для photo / info / offer |
 | status | text | `draft` / `generating` / `ready` / `expired` |
 | current_step | text | `prompt` / `idea` / `script` / `visuals` / `voice` / `captions` / `create` |
 | idea_json | text | |
@@ -543,6 +560,8 @@ JSON-контракти:
 }
 ```
 
+Для `image_intent=invite` Idea також пише `invite` у відповіді → `invite_json`. На JPG це не впливає.
+
 **script**
 
 ```json
@@ -561,7 +580,7 @@ JSON-контракти:
 }
 ```
 
-**visuals** — масив `{ sceneId, imageUrl, prompt, placeholder? }`. `placeholder: true` = DALL·E відхилив або немає ключа.
+**visuals** — масив `{ sceneId, imageUrl, prompt, placeholder? }`. `placeholder: true` = OpenAI відхилив кадр (ключ при цьому вже є). Без ключа крок Visuals не стартує.
 
 **voice_json (інструкція, не медіа).** Назва поля в API можна показувати як `voiceDirection`, щоб ні розробник, ні UI не вважали крок «озвучено».
 
@@ -696,7 +715,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | GET | `/projects/:id` | так | проєкт + таблиця costs |
 | DELETE | `/projects/:id` | так | стерти проєкт, версії й файли з бібліотеки; кредити не повертаються |
 | PATCH | `/projects/:id` | так | `{ prompt }` — змінити бриф; credits 0; щоб застосувати — regenerate idea |
-| PATCH | `/projects/:id/invite` | так | `{ invite }` — поля постера; 0 cr; перескласти JPG якщо фон є |
+| PATCH | `/projects/:id/invite` | так | `{ invite }` — пише `invite_json`, 0 cr. JPG не чіпає |
 | POST | `/projects/:id/steps/:step` | так | `{ regenerate?, sceneId?, idempotencyKey?, feedbackReason?, feedbackNote? }` + `Idempotency-Key`; 20 req/хв |
 | POST | `/projects/:id/feedback` | так | `{ publishable: yes\|edits\|no, reasons[] }` після mp4 |
 | POST | `/projects/:id/share` | так | preview-лінк, TTL 7д |
@@ -716,9 +735,9 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | DELETE | `/brand/logo` | так | стерти файл і `logo_url` |
 | GET | `/brand/logo` | так | файл лого як `<img>`; `Content-Type` png/jpeg, не `image/svg+xml` |
 | POST | `/brand/learning/reset` | так | стерти і **одразу перерахувати** `learned_summary_json` з історії |
-| GET | `/billing/plans` | ні | плани + packs (**провізорні**) |
+| GET | `/billing/plans` | ні | плани + packs + `checkoutEnabled` + `frozenPrices` |
 | GET | `/billing/credits` | так | balance, transactions, generations, **economics** (собівартість на готовий Reel) |
-| POST | `/billing/checkout` | так | `{ planId? , packId? }` → `{ mode, url }` |
+| POST | `/billing/checkout` | так | `{ planId? , packId? }` → Stripe URL. Без `STRIPE_SECRET_KEY` → **403** (не нараховує credits) |
 
 Коди: 400 валідація; 401 токен; 402 credits; 404 проєкт; 409 email **або крок уже running / той самий Idempotency-Key**; 429 rate limit; 500 студія.
 
@@ -726,13 +745,13 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 
 Reel / TikTok: idea → script → visuals / voice / captions (потребують script) → render.
 
-Image / Post: idea → visuals (**1** картинка з брифу). `PATCH /projects/:id/invite` — 0 cr.
+Image / Post: idea → visuals. Один JPG з OpenAI (§3.6). `PATCH /invite` — 0 cr, без перемалювання.
 
 | step | credits | Що вважається успіхом |
 | --- | --- | --- |
 | idea | 5 | `idea_json` |
 | script | 10 | `script_json` (лише відео) |
-| visuals | 40 max / **8** на пост | кадри; live × 8; поріг ≥3/5 відео або 1/1 пост |
+| visuals | 40 max / **8** на пост | Reel: live × 8, поріг ≥3/5. Пост: 8 за живий JPG. Поріг поста — §7.3 |
 | visuals *один кадр* | **8** | `{ regenerate: true, sceneId }` |
 | voice | 30 | `voice_json` **і** `audio_url` (TTS); немає на `image_post` |
 | captions | 10 | cues (scene-level); немає на `image_post` |
@@ -783,20 +802,28 @@ Image / Post: idea → visuals (**1** картинка з брифу). `PATCH /p
 
 Крок Visuals = пачка кадрів. Повна ціна 40 = 5 × 8. **Не списувати 40, якщо цінність неповна.**
 
-Поріг успіху: **≥ ceil(n × 3/5)** живих кадрів (для 5 сцен = **3**). Нижче порогу (є ключ OpenAI) — крок `failed`, credits **0**.
+Поріг успіху: **≥ ceil(n × 3/5)** живих кадрів (для 5 сцен = **3**). Нижче порогу — крок `failed`; якщо провайдер уже викликаний, резерв **не** повертається.
 
 | Результат | Крок | Credits | Що бачить користувач |
 | --- | --- | --- | --- |
 | Живих кадрів нижче порогу (ключ є) | `failed` | **зарезервовані 40 лишаються** (вендор уже виставлений) | *We couldn’t generate enough frames (k of n). Try a simpler description.* |
 | Живих ≥ порогу, частина placeholder | `succeeded` | **live × 8** (не 40) | Бейдж на кожному placeholder **до Voice** |
 | Усі n кадрів живі | `succeeded` | **n × 8** (5 сцен = 40) | Звичайний прев’ю |
-| Без ключа (dev) | `succeeded` | 40 | Усі кадри preview, без бейджа policy |
+| Немає `OPENAI_API_KEY` | не стартує | 0 | **400** *Pictures need an OpenAI key.* Градієнт-прев’ю **не** пишеться |
 
-5xx від DALL·E: **один автоматичний retry** на кадр, потім як відмова (placeholder / поріг). 4xx policy — без retry, одразу placeholder.
+5xx від OpenAI Images: **один автоматичний retry** на кадр, потім як відмова (placeholder / поріг). 4xx policy — без retry, одразу placeholder.
 
 Успішні API-виклики в пачці, яка впала по порогу, **вже оплачені credits** (резерв не повертається). `actual_cost_gbp` у логу `failed`.
 
 Один кадр після succeeded: **8 credits** за `sceneId`.
+
+**Image / Post (n = 1).** Поріг = **1** (все або нічого; `ceil(1 × 3/5) = 1`). Не екстраполювати «3 з 5» на один кадр.
+
+| Результат | Крок | Credits | Що далі |
+| --- | --- | --- | --- |
+| Єдиний виклик OpenAI уже пішов, кадру немає | `failed` | резерв **8 лишається** (вендор виставлений) | Немає JPG. Повідомлення «picture», не «frames» |
+| Є `still-1.jpg` | `succeeded` | **8** | Фінал: JPG з OpenAI |
+| Немає ключа | не стартує | 0 | той самий **400**, що й для Reel Visuals |
 
 ---
 
@@ -807,9 +834,9 @@ Image / Post: idea → visuals (**1** картинка з брифу). `PATCH /p
 | Крок | З ключами | Без ключів |
 | --- | --- | --- |
 | Idea / Script / Captions / voice *direction* | `gpt-4o-mini`, JSON | studio preview JSON |
-| Visuals | DALL·E 3, 1024×1792 | градієнт-кадри 9:16 |
-| Voice *аудіо* | **OpenAI `tts-1` / `nova`** | macOS `say` (dev); тиша — не для бети |
-| Create | **ffmpeg** 1080×1920 + SRT | той самий рендер на preview-кадрах |
+| Visuals (Reel і Image / Post) | OpenAI image (`OPENAI_IMAGE_MODEL`) | **400**, ключ обов’язковий. Немає preview-кадрів без ключа |
+| Voice *аудіо* | **OpenAI `tts-1` / `nova`** | macOS `say` (dev); тиша — лише якщо немає `say`; **не бета** |
+| Create | **ffmpeg** 1080×1920 + SRT | той самий рендер; без кадру — колір бренду |
 | Captions | scene-level cues під тривалість аудіо | той самий алгоритм |
 
 Якщо JSON моделі битий — fallback на preview-текст. Credits лише після успішного артефакту кроку.
@@ -847,9 +874,9 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 
 ### 9.3 Stripe
 
-- є ключ → Checkout, `mode: stripe`;
-- немає → `mode: studio` (тільки розробка);
-- webhook — після стабільного mp4, не блокер першого файлу.
+- є `STRIPE_SECRET_KEY` → Checkout, `checkoutEnabled: true`;
+- немає → `checkoutEnabled: false`, `POST /checkout` = **403**, UI без Choose/Buy. Credits не нараховуються;
+- webhook — до публічних підписок, не блокер інвайт-бети.
 
 ### 9.4 Unit-економіка: підписка vs пакети (явно)
 
@@ -891,7 +918,7 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 - `readyReels`;
 - `costPerReadyReelGbp` = total / ready (failed і regenerate входять у чисельник).
 
-На billing: «Estimated API cost to us, not the price you pay.» 150 credits — внутрішня одиниця, не «ціна Reel для людини».
+Поле `economics` є в `GET /billing/credits`. На екрані Credits **не показуємо** (`SHOW_AI_COST_LOG=false`). 150 credits — внутрішня одиниця, не «ціна Reel для людини».
 
 ---
 
@@ -926,10 +953,10 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 3. Крок Voice не вважається done без аудіофайла (`audio_url`).
 4. Після повного шляху баланс = 250 (при вартості 150 і старті 400), у Library статус ready **і** файл.
 5. Повторний Idea **без** `regenerate` не списує 5 credits і **не викликає AI**; **з** `regenerate` — списує і каскадить; 4-та спроба Idea — **10 credits (2×)**, не 429 (§7.2).
-6. Video / Ad / Social post не створюють проєкт. **Image / Post створює** (1 картинка з брифу, 13 cr; `GET /projects/:id/image/:sceneId`).
+6. Video / Ad / Social post не створюють проєкт. **Image / Post створює** (13 cr; `GET …/image/:sceneId` = `still-1.jpg` з OpenAI).
 7. Brand Kit зберігається і впливає на Idea; якщо `use_brand=1` — також на промпт картинки (назва, кольори, шрифт, тон, ніша). Лого опційне.
-8. На billing видно generation (provider, credits_used, £) **користувачу**.
-9. Без платних ключів шлях для розробки не падає; **закрита бета і зовнішнє демо — тільки з TTS+рендером** (не `say`-тиша як «голос»).
+8. Credits: плани, пакети, таблиця 150/13, поточний план виділено. Лог generation у API є, у UI **схований**. Checkout без Stripe не відкривається.
+9. Idea / Script / Captions без ключа дають preview-JSON. **Visuals без `OPENAI_API_KEY` — 400.** Voice без ключа: `say` або тиша. **Бета і зовнішнє демо — ключ + TTS + ffmpeg**, не тихий wav.
 10. `GET /health` = 200. `GET /projects/:id/file` віддає mp4, коли файл є.
 
 **Утримання (інакше «успіх MVP» суб’єктивний; фазу постів не починати):**
@@ -959,7 +986,7 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 
 **Після §11.11 на n≥40, за цінністю (не хронологією старого списку):**
 
-1. Image Post → окремі фото на слоти програми запрошення (info/offer уже постер, як invite).
+1. Image Post уже один JPG з OpenAI на kind. Далі — лише якщо треба кілька файлів на одну програму івенту, не «зібрати постер шаром».
 2. Word-level captions (ElevenLabs alignment) — раніше YouTube, бо ріже publishability.
 3. **Реклама**, потім **Відео** — дві кнопки, **§2.3**. Рух у кадрі — **§12.1**, не нова картка.
 4. S3, upload лого, YouTube / презентації.
@@ -1037,7 +1064,7 @@ Motion-промпт пише система, не користувач. Опці
 ## 13. Локальний запуск
 
 ```bash
-cd backend && cp .env.example .env && npm install && npm run start
+cd backend && cp .env.example .env && npm install && npm run dev
 cd frontend && npm install && npm run dev
 ```
 
@@ -1058,7 +1085,7 @@ cd frontend && npm install && npm run dev
 | Scene-level captions | субтитри по сценах скрипта, не по словах |
 | Credits | внутрішня валюта, не крипта |
 | Brand Kit | профіль вигляду й тону; має еволюціонувати з історії |
-| Ready (прийняття) | Reel: є mp4 на диску, credits за render списані. Image Post: є `still-*.jpg` (або live visuals), credits за Pictures списані |
+| Ready (прийняття) | Reel: є mp4. Image Post: є `still-1.jpg` з OpenAI |
 | Expired | рядок у Library є, файлу на диску немає |
 | Frozen price | £ у документі, до виміру собівартості на беті |
 | FROZEN | не орієнтир для продакшен-прайсу |
