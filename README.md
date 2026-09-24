@@ -6,9 +6,9 @@ Auteur is not a Canva clone. It is a simple AI content studio: the user never ch
 
 UI: **English and Ukrainian** (EN / УК, stored in the browser). The brief stays in the language they wrote.
 
-Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.16).
+Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.20).
 
-The first studio is **one short video** (30 seconds, Instagram or TikTok — same file) and still **Image / Posts**. A video is 150 credits; a still post is 13 (idea + one picture). Ads and YouTube stay later.
+The first studio is **one short video** (30 seconds, Instagram or TikTok — same file) and still **Image / Posts**. A Reel is 150 credits; a still post is 13 (idea + one picture). **Video** and **Advertisement** stay as two separate Create stubs (TZ §2.3). Social post is a third stub.
 
 ## Product
 
@@ -82,3 +82,5 @@ Do not commit `.env`. Do not spend OpenAI credits unless you mean to.
 ## Intentionally not in v1
 
 No CapCut-level editor, no 100 models, no mobile + web + desktop at once, no template marketplace, no social scheduler, no custom model, no crypto.
+
+After closed beta, if still storyboards are not publishable: **Kling** image-to-video on the existing scene stills (5–8 s clip per scene, same Create, owner never picks a vendor). See TZ §12.1. Not a kids-cartoon stack.
