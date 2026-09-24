@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS brand_kits (
   vertical TEXT NOT NULL DEFAULT '',
   tone_note TEXT NOT NULL DEFAULT '',
   vertical_note TEXT NOT NULL DEFAULT '',
+  logo_on_photos INTEGER NOT NULL DEFAULT 0,
   learned_summary_json TEXT,
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (user_id) REFERENCES users(id)

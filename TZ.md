@@ -2,7 +2,7 @@
 
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
-**Версія документа:** 1.26  
+**Версія документа:** 1.27  
 **Мова інтерфейсу:** English і українська (перемикач EN / УК, зберігається в браузері)  
 **Валюта:** GBP (£)
 
@@ -235,7 +235,7 @@ Kling також уміє зробити відео одразу з тексту
 
 ### 3.2 Brand Kit
 
-Користувач один раз задає бренд. Далі промпт «Create a Reel promoting my coffee shop» вже має кольори, шрифт, тон, Instagram. Після кількох готових роликів Kit має **підхоплювати патерни** з історії (не лише форму) — див. §1.3.
+Користувач один раз задає бренд. Далі промпт «Create a Reel promoting my coffee shop» вже має кольори, шрифт, тон, Instagram, і якщо є — **лого та 2–3 фото** (зал / людина / товар). Після кількох готових роликів Kit має **підхоплювати патерни** з історії (не лише форму) — див. §1.3.
 
 ### 3.3 Недостатньо credits
 
@@ -311,11 +311,11 @@ Kling також уміє зробити відео одразу з тексту
 
 **Auth.** Ім’я (тільки signup), email, пароль. Помилки зрозумілою мовою.
 
-**Create.** Сітка 5 форматів — **§2.3**. **Коротке відео** / Картинка — активні. **Відео** і **Реклама** — окремі заглушки, не одна кнопка. Social — теж «soon». TikTok окремим чіпом **не** показуємо. Промпт — від 8 до 2 000 символів. Copy: речення може вистачити; якщо ні — офер, місце, для кого. Reel 150 cr · Image / Post 13 cr. Перемикач **Use brand kit / Ignore** (`use_brand`, дефолт так): з брендом у промпт картинки йдуть назва, кольори, шрифт, тон і ніша; без бренду — лише бриф. Те саме в студії — regenerate, щоб застосувати. UI показує, які поля кіту підуть на картинку.
+**Create.** Сітка 5 форматів — **§2.3**. **Коротке відео** / Картинка — активні. **Відео** і **Реклама** — окремі заглушки, не одна кнопка. Social — теж «soon». TikTok окремим чіпом **не** показуємо. Промпт — від 8 до 2 000 символів. Copy: речення може вистачити; якщо ні — офер, місце, для кого. Reel 150 cr · Image / Post 13 cr. Перемикач **Use brand kit / Ignore** (`use_brand`, дефолт так): з брендом у промпт картинки йдуть назва, кольори, шрифт, тон, ніша, **лого і опційні фото** (зал / людина / товар); без бренду — лише бриф. Те саме в студії — regenerate, щоб застосувати. UI показує, які поля кіту підуть на картинку.
 
 **Studio.** Коротке відео: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: **photo** — 1:1. **invite / info / offer** — прев’ю **2:3** `contain`. На екрані JPG з OpenAI цілком. Полів флаєра немає; `PATCH …/invite` лише JSON. Зверху лише **Бриф** (textarea), `Save brief` (PATCH, 0 cr) і `Copy brief` (з fallback, якщо браузер блокує clipboard). Рядок `image post · …` і нагадування «кіт N% — додайте лого» **не показуємо** (лого опційне). На Create — список збережених брифів, клік вставляє. Після Pictures: Download JPG; takes поруч; *Share* і *Would you publish?* **сховані** (`SHOW_SHARE_AND_PUBLISH`). Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
 
-**Brand Kit.** Дві групи: *How it looks & sounds* (кольори, шрифт, тон-чипси + optional note) і *About your business* (ім’я, **upload лого**, vertical, сайт, Instagram) — друге опційне. Vertical: salon / café / fitness / **other** + вільний текст; мікрокопі: лише каркас сцен, не обов’язково. Жива прев’ю-картка (CSS, 0 AI). Індикатор «Brand kit N% complete — …». Learned-картка зверху + **Reset learning** (одразу перераховує з готової історії, не чекає 3 нові Reels). Лого: `POST /brand/logo` — **max 2 MB, лише `image/png` / `image/jpeg`**, SVG заборонено; `DELETE /brand/logo` стирає файл; `GET /brand/logo` віддає файл з `Content-Type` png/jpeg і `X-Content-Type-Options: nosniff`, ніколи `image/svg+xml`, у UI лише `<img>`. Невалідний hex не ламає picker. Disclaimer про знаки.
+**Brand Kit.** Дві групи: *How it looks & sounds* (кольори, шрифт, тон-чипси + optional note) і *About your business* (ім’я, **upload лого**, **до 3 опційних фото** — зал / людина / товар, vertical, сайт, Instagram) — друге опційне, **не** блокер Create. Vertical: salon / café / fitness / **other** + вільний текст; мікрокопі: лише каркас сцен, не обов’язково. Жива прев’ю-картка (CSS, 0 AI). Індикатор «Brand kit N% complete — …» (фото в % **не** входять — не нагадувати). Learned-картка зверху + **Reset learning**. Лого: `POST /brand/logo` — **max 2 MB, лише PNG/JPEG**, SVG заборонено; `DELETE /brand/logo` стирає лише лого, не фото. `GET /brand/logo` — файл, `nosniff`. Фото: `POST/DELETE/GET /brand/ref/{place|people|product}` — той самий ліміт. Якщо `use_brand=1` — лого і наявні фото **йдуть в промпт** Idea/Script/Pictures; для gpt-image ще як референс (`images.edit`), інакше лише текст. Під лого — вибір **«фото без лого» / «поставити на фото»** (`logo_on_photos`, дефолт ні): власник не мусить писати це в брифі. Запрошення / інфо / офер можуть показати знак на сторінці в будь-якому разі. Disclaimer: назва / лого / фото — його; людей лише за згодою.
 
 **Billing.** 4 плани (поточний виділено, `yourPlan`), 3 пакети з £, таблиця кроків 150 / 13. **Choose / Buy сховані**, поки немає `STRIPE_SECRET_KEY`. Лог generation **не показуємо** (`SHOW_AI_COST_LOG=false`). Видалити акаунт — кнопка тут (`DELETE /auth/account`). Окремої сторінки Account немає. Ціни **FROZEN**.
 
@@ -506,6 +506,8 @@ Text AI  Image AI   TTS
 | user_id | unique FK | |
 | business_name | text | |
 | logo_url | text | внутрішній `/brand/logo` після upload, або порожньо |
+| logo_on_photos | int 0/1 | чи друкувати лого на фото Reel / photo-post; дефолт 0. Задається в Brand Kit, не в брифі |
+| (файли, не колонки) | PNG/JPEG на диску | `ref-place` / `ref-people` / `ref-product` у `data/media/brand/{userId}`; у JSON — `ref_*_url` |
 | primary_color | text | `#RRGGBB` |
 | secondary_color | text | `#RRGGBB` |
 | font | text | Fraunces / Outfit / Playfair Display / IBM Plex Sans |
@@ -734,6 +736,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | POST | `/brand/logo` | так | `{ image: data-url }` → файл у `data/media/brand/{userId}`; **≤2 MB, лише PNG/JPEG** (перевірка magic bytes); SVG/WebP → 400 |
 | DELETE | `/brand/logo` | так | стерти файл і `logo_url` |
 | GET | `/brand/logo` | так | файл лого як `<img>`; `Content-Type` png/jpeg, не `image/svg+xml` |
+| GET / POST / DELETE | `/brand/ref/:slot` | так | `slot` = `place` \| `people` \| `product`. Той самий ліміт, що лого. DELETE слота не чіпає лого |
 | POST | `/brand/learning/reset` | так | стерти і **одразу перерахувати** `learned_summary_json` з історії |
 | GET | `/billing/plans` | ні | плани + packs + `checkoutEnabled` + `frozenPrices` |
 | GET | `/billing/credits` | так | balance, transactions, generations, **economics** (собівартість на готовий Reel) |
@@ -841,7 +844,7 @@ Image / Post: idea → visuals. Один JPG з OpenAI (§3.6). `PATCH /invite` 
 
 Якщо JSON моделі битий — fallback на preview-текст. Credits лише після успішного артефакту кроку.
 
-Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди в контексті.
+Brand Kit (ніша, лого і опційні фото, якщо задані) завжди в контексті, коли `use_brand=1`.
 
 Нішеві каркаси: 3 JSON-структури сцен «салон / кава / фітнес» у preview-скрипті вже є; з ключем OpenAI — ті самі вертикалі в system prompt. Користувач пише речення; система підставляє каркас, не меню шаблонів.
 
@@ -954,7 +957,7 @@ Brand Kit (і ніша salon/cafe/fitness, якщо задана) завжди �
 4. Після повного шляху баланс = 250 (при вартості 150 і старті 400), у Library статус ready **і** файл.
 5. Повторний Idea **без** `regenerate` не списує 5 credits і **не викликає AI**; **з** `regenerate` — списує і каскадить; 4-та спроба Idea — **10 credits (2×)**, не 429 (§7.2).
 6. Video / Ad / Social post не створюють проєкт. **Image / Post створює** (13 cr; `GET …/image/:sceneId` = `still-1.jpg` з OpenAI).
-7. Brand Kit зберігається і впливає на Idea; якщо `use_brand=1` — також на промпт картинки (назва, кольори, шрифт, тон, ніша). Лого опційне.
+7. Brand Kit зберігається і впливає на Idea; якщо `use_brand=1` — також на промпт картинки (назва, кольори, шрифт, тон, ніша, **лого і опційні фото залу / людини / товару**). Лого і фото не обов’язкові.
 8. Credits: плани, пакети, таблиця 150/13, поточний план виділено. Лог generation у API є, у UI **схований**. Checkout без Stripe не відкривається.
 9. Idea / Script / Captions без ключа дають preview-JSON. **Visuals без `OPENAI_API_KEY` — 400.** Voice без ключа: `say` або тиша. **Бета і зовнішнє демо — ключ + TTS + ffmpeg**, не тихий wav.
 10. `GET /health` = 200. `GET /projects/:id/file` віддає mp4, коли файл є.

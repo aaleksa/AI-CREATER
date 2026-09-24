@@ -2,8 +2,23 @@ import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { v4 as uuid } from "uuid";
-import { brandLogoType, hasBrandLogo, logoKindFromBytes, removeBrandLogo, writeBrandLogo } from "../services/media.js";
+import {
+  brandImageUrls,
+  brandLogoType,
+  brandRefType,
+  hasBrandLogo,
+  isBrandRefSlot,
+  logoKindFromBytes,
+  removeBrandLogo,
+  removeBrandRef,
+  writeBrandLogo,
+  writeBrandRef,
+} from "../services/brandAssets.js";
 import { maybeRefreshLearnedSummary, readyCount } from "../services/learning.js";
+
+function flag(value: unknown) {
+  return value === true || value === 1 || value === "1";
+}
 
 function hex(value: unknown, fallback: string) {
   const text = String(value || "");
@@ -63,10 +78,14 @@ function serializeBrand(row: Record<string, unknown> | undefined, userId: string
     if (learned_summary.visualNotes) learned_lines.push(learned_summary.visualNotes);
   }
   const progress = completeness(row, userId);
-  const logo = hasBrandLogo(userId) ? "/brand/logo" : String(row.logo_url || "");
+  const images = brandImageUrls(userId);
   return {
     ...row,
-    logo_url: logo,
+    logo_url: images.logo_url || String(row.logo_url || ""),
+    ref_place_url: images.ref_place_url,
+    ref_people_url: images.ref_people_url,
+    ref_product_url: images.ref_product_url,
+    logo_on_photos: Number(row.logo_on_photos) === 1,
     learned_summary,
     learned_lines,
     completeness: progress,
@@ -86,6 +105,23 @@ brandRouter.get("/", (req, res) => {
   res.json({ brandKit: serializeBrand(kitOf(req.user!.id), req.user!.id) });
 });
 
+function readUpload(raw: unknown) {
+  const match = String(raw || "").match(/^data:image\/(png|jpeg|jpg);base64,(.+)$/i);
+  if (!match) {
+    return { error: "Use a PNG or JPG under 2 MB. SVG is not allowed." };
+  }
+  const declared = match[1].toLowerCase() === "jpeg" ? "jpg" : match[1].toLowerCase();
+  const buffer = Buffer.from(match[2], "base64");
+  if (buffer.length > 2 * 1024 * 1024) {
+    return { error: "That file is too large. Keep it under 2 MB." };
+  }
+  const kind = logoKindFromBytes(buffer);
+  if (!kind || (declared === "png" && kind !== "png") || (declared === "jpg" && kind !== "jpg")) {
+    return { error: "Use a PNG or JPG under 2 MB. SVG is not allowed." };
+  }
+  return { buffer, kind };
+}
+
 brandRouter.get("/logo", (req, res) => {
   const logo = brandLogoType(req.user!.id);
   if (!logo) {
@@ -98,25 +134,56 @@ brandRouter.get("/logo", (req, res) => {
 });
 
 brandRouter.post("/logo", (req, res) => {
-  const raw = String(req.body?.image || "");
-  const match = raw.match(/^data:image\/(png|jpeg|jpg);base64,(.+)$/i);
-  if (!match) {
-    res.status(400).json({ error: "Use a PNG or JPG under 2 MB. SVG is not allowed." });
+  const upload = readUpload(req.body?.image);
+  if ("error" in upload) {
+    res.status(400).json({ error: upload.error });
     return;
   }
-  const declared = match[1].toLowerCase() === "jpeg" ? "jpg" : match[1].toLowerCase();
-  const buffer = Buffer.from(match[2], "base64");
-  if (buffer.length > 2 * 1024 * 1024) {
-    res.status(400).json({ error: "That file is too large. Keep it under 2 MB." });
-    return;
-  }
-  const kind = logoKindFromBytes(buffer);
-  if (!kind || (declared === "png" && kind !== "png") || (declared === "jpg" && kind !== "jpg")) {
-    res.status(400).json({ error: "Use a PNG or JPG under 2 MB. SVG is not allowed." });
-    return;
-  }
-  writeBrandLogo(req.user!.id, buffer, kind);
+  writeBrandLogo(req.user!.id, upload.buffer, upload.kind);
   db.prepare("UPDATE brand_kits SET logo_url = '/brand/logo', updated_at = datetime('now') WHERE user_id = ?").run(req.user!.id);
+  res.json({ brandKit: serializeBrand(kitOf(req.user!.id), req.user!.id) });
+});
+
+brandRouter.get("/ref/:slot", (req, res) => {
+  const slot = String(req.params.slot);
+  if (!isBrandRefSlot(slot)) {
+    res.status(404).json({ error: "Unknown photo." });
+    return;
+  }
+  const ref = brandRefType(req.user!.id, slot);
+  if (!ref) {
+    res.status(404).json({ error: "No photo yet." });
+    return;
+  }
+  res.type(ref.type);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.sendFile(ref.file);
+});
+
+brandRouter.post("/ref/:slot", (req, res) => {
+  const slot = String(req.params.slot);
+  if (!isBrandRefSlot(slot)) {
+    res.status(404).json({ error: "Unknown photo." });
+    return;
+  }
+  const upload = readUpload(req.body?.image);
+  if ("error" in upload) {
+    res.status(400).json({ error: upload.error });
+    return;
+  }
+  writeBrandRef(req.user!.id, slot, upload.buffer, upload.kind);
+  db.prepare("UPDATE brand_kits SET updated_at = datetime('now') WHERE user_id = ?").run(req.user!.id);
+  res.json({ brandKit: serializeBrand(kitOf(req.user!.id), req.user!.id) });
+});
+
+brandRouter.delete("/ref/:slot", (req, res) => {
+  const slot = String(req.params.slot);
+  if (!isBrandRefSlot(slot)) {
+    res.status(404).json({ error: "Unknown photo." });
+    return;
+  }
+  removeBrandRef(req.user!.id, slot);
+  db.prepare("UPDATE brand_kits SET updated_at = datetime('now') WHERE user_id = ?").run(req.user!.id);
   res.json({ brandKit: serializeBrand(kitOf(req.user!.id), req.user!.id) });
 });
 
@@ -148,6 +215,7 @@ brandRouter.put("/", (req, res) => {
     instagram: String(body.instagram ?? ""),
     vertical,
     vertical_note: vertical === "other" ? String(body.vertical_note ?? "").trim().slice(0, 80) : "",
+    logo_on_photos: flag(body.logo_on_photos) ? 1 : 0,
   };
   const existing = db.prepare("SELECT id FROM brand_kits WHERE user_id = ?").get(req.user!.id) as { id: string } | undefined;
   if (existing) {
@@ -155,13 +223,14 @@ brandRouter.put("/", (req, res) => {
       `UPDATE brand_kits SET
         business_name=@business_name, logo_url=@logo_url, primary_color=@primary_color,
         secondary_color=@secondary_color, font=@font, tone_of_voice=@tone_of_voice, tone_note=@tone_note,
-        website=@website, instagram=@instagram, vertical=@vertical, vertical_note=@vertical_note, updated_at=datetime('now')
+        website=@website, instagram=@instagram, vertical=@vertical, vertical_note=@vertical_note,
+        logo_on_photos=@logo_on_photos, updated_at=datetime('now')
        WHERE user_id=@user_id`
     ).run({ ...fields, user_id: req.user!.id });
   } else {
     db.prepare(
-      `INSERT INTO brand_kits (id, user_id, business_name, logo_url, primary_color, secondary_color, font, tone_of_voice, tone_note, website, instagram, vertical, vertical_note)
-       VALUES (@id, @user_id, @business_name, @logo_url, @primary_color, @secondary_color, @font, @tone_of_voice, @tone_note, @website, @instagram, @vertical, @vertical_note)`
+      `INSERT INTO brand_kits (id, user_id, business_name, logo_url, primary_color, secondary_color, font, tone_of_voice, tone_note, website, instagram, vertical, vertical_note, logo_on_photos)
+       VALUES (@id, @user_id, @business_name, @logo_url, @primary_color, @secondary_color, @font, @tone_of_voice, @tone_note, @website, @instagram, @vertical, @vertical_note, @logo_on_photos)`
     ).run({ id: uuid(), user_id: req.user!.id, ...fields });
   }
   res.json({ brandKit: serializeBrand(kitOf(req.user!.id), req.user!.id) });

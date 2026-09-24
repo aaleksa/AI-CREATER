@@ -53,6 +53,8 @@ export const ERROR_UK: Record<string, string> = {
   "Use a PNG or JPG under 2 MB. SVG is not allowed.": "PNG або JPG до 2 МБ. SVG не можна.",
   "That file is too large. Keep it under 2 MB.": "Файл завеликий. До 2 МБ.",
   "No logo yet.": "Логотипу ще немає.",
+  "No photo yet.": "Фото ще немає.",
+  "Unknown photo.": "Невідоме фото.",
   "Unknown reason for this step.": "Невідома причина для цього кроку.",
   "Say what was wrong — a few words is enough.": "Напишіть, що не так — кількох слів досить.",
   "Choose a plan or a credit pack.": "Оберіть план або пакет кредитів.",

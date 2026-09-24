@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { v4 as uuid } from "uuid";
+import { brandImageUrls } from "./brandAssets.js";
 import { db } from "../db/index.js";
 import { attemptCost, config, CREDIT_COSTS, EXTRA_ATTEMPT_MULTIPLIER, IMAGE_SLIDE_COUNT, MAX_STEP_ATTEMPTS, MAX_REGENERATES_PER_STEP, VISUAL_SCENE_CREDITS, visualMinLive } from "../config.js";
 import { getBalance, refundCredits, spendCredits } from "./credits.js";
@@ -164,7 +165,17 @@ function saveStepVersion(projectId: string, step: string, payload: unknown, gene
 }
 
 function brandFor(userId: string): BrandKit | null {
-  return (db.prepare("SELECT * FROM brand_kits WHERE user_id = ?").get(userId) as BrandKit | undefined) ?? null;
+  const row = db.prepare("SELECT * FROM brand_kits WHERE user_id = ?").get(userId) as BrandKit | undefined;
+  if (!row) return null;
+  const images = brandImageUrls(userId);
+  return {
+    ...row,
+    user_id: userId,
+    logo_url: images.logo_url || row.logo_url || "",
+    ref_place_url: images.ref_place_url,
+    ref_people_url: images.ref_people_url,
+    ref_product_url: images.ref_product_url,
+  };
 }
 
 function getProject(id: string, userId: string) {

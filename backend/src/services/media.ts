@@ -7,65 +7,21 @@ import OpenAI from "openai";
 import { config } from "../config.js";
 import type { CaptionCue, Script, Visual } from "./ai.js";
 
+export {
+  brandLogoDir,
+  brandLogoPath,
+  brandLogoType,
+  hasBrandLogo,
+  logoKindFromBytes,
+  removeBrandKitFiles,
+  removeBrandLogo,
+  writeBrandLogo,
+} from "./brandAssets.js";
+
 const require = createRequire(import.meta.url);
 const ffmpegPath = (require("ffmpeg-static") as string | null) || "ffmpeg";
 
 const dataDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../data");
-
-export function brandLogoDir(userId: string) {
-  const dir = path.join(dataDir, "media", "brand", userId);
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
-}
-
-export function brandLogoPath(userId: string) {
-  const dir = path.join(dataDir, "media", "brand", userId);
-  if (!fs.existsSync(dir)) return "";
-  const found = fs.readdirSync(dir).find((name) => /^logo\.(png|jpe?g|webp)$/i.test(name));
-  return found ? path.join(dir, found) : "";
-}
-
-export function brandLogoType(userId: string) {
-  const file = brandLogoPath(userId);
-  if (!file) return null;
-  const ext = path.extname(file).toLowerCase();
-  const type =
-    ext === ".png" ? "image/png" : ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".webp" ? "image/webp" : "";
-  if (!type) return null;
-  return { file, type };
-}
-
-export function logoKindFromBytes(buffer: Buffer): "png" | "jpg" | "" {
-  if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
-    return "png";
-  }
-  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
-    return "jpg";
-  }
-  return "";
-}
-
-export function hasBrandLogo(userId: string) {
-  const file = brandLogoPath(userId);
-  return Boolean(file && fs.existsSync(file) && fs.statSync(file).size > 0);
-}
-
-export function removeBrandLogo(userId: string) {
-  const dir = path.join(dataDir, "media", "brand", userId);
-  fs.rmSync(dir, { recursive: true, force: true });
-}
-
-export function writeBrandLogo(userId: string, buffer: Buffer, ext: string) {
-  const safe = ext === "png" || ext === "jpg" || ext === "jpeg" ? (ext === "jpeg" ? "jpg" : ext) : "";
-  if (!safe) throw Object.assign(new Error("Use a PNG or JPG under 2 MB. SVG is not allowed."), { status: 400 });
-  const dir = brandLogoDir(userId);
-  for (const name of fs.readdirSync(dir)) {
-    if (name.startsWith("logo.")) fs.rmSync(path.join(dir, name), { force: true });
-  }
-  const file = path.join(dir, `logo.${safe}`);
-  fs.writeFileSync(file, buffer);
-  return file;
-}
 
 export function projectMediaDir(projectId: string) {
   const dir = path.join(dataDir, "media", projectId);

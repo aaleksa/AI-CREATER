@@ -20,6 +20,12 @@ const TYPES = [
 
 const FONTS = ["Fraunces", "Outfit", "Playfair Display", "IBM Plex Sans"];
 
+const REF_SLOTS = [
+  { id: "place" as const, labelKey: "brand.refPlace", hintKey: "brand.refPlaceHint" },
+  { id: "people" as const, labelKey: "brand.refPeople", hintKey: "brand.refPeopleHint" },
+  { id: "product" as const, labelKey: "brand.refProduct", hintKey: "brand.refProductHint" },
+];
+
 const empty = {
   business_name: "",
   logo_url: "",
@@ -32,6 +38,9 @@ const empty = {
   instagram: "",
   vertical: "",
   vertical_note: "",
+  ref_place_url: "",
+  ref_people_url: "",
+  ref_product_url: "",
 };
 
 function applyKit(kit: BrandKitRow) {
@@ -49,7 +58,31 @@ function applyKit(kit: BrandKitRow) {
     instagram: kit.instagram || "",
     vertical: kit.vertical || "",
     vertical_note: kit.vertical_note || "",
+    ref_place_url: kit.ref_place_url || "",
+    ref_people_url: kit.ref_people_url || "",
+    ref_product_url: kit.ref_product_url || "",
   };
+}
+
+function useKitImage(path: string) {
+  const [src, setSrc] = useState("");
+  useEffect(() => {
+    if (!path.startsWith("/brand/")) {
+      setSrc(path.startsWith("http") ? path : "");
+      return;
+    }
+    let url = "";
+    fetchMedia(path)
+      .then((blob) => {
+        url = URL.createObjectURL(blob);
+        setSrc(url);
+      })
+      .catch(() => setSrc(""));
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [path]);
+  return src;
 }
 
 export default function Brand() {
@@ -61,8 +94,13 @@ export default function Brand() {
   const [learnedLines, setLearnedLines] = useState<string[]>([]);
   const [readyProjects, setReadyProjects] = useState(0);
   const [hint, setHint] = useState("");
-  const [logoSrc, setLogoSrc] = useState("");
   const [ownNote, setOwnNote] = useState(false);
+  const [logoOnPhotos, setLogoOnPhotos] = useState(false);
+  const logoSrc = useKitImage(form.logo_url);
+  const placeSrc = useKitImage(form.ref_place_url);
+  const peopleSrc = useKitImage(form.ref_people_url);
+  const productSrc = useKitImage(form.ref_product_url);
+  const refSrc = { place: placeSrc, people: peopleSrc, product: productSrc };
 
   function apply(kit: BrandKitRow) {
     setForm(applyKit(kit));
@@ -71,6 +109,7 @@ export default function Brand() {
     setReadyProjects(kit.ready_projects || 0);
     setHint(formatBrandHint(t, kit.completeness));
     setOwnNote(Boolean(kit.tone_note));
+    setLogoOnPhotos(kit.logo_on_photos === true || kit.logo_on_photos === "1" || Number(kit.logo_on_photos) === 1);
   }
 
   useEffect(() => {
@@ -79,23 +118,6 @@ export default function Brand() {
       apply(d.brandKit);
     });
   }, [t]);
-
-  useEffect(() => {
-    if (form.logo_url !== "/brand/logo") {
-      setLogoSrc(form.logo_url.startsWith("http") ? form.logo_url : "");
-      return;
-    }
-    let url = "";
-    fetchMedia("/brand/logo")
-      .then((blob) => {
-        url = URL.createObjectURL(blob);
-        setLogoSrc(url);
-      })
-      .catch(() => setLogoSrc(""));
-    return () => {
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [form.logo_url]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -106,6 +128,7 @@ export default function Brand() {
         ...form,
         instagram: instagram ? `@${instagram}` : "",
         website: form.website.trim(),
+        logo_on_photos: logoOnPhotos,
       });
       apply(brandKit);
       setSaved(true);
@@ -115,7 +138,7 @@ export default function Brand() {
     }
   }
 
-  async function onLogo(file: File | undefined) {
+  function readKitFile(file: File | undefined, send: (dataUrl: string) => Promise<void>, fallback: string) {
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) {
       setError(t("brand.tooBig"));
@@ -128,13 +151,23 @@ export default function Brand() {
     const reader = new FileReader();
     reader.onload = async () => {
       try {
-        const { brandKit } = await api.uploadLogo(String(reader.result || ""));
-        apply(brandKit);
+        await send(String(reader.result || ""));
       } catch (err) {
-        setError(err instanceof Error ? te(err.message) : t("brand.fallbackLogo"));
+        setError(err instanceof Error ? te(err.message) : fallback);
       }
     };
     reader.readAsDataURL(file);
+  }
+
+  async function onLogo(file: File | undefined) {
+    readKitFile(
+      file,
+      async (image) => {
+        const { brandKit } = await api.uploadLogo(image);
+        apply(brandKit);
+      },
+      t("brand.fallbackLogo")
+    );
   }
 
   async function removeLogo() {
@@ -142,9 +175,29 @@ export default function Brand() {
     try {
       const { brandKit } = await api.deleteLogo();
       apply(brandKit);
-      setLogoSrc("");
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("brand.fallbackRemoveLogo"));
+    }
+  }
+
+  async function onRef(slot: "place" | "people" | "product", file: File | undefined) {
+    readKitFile(
+      file,
+      async (image) => {
+        const { brandKit } = await api.uploadBrandRef(slot, image);
+        apply(brandKit);
+      },
+      t("brand.fallbackRef")
+    );
+  }
+
+  async function removeRef(slot: "place" | "people" | "product") {
+    setError("");
+    try {
+      const { brandKit } = await api.deleteBrandRef(slot);
+      apply(brandKit);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("brand.fallbackRemoveRef"));
     }
   }
 
@@ -293,6 +346,50 @@ export default function Brand() {
                 <input id="logo" className="sr-only" type="file" accept="image/png,image/jpeg" onChange={(e) => onLogo(e.target.files?.[0])} />
               </div>
             </div>
+            <p className="hint" style={{ marginTop: 14 }}>{t("brand.logoStampAsk")}</p>
+            <p className="hint">{t("brand.logoStampHint")}</p>
+            <div className="choice-row tones">
+              <button type="button" className={`choice ${!logoOnPhotos ? "on" : ""}`} onClick={() => setLogoOnPhotos(false)}>
+                <b>{t("brand.logoStampOff")}</b>
+                <span className="hint">{t("brand.logoStampOffHint")}</span>
+              </button>
+              <button type="button" className={`choice ${logoOnPhotos ? "on" : ""}`} onClick={() => setLogoOnPhotos(true)}>
+                <b>{t("brand.logoStampOn")}</b>
+                <span className="hint">{t("brand.logoStampOnHint")}</span>
+              </button>
+            </div>
+          </div>
+          <div className="field">
+            <label>{t("brand.refs")}</label>
+            <p className="hint">{t("brand.refsHint")}</p>
+            {REF_SLOTS.map((slot) => {
+              const src = refSrc[slot.id];
+              return (
+                <div key={slot.id} className="logo-pick" style={{ marginTop: 14 }}>
+                  {src && <img src={src} alt="" className="logo-pick-thumb ref-thumb" />}
+                  <div>
+                    <p style={{ margin: 0 }}><b>{t(slot.labelKey)}</b></p>
+                    <p className="hint">{t(slot.hintKey)}</p>
+                    {src && <p className="ok">{t("brand.refOn")}</p>}
+                    <label className="btn ghost" htmlFor={`ref-${slot.id}`} style={{ display: "inline-block", marginTop: 8 }}>
+                      {src ? t("brand.replaceRef") : t("brand.addRef")}
+                    </label>
+                    {src && (
+                      <button className="btn ghost" type="button" style={{ marginLeft: 8, marginTop: 8 }} onClick={() => removeRef(slot.id)}>
+                        {t("brand.removeRef")}
+                      </button>
+                    )}
+                    <input
+                      id={`ref-${slot.id}`}
+                      className="sr-only"
+                      type="file"
+                      accept="image/png,image/jpeg"
+                      onChange={(e) => onRef(slot.id, e.target.files?.[0])}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
           <div className="field">
             <label>{t("brand.vertical")}</label>
@@ -354,6 +451,16 @@ export default function Brand() {
               <img src={logoSrc} alt="" className="brand-logo" />
             ) : (
               <p className="hint" style={{ color: "inherit", opacity: 0.55 }}>{t("brand.logo")}: {t("brand.notSet")}</p>
+            )}
+            <p className="hint" style={{ color: "inherit", marginTop: 8 }}>
+              {logoOnPhotos ? t("brand.logoStampOn") : t("brand.logoStampOff")}
+            </p>
+            {(placeSrc || peopleSrc || productSrc) && (
+              <div className="ref-preview-row">
+                {placeSrc && <img src={placeSrc} alt="" className="ref-preview-thumb" />}
+                {peopleSrc && <img src={peopleSrc} alt="" className="ref-preview-thumb" />}
+                {productSrc && <img src={productSrc} alt="" className="ref-preview-thumb" />}
+              </div>
             )}
             <p
               style={{

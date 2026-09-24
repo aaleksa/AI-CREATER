@@ -385,6 +385,20 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
   border-radius: 10px;
   background: #fff;
 }
+.logo-pick-thumb.ref-thumb,
+.ref-preview-thumb {
+  object-fit: cover;
+}
+.ref-preview-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ref-preview-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+}
 .sr-only {
   position: absolute;
   width: 1px;

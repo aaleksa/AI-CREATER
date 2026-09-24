@@ -2,7 +2,8 @@ import fs from "node:fs";
 import Stripe from "stripe";
 import { db } from "../db/index.js";
 import { config } from "../config.js";
-import { projectMediaPath, removeBrandLogo } from "./media.js";
+import { projectMediaPath } from "./media.js";
+import { removeBrandKitFiles } from "./brandAssets.js";
 
 async function cancelStripeSubscriptions(userId: string) {
   const rows = db
@@ -40,5 +41,5 @@ export async function deleteAccount(userId: string) {
   for (const project of projects) {
     fs.rmSync(projectMediaPath(project.id), { recursive: true, force: true });
   }
-  removeBrandLogo(userId);
+  removeBrandKitFiles(userId);
 }

@@ -1,3 +1,5 @@
+import { useLocale } from "../i18n/locale";
+
 type BrandBits = {
   business_name?: string;
   primary_color?: string;
@@ -6,6 +8,11 @@ type BrandBits = {
   tone_of_voice?: string;
   vertical?: string;
   vertical_note?: string;
+  logo_url?: string;
+  ref_place_url?: string;
+  ref_people_url?: string;
+  ref_product_url?: string;
+  logo_on_photos?: boolean | number | string;
 };
 
 export default function BrandToggle({
@@ -29,6 +36,7 @@ export default function BrandToggle({
   usingLabel?: string;
   kit?: BrandBits | null;
 }) {
+  const { t } = useLocale();
   const niche =
     kit?.vertical === "other" ? kit.vertical_note : kit?.vertical;
   const hasKit = Boolean(
@@ -38,7 +46,11 @@ export default function BrandToggle({
         kit.secondary_color ||
         kit.font ||
         kit.tone_of_voice ||
-        niche)
+        niche ||
+        kit.logo_url ||
+        kit.ref_place_url ||
+        kit.ref_people_url ||
+        kit.ref_product_url)
   );
   return (
     <div className="brand-toggle">
@@ -63,6 +75,16 @@ export default function BrandToggle({
             {kit?.font && <span>{kit.font}</span>}
             {niche && <span>{niche}</span>}
             {kit?.tone_of_voice && <span>{kit.tone_of_voice}</span>}
+            {kit?.logo_url && (
+              <span>
+                {kit.logo_on_photos === true || kit.logo_on_photos === 1 || kit.logo_on_photos === "1"
+                  ? t("brand.logoStampOn")
+                  : t("brand.logo")}
+              </span>
+            )}
+            {kit?.ref_place_url && <span>{t("brand.refPlace")}</span>}
+            {kit?.ref_people_url && <span>{t("brand.refPeople")}</span>}
+            {kit?.ref_product_url && <span>{t("brand.refProduct")}</span>}
           </div>
         </div>
       )}

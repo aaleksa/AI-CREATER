@@ -35,6 +35,7 @@ export type BrandKitRow = Record<string, string> & {
   completeness?: { percent: number; hint: string; nextKey?: string };
   tone_note?: string;
   vertical_note?: string;
+  logo_on_photos?: boolean;
 };
 export type Idea = {
   title: string;
@@ -193,11 +194,15 @@ export const api = {
     }),
   deleteAccount: () => request<{ ok: boolean }>("/auth/account", { method: "DELETE" }),
   brand: () => request<{ brandKit: BrandKitRow | null }>("/brand"),
-  saveBrand: (body: Record<string, string>) =>
+  saveBrand: (body: Record<string, string | boolean>) =>
     request<{ brandKit: BrandKitRow }>("/brand", { method: "PUT", body: JSON.stringify(body) }),
   uploadLogo: (image: string) =>
     request<{ brandKit: BrandKitRow }>("/brand/logo", { method: "POST", body: JSON.stringify({ image }) }),
   deleteLogo: () => request<{ brandKit: BrandKitRow }>("/brand/logo", { method: "DELETE" }),
+  uploadBrandRef: (slot: "place" | "people" | "product", image: string) =>
+    request<{ brandKit: BrandKitRow }>(`/brand/ref/${slot}`, { method: "POST", body: JSON.stringify({ image }) }),
+  deleteBrandRef: (slot: "place" | "people" | "product") =>
+    request<{ brandKit: BrandKitRow }>(`/brand/ref/${slot}`, { method: "DELETE" }),
   resetLearning: () => request<{ brandKit: BrandKitRow }>("/brand/learning/reset", { method: "POST" }),
   plans: () =>
     request<{
