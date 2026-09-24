@@ -140,6 +140,12 @@ export function listBrandImageFiles(userId: string): BrandImageFile[] {
   const out: BrandImageFile[] = [];
   const logo = brandLogoType(userId);
   if (logo) out.push({ slot: "logo", file: logo.file, type: logo.type, filename: path.basename(logo.file) });
+  out.push(...listBrandRefFiles(userId));
+  return out;
+}
+
+export function listBrandRefFiles(userId: string): BrandImageFile[] {
+  const out: BrandImageFile[] = [];
   for (const slot of BRAND_REF_SLOTS) {
     const ref = brandRefType(userId, slot);
     if (ref) out.push({ slot, file: ref.file, type: ref.type, filename: path.basename(ref.file) });

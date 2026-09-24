@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import OpenAI, { toFile } from "openai";
 import { config } from "../config.js";
-import { listBrandImageFiles } from "./brandAssets.js";
+import { listBrandRefFiles } from "./brandAssets.js";
 import { guessPoster, type InviteCard } from "./invite.js";
 
 export type LearnedSummary = {
@@ -33,7 +33,7 @@ export type BrandKit = {
   logo_on_photos?: boolean | number | string;
 };
 
-function stampLogoOnPhotos(brand?: BrandKit | null) {
+export function wantsLogoStamp(brand?: BrandKit | null) {
   return brand?.logo_on_photos === true || brand?.logo_on_photos === 1 || brand?.logo_on_photos === "1";
 }
 
@@ -168,9 +168,7 @@ export function brandLook(brand?: BrandKit | null, mode: "designed" | "photo" = 
   if (mode === "photo") {
     return [
       "Use this brand kit as colour and mood only. Do not invent another business.",
-      stampLogoOnPhotos(brand)
-        ? "Place their attached logo once, small, in a corner. Use that exact mark. No other words or title card."
-        : "Do not paint the business name, a logo, a title card, or any letters on the picture.",
+      "Do not paint the business name, a logo, a title card, or any letters on the picture. If a logo belongs on this photo, we add their file ourselves after.",
       "If the scene is a place or story that is not this trade, photograph that scene. The kit is grade and mood, not a different subject.",
       brand.primary_color && `Grade light and accents toward ${brand.primary_color}.`,
       brand.secondary_color && `Quiet space may lean ${brand.secondary_color}.`,
@@ -207,11 +205,7 @@ function brandRefPrompt(brand?: BrandKit | null, mode: "designed" | "photo" = "d
   const lines: string[] = [];
   if (brandHasLogo(brand)) {
     lines.push(
-      mode === "designed"
-        ? "Their real logo is attached and named in this prompt. Use that exact mark. Do not invent a different logo."
-        : stampLogoOnPhotos(brand)
-          ? "Their real logo is attached. Put that exact mark on the photograph, small, once. Do not invent a different logo."
-          : "Their real logo is attached. It is their mark — do not invent another. Do not print it on the photograph. The owner chose to keep photos clean."
+      "They have a real logo on file. Do not invent a different mark and do not redraw it. We place the file ourselves if they asked."
     );
   }
   if (brand.ref_place_url) {
@@ -229,7 +223,7 @@ function brandRefPrompt(brand?: BrandKit | null, mode: "designed" | "photo" = "d
   }
   if (lines.length) {
     lines.push(
-      "Input images, in this order when attached: logo, place, people, product. Use them as reference, then make a new picture for this request — do not return the upload unchanged."
+      "Input images, when attached, are only their place, person or product — not the logo. Use them as reference, then make a new picture. Do not return the upload unchanged."
     );
   }
   return lines;
@@ -264,9 +258,9 @@ function brandContext(brand?: BrandKit | null) {
     brand.secondary_color && `Secondary colour: ${brand.secondary_color}. Use for paper and quiet space.`,
     brand.font && `Type feel (voice and designed posts only): ${brand.font}.`,
     brand.logo_url &&
-      (stampLogoOnPhotos(brand)
-        ? "They uploaded their real logo and want it on photographs — small, once, that exact mark."
-        : "They uploaded their real logo so we know the mark. Do not print it on photographs unless this request asks."),
+      (wantsLogoStamp(brand)
+        ? "They uploaded their real logo. We will stamp that file on photos after generation. Do not paint a logo."
+        : "They uploaded their real logo so we know the mark. Do not paint it on photographs."),
     brand.ref_place_url && `They uploaded a photo of their real place. Write visuals that can be shot in THAT room.`,
     brand.ref_people_url && `They uploaded a photo of a real person who works there. Prefer that person.`,
     brand.ref_product_url && `They uploaded a photo of their real product. Use that item when the story needs it.`,
@@ -664,9 +658,7 @@ export function videoFramePrompt(scene: ScriptScene, brand?: BrandKit | null) {
   return [
     "One vertical 9:16 photograph for a short film. Real place, real light, cinematic. Fill the frame.",
     beat,
-    stampLogoOnPhotos(brand)
-      ? "Photograph. No title card, no script, no timestamps, no captions, no UI, no watermark. Put their attached logo once, small, in a corner."
-      : "Photograph only. No letters, no numbers, no words, no title card, no script, no timestamps, no captions, no UI, no logo, no watermark, no document, no storyboard.",
+    "Photograph only. No letters, no numbers, no words, no title card, no script, no timestamps, no captions, no UI, no logo, no watermark, no document, no storyboard.",
     brandLook(brand, "photo"),
   ]
     .filter(Boolean)
@@ -783,7 +775,7 @@ async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, k
           kind === "poster" ? "designed" : "photo"
         );
 
-  const refs = brand?.user_id ? listBrandImageFiles(brand.user_id) : [];
+  const refs = brand?.user_id ? listBrandRefFiles(brand.user_id) : [];
 
   const readResult = (model: string, image: Awaited<ReturnType<typeof openai.images.generate>>) => {
     const item = image.data?.[0];
@@ -856,6 +848,12 @@ async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, k
   for (const model of imageModels()) {
     const generated = await tryModel(model, generateOnce);
     if (generated) return generated;
+  }
+  if (kind === "still" || kind === "poster") {
+    for (const model of imageModels()) {
+      const again = await tryModel(model, generateOnce);
+      if (again) return again;
+    }
   }
   return { ...placeholder, error: lastError };
 }

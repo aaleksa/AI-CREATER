@@ -627,7 +627,8 @@ export async function runStep(
           projectId,
           current.some((item) => item.sceneId === sceneId)
             ? current.map((item) => (item.sceneId === sceneId ? one.data : item))
-            : [...current, one.data]
+            : [...current, one.data],
+          brand
         );
         updates.visuals_json = JSON.stringify(next);
         updates.current_step = "visuals";
@@ -636,7 +637,7 @@ export async function runStep(
         actualCost = one.cost;
       } else {
         const result = await generateVisuals(imageScript, brand, kind, async (visual) => {
-          const [saved] = await persistStills(projectId, [visual]);
+          const [saved] = await persistStills(projectId, [visual], brand);
           return saved;
         });
         const minLive = visualMinLive(imageScript.scenes.length);
@@ -648,7 +649,7 @@ export async function runStep(
             { status: 400 }
           );
         }
-        const persisted = await persistStills(projectId, result.data);
+        const persisted = await persistStills(projectId, result.data, brand);
         updates.visuals_json = JSON.stringify(persisted);
         updates.current_step = "visuals";
         provider = result.provider;

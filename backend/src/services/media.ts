@@ -5,7 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import OpenAI from "openai";
 import { config } from "../config.js";
-import type { CaptionCue, Script, Visual } from "./ai.js";
+import { wantsLogoStamp, type BrandKit, type CaptionCue, type Script, type Visual } from "./ai.js";
+import { brandLogoPath } from "./brandAssets.js";
 
 export {
   brandLogoDir,
@@ -99,7 +100,44 @@ export function removeStillFiles(projectId: string) {
   }
 }
 
-export async function persistStills(projectId: string, visuals: Visual[]) {
+function overlayLogoFile(stillPath: string, logoPath: string) {
+  if (!ffmpegPath || !fs.existsSync(stillPath) || !fs.existsSync(logoPath)) return Promise.resolve(false);
+  const tmp = `${stillPath}.logo.jpg`;
+  return new Promise<boolean>((resolve) => {
+    const child = spawn(
+      ffmpegPath,
+      [
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        stillPath,
+        "-i",
+        logoPath,
+        "-filter_complex",
+        "[1:v]scale=-1:120[lg];[0:v][lg]overlay=W-w-36:H-h-36",
+        tmp,
+      ],
+      { stdio: ["ignore", "ignore", "pipe"] }
+    );
+    child.on("error", () => {
+      fs.rmSync(tmp, { force: true });
+      resolve(false);
+    });
+    child.on("close", (code) => {
+      if (code === 0 && fs.existsSync(tmp) && fs.statSync(tmp).size > 0) {
+        fs.renameSync(tmp, stillPath);
+        resolve(true);
+        return;
+      }
+      fs.rmSync(tmp, { force: true });
+      resolve(false);
+    });
+  });
+}
+
+export async function persistStills(projectId: string, visuals: Visual[], brand?: BrandKit | null) {
   const next: Visual[] = [];
   for (const visual of visuals) {
     if (visual.placeholder) {
@@ -129,6 +167,13 @@ export async function persistStills(projectId: string, visuals: Visual[]) {
       next.push({ ...visual, imageUrl: `/projects/${projectId}/image/${visual.sceneId}` });
     } catch {
       next.push(visual);
+    }
+  }
+  const logo = brand?.user_id && wantsLogoStamp(brand) ? brandLogoPath(brand.user_id) : "";
+  if (logo) {
+    for (const visual of next) {
+      if (visual.placeholder || !hasStillFile(projectId, visual.sceneId)) continue;
+      await overlayLogoFile(stillFile(projectId, visual.sceneId), logo);
     }
   }
   return next;
