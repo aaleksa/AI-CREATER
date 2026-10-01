@@ -227,6 +227,7 @@ export default function Studio() {
   const [imageSrcs, setImageSrcs] = useState<Record<number, string>>({});
   const [versionSrcs, setVersionSrcs] = useState<Record<string, string>>({});
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
+  const [copyEdit, setCopyEdit] = useState("");
   const [pendingRegen, setPendingRegen] = useState<{ step: string; sceneId?: number } | null>(null);
   const [regenReason, setRegenReason] = useState("");
   const [regenNote, setRegenNote] = useState("");
@@ -320,7 +321,8 @@ export default function Studio() {
       project.visuals.map(async (visual) => {
         if (!visual.imageUrl || visual.imageUrl.startsWith("linear")) return [visual.sceneId, ""] as const;
         if (visual.imageUrl.startsWith("http")) return [visual.sceneId, visual.imageUrl] as const;
-        const blob = await fetchMedia(visual.imageUrl);
+        const stamp = encodeURIComponent(project.updatedAt || "");
+        const blob = await fetchMedia(`${visual.imageUrl}${visual.imageUrl.includes("?") ? "&" : "?"}t=${stamp}`);
         const url = URL.createObjectURL(blob);
         created.push(url);
         return [visual.sceneId, url] as const;
@@ -390,7 +392,9 @@ export default function Studio() {
   const currentFrame =
     (project?.visuals?.[scene] && imageSrcs[project.visuals[scene].sceneId]) ||
     (rawFrame.startsWith("data:") ? "" : rawFrame);
-  const frame = (previewVersionId && versionSrcs[previewVersionId]) || currentFrame;
+  const frame = previewVersionId ? versionSrcs[previewVersionId] || "" : currentFrame;
+  const workingVersionId = previewVersionId || undefined;
+  const makingPicture = Boolean(busy === "visuals" || (typeof busy === "string" && busy.startsWith("visual-")));
   const frameIsPlaceholder = Boolean(project?.visuals?.[scene]?.placeholder);
   const placeholderCount = project?.visuals?.filter((v) => v.placeholder).length ?? 0;
   const caption = readableLine(
@@ -402,7 +406,8 @@ export default function Studio() {
     regenerate = false,
     sceneId?: number,
     feedback?: { reason?: string; note?: string },
-    evictOldest = false
+    evictOldest = false,
+    extra?: { pictureLanguage?: string; keepStill?: boolean; keepStillVersionId?: string; copyEdit?: string }
   ) {
     if (!id) return;
     setBusy(sceneId ? `visual-${sceneId}` : step);
@@ -414,13 +419,15 @@ export default function Studio() {
         regenerate,
         sceneId,
         feedback,
-        evictOldest
+        evictOldest,
+        extra
       );
       setPreviewVersionId(null);
       setProject(nextProject);
       if (nextArchive) setArchive(nextArchive);
       setBrief(nextProject.prompt);
       if (nextProject.invite) setInviteDraft(draftFromInvite(nextProject.invite));
+      if (extra?.copyEdit) setCopyEdit("");
       refreshMe();
       setPendingRegen(null);
       setRegenReason("");
@@ -438,6 +445,50 @@ export default function Studio() {
     } finally {
       setBusy(null);
     }
+  }
+
+  async function remakeLanguage(lang: "en" | "uk") {
+    if (!id || !project) return;
+    if (brief.trim() !== project.prompt) {
+      try {
+        const { project: saved } = await api.updatePrompt(id, brief);
+        setProject(saved);
+      } catch (err) {
+        setError(err instanceof Error ? te(err.message) : t("studio.failBrief"));
+        return;
+      }
+    }
+    const sceneId = project.visuals?.[scene]?.sceneId ?? 1;
+    const price = extraPrice("visuals", sceneId);
+    if (price.extra) {
+      const ok = window.confirm(t("studio.confirm2x", { credits: price.credits }));
+      if (!ok) return;
+    }
+    await execute("visuals", true, sceneId, undefined, false, {
+      keepStill: true,
+      pictureLanguage: lang,
+      keepStillVersionId: workingVersionId,
+    });
+  }
+
+  async function applyCopyEdit() {
+    if (!id || !project) return;
+    const note = copyEdit.replace(/\s+/g, " ").trim();
+    if (note.length < 4) {
+      setError(t("studio.editPictureNeed"));
+      return;
+    }
+    const sceneId = project.visuals?.[scene]?.sceneId ?? 1;
+    const price = extraPrice("visuals", sceneId);
+    if (price.extra) {
+      const ok = window.confirm(t("studio.confirm2x", { credits: price.credits }));
+      if (!ok) return;
+    }
+    await execute("visuals", true, sceneId, undefined, false, {
+      keepStill: true,
+      copyEdit: note,
+      keepStillVersionId: workingVersionId,
+    });
   }
 
   async function run(step: string, regenerate = false, sceneId?: number) {
@@ -845,6 +896,78 @@ export default function Studio() {
                     </button>
                   )}
                 </div>
+                {isPoster && (
+                  <div style={{ marginTop: 16 }}>
+                    <p className="hint">
+                      {t(
+                        project.pictureLanguage === "en"
+                          ? "studio.pictureLangEn"
+                          : project.pictureLanguage === "uk"
+                            ? "studio.pictureLangUk"
+                            : "studio.pictureLangBrief"
+                      )}
+                    </p>
+                    <p className="hint">{t("studio.samePictureHint")}</p>
+                    <div className="action-row">
+                      {project.pictureLanguage !== "en" && (
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          disabled={Boolean(busy)}
+                          onClick={() => remakeLanguage("en")}
+                        >
+                          {makingPicture
+                            ? t("studio.makingPicture")
+                            : t("studio.samePictureEn", { credits: extraPrice("visuals", project.visuals?.[scene]?.sceneId ?? 1).credits })}
+                        </button>
+                      )}
+                      {project.pictureLanguage !== "uk" && (
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          disabled={Boolean(busy)}
+                          onClick={() => remakeLanguage("uk")}
+                        >
+                          {makingPicture
+                            ? t("studio.makingPicture")
+                            : t("studio.samePictureUk", { credits: extraPrice("visuals", project.visuals?.[scene]?.sceneId ?? 1).credits })}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {isImage && (
+                  <div style={{ marginTop: 16 }}>
+                    <p className="hint">{t("studio.editPictureAsk")}</p>
+                    <p className="hint">{t("studio.editPictureHint")}</p>
+                    <textarea
+                      className="brief-box"
+                      value={copyEdit}
+                      onChange={(e) => setCopyEdit(e.target.value)}
+                      maxLength={400}
+                      rows={3}
+                      placeholder={t("studio.editPicturePlaceholder")}
+                      style={{ minHeight: 88, marginTop: 8 }}
+                    />
+                    {error && (
+                      <p className="err" style={{ marginTop: 8 }}>
+                        {error}
+                      </p>
+                    )}
+                    <div className="action-row" style={{ marginTop: 10 }}>
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        disabled={Boolean(busy)}
+                        onClick={applyCopyEdit}
+                      >
+                        {makingPicture
+                          ? t("studio.makingPicture")
+                          : t("studio.editPictureApply", { credits: extraPrice("visuals", project.visuals?.[scene]?.sceneId ?? 1).credits })}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="ready-block">
                 {(project.versions?.visuals || []).length < 2 ? (

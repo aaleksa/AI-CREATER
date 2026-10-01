@@ -14,12 +14,14 @@ const EMOJI: Record<string, string> = {
   social_post: "✍️",
 };
 const KIND_IDS = ["photo", "invite", "info", "offer"] as const;
+const PIC_LANGS = ["", "en", "uk"] as const;
 
 export default function Home() {
   const nav = useNavigate();
   const { t, te, locale } = useLocale();
   const [type, setType] = useState("instagram_reel");
   const [imageIntent, setImageIntent] = useState("photo");
+  const [pictureLanguage, setPictureLanguage] = useState<"" | "en" | "uk">("");
   const [prompt, setPrompt] = useState(() => translate(detectLocale(), "examples.instagram_reel"));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -27,6 +29,7 @@ export default function Home() {
   const [useBrand, setUseBrand] = useState(true);
   const [recentBriefs, setRecentBriefs] = useState<string[]>([]);
   const isImage = type === "image_post";
+  const isPoster = isImage && imageIntent !== "photo";
   const selectedReady = READY.has(type);
   const selectedTitle = t(`formats.${type}.title`);
   const kindHint = t(`kinds.${imageIntent}.hint`);
@@ -85,7 +88,13 @@ export default function Home() {
     setBusy(true);
     setError("");
     try {
-      const { project } = await api.createProject(type, prompt, isImage ? imageIntent : undefined, useBrand);
+      const { project } = await api.createProject(
+        type,
+        prompt,
+        isImage ? imageIntent : undefined,
+        useBrand,
+        isPoster ? pictureLanguage : undefined
+      );
       nav(`/app/studio/${project.id}`);
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("home.fallback"));
@@ -112,6 +121,7 @@ export default function Home() {
                 setError("");
                 if (id === "image_post") {
                   setImageIntent("photo");
+                  setPictureLanguage("");
                   setPrompt(kindExamples.photo);
                   return;
                 }
@@ -140,6 +150,7 @@ export default function Home() {
                 className={`choice ${imageIntent === id ? "on" : ""}`}
                 onClick={() => {
                   setImageIntent(id);
+                  if (id === "photo") setPictureLanguage("");
                   if (Object.values(kindExamples).includes(prompt) || !prompt.trim()) {
                     setPrompt(kindExamples[id]);
                   }
@@ -147,6 +158,25 @@ export default function Home() {
               >
                 <b>{t(`kinds.${id}.label`)}</b>
                 <span>{t(`kinds.${id}.hint`)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {isPoster && (
+        <div className="image-kinds">
+          <p className="hint">{t("home.picLangAsk")}</p>
+          <div className="choice-row langs">
+            {PIC_LANGS.map((id) => (
+              <button
+                key={id || "brief"}
+                type="button"
+                className={`choice ${pictureLanguage === id ? "on" : ""}`}
+                onClick={() => setPictureLanguage(id)}
+              >
+                <b>{t(`home.picLang.${id || "brief"}`)}</b>
+                <span>{t(`home.picLangHint.${id || "brief"}`)}</span>
               </button>
             ))}
           </div>

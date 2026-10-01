@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_INVITE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, readCreateImageIntent, restoreStepVersion, runStep, saveFeedback, serializeProject, updateInvite } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, readCreateImageIntent, readCreatePictureLanguage, restoreStepVersion, runStep, saveFeedback, serializeProject, updateInvite } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
 import { hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
 import { archiveState } from "../services/archive.js";
@@ -58,8 +58,20 @@ projectsRouter.post("/", (req, res) => {
     res.status(400).json({ error: intent.error });
     return;
   }
+  const language = readCreatePictureLanguage(type, intent.intent, req.body?.pictureLanguage);
+  if ("error" in language) {
+    res.status(400).json({ error: language.error });
+    return;
+  }
   const useBrand = req.body?.useBrand !== false && req.body?.useBrand !== 0;
-  const project = createProject(req.user!.id, type as (typeof FORMAT_TYPES)[number], parsed.text, intent.intent, useBrand);
+  const project = createProject(
+    req.user!.id,
+    type as (typeof FORMAT_TYPES)[number],
+    parsed.text,
+    intent.intent,
+    useBrand,
+    language.language
+  );
   res.status(201).json({ project: serializeProject(project) });
 });
 
@@ -90,6 +102,7 @@ projectsRouter.get("/:id/image/:sceneId/versions/:versionId", (req, res) => {
     res.status(404).json({ error: "Image not ready." });
     return;
   }
+  res.set("Cache-Control", "no-store");
   res.type("image/jpeg");
   res.sendFile(stillVersionFile(id, sceneId, versionId));
 });
@@ -102,6 +115,7 @@ projectsRouter.get("/:id/image/:sceneId", (req, res) => {
     res.status(404).json({ error: "Image not ready." });
     return;
   }
+  res.set("Cache-Control", "no-store");
   res.type("image/jpeg");
   res.sendFile(stillFile(id, sceneId));
 });
@@ -259,6 +273,10 @@ projectsRouter.post("/:id/steps/:step", rateLimit(20, 60_000), async (req, res) 
       feedbackReason: req.body?.feedbackReason,
       feedbackNote: req.body?.feedbackNote,
       evictOldest: Boolean(req.body?.evictOldest),
+      pictureLanguage: req.body?.pictureLanguage,
+      keepStill: Boolean(req.body?.keepStill),
+      keepStillVersionId: req.body?.keepStillVersionId,
+      copyEdit: req.body?.copyEdit,
     });
     res.json({ project, archive: archiveState(req.user!.id) });
   } catch (error) {

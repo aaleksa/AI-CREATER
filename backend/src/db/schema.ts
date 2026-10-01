@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS projects (
   prompt TEXT NOT NULL,
   image_intent TEXT NOT NULL DEFAULT '',
   use_brand INTEGER NOT NULL DEFAULT 1,
+  picture_language TEXT NOT NULL DEFAULT '',
   invite_json TEXT,
   status TEXT NOT NULL,
   current_step TEXT NOT NULL,

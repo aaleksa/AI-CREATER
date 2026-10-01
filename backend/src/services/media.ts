@@ -86,6 +86,19 @@ export function hasStillVersionFile(projectId: string, sceneId: number, versionI
   return fs.existsSync(file) && fs.statSync(file).size > 0;
 }
 
+export function copySelectedStill(projectId: string, sceneId: number, versionId?: string, useLiveIfMissing = false) {
+  const versionSrc =
+    versionId && hasStillVersionFile(projectId, sceneId, versionId)
+      ? stillVersionFile(projectId, sceneId, versionId)
+      : "";
+  const liveSrc = hasStillFile(projectId, sceneId) ? stillFile(projectId, sceneId) : "";
+  const src = versionSrc || (useLiveIfMissing || !versionId ? liveSrc : "");
+  if (!src) return "";
+  const dest = path.join(projectMediaDir(projectId), `keep-lang-${sceneId}.jpg`);
+  fs.copyFileSync(src, dest);
+  return dest;
+}
+
 export function hasStillFiles(projectId: string) {
   const dir = projectMediaPath(projectId);
   if (!fs.existsSync(dir)) return false;
@@ -137,7 +150,12 @@ function overlayLogoFile(stillPath: string, logoPath: string) {
   });
 }
 
-export async function persistStills(projectId: string, visuals: Visual[], brand?: BrandKit | null) {
+export async function persistStills(
+  projectId: string,
+  visuals: Visual[],
+  brand?: BrandKit | null,
+  skipLogoStamp = false
+) {
   const next: Visual[] = [];
   for (const visual of visuals) {
     if (visual.placeholder) {
@@ -169,7 +187,7 @@ export async function persistStills(projectId: string, visuals: Visual[], brand?
       next.push(visual);
     }
   }
-  const logo = brand?.user_id && wantsLogoStamp(brand) ? brandLogoPath(brand.user_id) : "";
+  const logo = !skipLogoStamp && brand?.user_id && wantsLogoStamp(brand) ? brandLogoPath(brand.user_id) : "";
   if (logo) {
     for (const visual of next) {
       if (visual.placeholder || !hasStillFile(projectId, visual.sceneId)) continue;

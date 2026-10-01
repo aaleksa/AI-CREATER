@@ -17,6 +17,19 @@ export const ERROR_UK: Record<string, string> = {
   "This format is next. Start with a short video or still images.":
     "Цей формат буде далі. Почніть з короткого відео або картинки.",
   "Choose photo, invitation, information or offer.": "Оберіть фото, запрошення, інформацію або офер.",
+  "Choose English, Ukrainian, or follow the brief.": "Оберіть English, українську, або як у брифі.",
+  "Choose English or Ukrainian.": "Оберіть English або українську.",
+  "Say what to add or remove on the picture, or choose English or Ukrainian.":
+    "Напишіть, що додати чи прибрати на картинці, або оберіть English чи українську.",
+  "Say what to add or remove on the picture — a few words is enough.":
+    "Напишіть, що додати чи прибрати — кількох слів досить.",
+  "Choose a language remake or a text change, not both.": "Оберіть або іншу мову, або правку тексту — не обидва разом.",
+  "Text changes are only for still pictures.": "Правка тексту — лише для статичної картинки.",
+  "Same-picture language is only for invitations, information and offers.":
+    "Інша мова на тій самій картинці — лише для запрошень, інформації та оферів.",
+  "Make the picture first.": "Спочатку зробіть картинку.",
+  "We couldn’t rewrite the words on this picture. Try again.":
+    "Не вдалося переписати слова на цій картинці. Спробуйте ще раз.",
   "Project not found.": "Проєкт не знайдено.",
   "Could not delete this.": "Не вдалося видалити.",
   "Project not found": "Проєкт не знайдено.",

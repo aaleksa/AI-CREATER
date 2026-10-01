@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import OpenAI, { toFile } from "openai";
 import { config } from "../config.js";
-import { listBrandRefFiles } from "./brandAssets.js";
+import { listBrandRefFiles, logoKindFromBytes } from "./brandAssets.js";
 import { guessPoster, type InviteCard } from "./invite.js";
 
 export type LearnedSummary = {
@@ -546,6 +546,105 @@ Return JSON: { prompt } — the image prompt only.`,
   );
 }
 
+export type PictureLanguage = "en" | "uk" | "";
+
+export function pictureLanguageLine(lang: PictureLanguage) {
+  if (lang === "uk") {
+    return "Translate the whole brief into Ukrainian first, then paint that Ukrainian translation on the picture. Translate names, dates, times, prices and addresses too — write dates the way a Ukrainian speaker would. Do not leave English (or any other language) on the picture. Proofread. Normal spaces between words.";
+  }
+  if (lang === "en") {
+    return "Translate the whole brief into English first, then paint that English translation on the picture. Translate names, dates, times, prices and addresses too — write dates the way an English speaker would (e.g. 23 жовтня → 23 October). Do not leave Ukrainian (or any other language) on the picture. Proofread. Normal spaces between words.";
+  }
+  return "Same language as the request. Proofread.";
+}
+
+export function rewriteStillLanguagePrompt(brief: string, lang: PictureLanguage, paintedCopy = "") {
+  const asked = brief
+    .replace(/\*\*/g, "")
+    .replace(/[_#`]/g, "")
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 1800);
+  const target = lang === "uk" ? "Ukrainian" : lang === "en" ? "English" : "";
+  const copy = (paintedCopy || asked).trim();
+  return [
+    "Edit the attached image only. Do not generate a new image. Do not change any other aspect of the image: photograph, people, objects, colours, lighting, layout, decorations, crop.",
+    target
+      ? `The brief is already translated into ${target}. Paint this exact ${target} text in place of the current words:`
+      : "Paint this exact text in place of the current words:",
+    copy,
+    target
+      ? `The words on the picture must all be ${target} — names, dates, times, prices and addresses too. The letters must change. Do not return the original wording. Return the picture they chose, in ${target}.`
+      : "Return the picture they chose.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+export function rewriteStillCopyPrompt(copyEdit: string) {
+  const note = copyEdit.replace(/\s+/g, " ").trim().slice(0, 400);
+  return [
+    "Edit the attached image. Keep the same photograph, people, objects, colours, lighting, layout, decorations and crop.",
+    "You MUST change the painted words. Follow this instruction exactly:",
+    note,
+    "If they asked to add words, paint those new words on the picture. If they asked to remove words, those words must disappear. Leave every other line as it is.",
+    "The letters on the picture must change. Do not return the original wording. Do not generate a different scene.",
+  ].join("\n\n");
+}
+
+export async function translatePictureCopy(brief: string, lang: PictureLanguage) {
+  const asked = brief
+    .replace(/\*\*/g, "")
+    .replace(/[_#`]/g, "")
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 1800);
+  if (lang !== "en" && lang !== "uk") return asked;
+  const openai = client();
+  if (!openai) return asked;
+  const target = lang === "uk" ? "Ukrainian" : "English";
+  const run = async (strict: boolean) => {
+    const response = await openai.chat.completions.create({
+      model: config.openaiModel || "gpt-4o-mini",
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content: clipInput(
+            strict
+              ? `You are a translator. Translate the whole poster brief into ${target}. Reply with the ${target} translation only — no JSON, no quotes around the whole text, no commentary.
+Translate everything: titles, body, names, dates, times, prices and addresses. Write dates and times the way a ${target} speaker would (Ukrainian «23 жовтня» → English «23 October»). The output MUST be entirely ${target}. Do not leave mixed-language lines.`
+              : `Translate every word into ${target}, including names, dates and addresses. Reply with the translation only.`
+          ),
+        },
+        { role: "user", content: clipInput(asked) },
+      ],
+    });
+    return String(response.choices[0]?.message?.content || "")
+      .replace(/^```[\w]*\n?|\n?```$/g, "")
+      .replace(/^["']|["']$/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 1800);
+  };
+  let text = (await run(true)) || asked;
+  if (!looksLikeTargetLanguage(text, lang)) {
+    const again = await run(false);
+    if (again && looksLikeTargetLanguage(again, lang)) text = again;
+  }
+  return text || asked;
+}
+
+function looksLikeTargetLanguage(text: string, lang: PictureLanguage) {
+  const cyr = (text.match(/\p{Script=Cyrillic}/gu) || []).length;
+  const lat = (text.match(/[A-Za-z]/g) || []).length;
+  if (lang === "uk") return cyr >= 8 || cyr >= lat;
+  if (lang === "en") return lat >= 8 && lat >= cyr;
+  return true;
+}
+
 export function stillPicturePrompt(
   brief: string,
   idea: Idea,
@@ -554,7 +653,8 @@ export function stillPicturePrompt(
   total = 1,
   kind = "photo",
   feedback?: RegenNote,
-  brand?: BrandKit | null
+  brand?: BrandKit | null,
+  pictureLanguage: PictureLanguage = ""
 ) {
   const asked = brief
     .replace(/\*\*/g, "")
@@ -571,7 +671,7 @@ export function stillPicturePrompt(
     asked,
     brandLook(brand),
     withCopy &&
-      "Fill the whole canvas edge to edge. Keep a clear empty margin at the bottom so the last line is fully visible. If a line does not fit, wrap it or move it — never clip, crop or run words off the edge. Same language as the request. Proofread. No app UI, no watermark.",
+      `Fill the whole canvas edge to edge. Keep a clear empty margin at the bottom so the last line is fully visible. If a line does not fit, wrap it or move it — never clip, crop or run words off the edge. ${pictureLanguageLine(pictureLanguage)} No app UI, no watermark.`,
     regenInstruction(feedback),
   ]
     .filter(Boolean)
@@ -677,11 +777,21 @@ onScreen is a short later caption (2–6 words) with a normal space between ever
   return { ...result, data: photoScript(result.data, prompt) };
 }
 
+export type FrameOpts = {
+  keepStill?: boolean;
+  keepStillPath?: string;
+  pictureLanguage?: PictureLanguage;
+  brief?: string;
+  paintedCopy?: string;
+  copyEdit?: string;
+};
+
 export async function generateVisuals(
   script: Script,
   brand?: BrandKit | null,
   kind: "video" | "still" | "poster" = "video",
-  persist?: (visual: Visual) => Promise<Visual>
+  persist?: (visual: Visual) => Promise<Visual>,
+  opts?: FrameOpts
 ) {
   const openai = client();
   const visuals: Visual[] = [];
@@ -692,8 +802,8 @@ export async function generateVisuals(
   let lastError = "";
 
   for (const scene of script.scenes) {
-    const frame = await generateSceneFrame(scene, brand, kind);
-    const visual =
+    const frame = await generateSceneFrame(scene, brand, kind, opts);
+    const visual: Visual =
       persist && !frame.visual.placeholder ? await persist(frame.visual) : frame.visual;
     visuals.push(visual);
     cost += frame.cost;
@@ -722,9 +832,14 @@ export async function generateVisuals(
   };
 }
 
-export async function generateOneVisual(scene: ScriptScene, brand?: BrandKit | null, kind: "video" | "still" | "poster" = "video") {
+export async function generateOneVisual(
+  scene: ScriptScene,
+  brand?: BrandKit | null,
+  kind: "video" | "still" | "poster" = "video",
+  opts?: FrameOpts
+) {
   const openai = client();
-  const frame = await generateSceneFrame(scene, brand, kind);
+  const frame = await generateSceneFrame(scene, brand, kind, opts);
   if (openai && frame.visual.placeholder) {
     throw Object.assign(new Error(frame.error || "We couldn’t generate this frame. Try a simpler description."), {
       status: 400,
@@ -736,6 +851,10 @@ export async function generateOneVisual(scene: ScriptScene, brand?: BrandKit | n
 function imageModels() {
   const preferred = config.openaiImageModel || "gpt-image-2.5-sunburst";
   return [...new Set([preferred, "gpt-image-2.5-sunburst", "gpt-image-1", "dall-e-3"])];
+}
+
+function keepStillModels() {
+  return [...new Set(["gpt-image-1", ...imageModels().filter((name) => /^gpt-image/i.test(name))])];
 }
 
 function imageSize(model: string, kind: "video" | "still" | "poster") {
@@ -754,7 +873,20 @@ function humanImageError(message: string) {
   return "We couldn’t generate these frames. Try a simpler description.";
 }
 
-async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, kind: "video" | "still" | "poster" = "video") {
+type FrameResult = {
+  visual: Visual;
+  provider: string;
+  model: string;
+  cost: number;
+  error: string;
+};
+
+async function generateSceneFrame(
+  scene: ScriptScene,
+  brand?: BrandKit | null,
+  kind: "video" | "still" | "poster" = "video",
+  opts?: FrameOpts
+): Promise<FrameResult> {
   const openai = client();
   const fallback = PLACEHOLDER_FRAMES[(Math.max(1, scene.id) - 1) % PLACEHOLDER_FRAMES.length];
   const placeholder = {
@@ -766,8 +898,17 @@ async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, k
   };
   if (!openai) return placeholder;
 
-  const prompt =
-    kind === "video"
+  const keepRequested = Boolean(opts?.keepStill || opts?.keepStillPath);
+  const keepStill =
+    opts?.keepStillPath && fs.existsSync(opts.keepStillPath) ? fs.readFileSync(opts.keepStillPath) : null;
+  if (keepRequested && !keepStill?.length) {
+    return { ...placeholder, error: "Make the picture first." };
+  }
+  const prompt = keepStill
+    ? opts?.copyEdit
+      ? rewriteStillCopyPrompt(opts.copyEdit)
+      : rewriteStillLanguagePrompt(opts?.brief || "", opts?.pictureLanguage || "", opts?.paintedCopy || "")
+    : kind === "video"
       ? videoFramePrompt(scene, brand)
       : withBrandLook(
           kind === "poster" ? scene.visualPrompt : `${scene.visualPrompt}. Square 1:1 finished image.`,
@@ -775,7 +916,10 @@ async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, k
           kind === "poster" ? "designed" : "photo"
         );
 
-  const refs = brand?.user_id ? listBrandRefFiles(brand.user_id) : [];
+  const refs = keepStill ? [] : brand?.user_id ? listBrandRefFiles(brand.user_id) : [];
+  const keepKind = keepStill ? logoKindFromBytes(keepStill) : "";
+  const keepType = keepKind === "png" ? "image/png" : "image/jpeg";
+  const keepName = keepKind === "png" ? `keep-still-${scene.id}.png` : `keep-still-${scene.id}.jpg`;
 
   const readResult = (model: string, image: Awaited<ReturnType<typeof openai.images.generate>>) => {
     const item = image.data?.[0];
@@ -803,18 +947,33 @@ async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, k
   };
 
   const editOnce = async (model: string) => {
-    const files = await Promise.all(
-      refs.map((ref) => toFile(fs.readFileSync(ref.file), `${ref.slot}-${ref.filename}`, { type: ref.type }))
-    );
-    const image = await openai.images.edit({
-      model,
-      image: files.length === 1 ? files[0] : files,
-      prompt: prompt.slice(0, 32000),
-      size: kind === "still" ? "1024x1024" : "1024x1536",
-      n: 1,
-      quality: "high",
-    });
-    return readResult(model, image);
+    const files = await Promise.all([
+      ...(keepStill ? [toFile(keepStill, keepName, { type: keepType })] : []),
+      ...refs.map((ref) => toFile(fs.readFileSync(ref.file), `${ref.slot}-${ref.filename}`, { type: ref.type })),
+    ]);
+    const run = async (fidelity: "high" | "low" | "") => {
+      const image = await openai.images.edit({
+        model,
+        image: files.length === 1 ? files[0] : files,
+        prompt: prompt.slice(0, 32000),
+        size: kind === "still" ? "1024x1024" : "1024x1536",
+        n: 1,
+        quality: "high",
+        ...(fidelity ? { input_fidelity: fidelity } : {}),
+      } as Parameters<typeof openai.images.edit>[0]);
+      return readResult(model, image);
+    };
+    const textChange = Boolean(opts?.copyEdit || opts?.pictureLanguage);
+    const preferred = keepStill && textChange ? "low" : keepStill ? "high" : "";
+    try {
+      return await run(preferred);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (preferred && /input_fidelity|unknown parameter|unrecognized|invalid/i.test(message)) {
+        return await run("");
+      }
+      throw error;
+    }
   };
 
   let lastError = "";
@@ -839,6 +998,16 @@ async function generateSceneFrame(scene: ScriptScene, brand?: BrandKit | null, k
     }
   };
 
+  if (keepRequested) {
+    for (const model of keepStillModels()) {
+      const edited = await tryModel(model, editOnce);
+      if (edited) return edited;
+    }
+    return {
+      ...placeholder,
+      error: lastError || "We couldn’t rewrite the words on this picture. Try again.",
+    };
+  }
   if (refs.length) {
     for (const model of imageModels().filter((name) => /^gpt-image/i.test(name))) {
       const edited = await tryModel(model, editOnce);

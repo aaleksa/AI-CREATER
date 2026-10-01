@@ -2,7 +2,7 @@
 
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
-**Версія документа:** 1.28  
+**Версія документа:** 1.29  
 **Мова інтерфейсу:** English і українська (перемикач EN / УК, зберігається в браузері)  
 **Валюта:** GBP (£)
 
@@ -311,9 +311,9 @@ Kling також уміє зробити відео одразу з тексту
 
 **Auth.** Ім’я (тільки signup), email, пароль. Помилки зрозумілою мовою.
 
-**Create.** Сітка 5 форматів — **§2.3**. **Коротке відео** / Картинка — активні. **Відео** і **Реклама** — окремі заглушки, не одна кнопка. Social — теж «soon». TikTok окремим чіпом **не** показуємо. Промпт — від 8 до 2 000 символів. Copy: речення може вистачити; якщо ні — офер, місце, для кого. Reel 150 cr · Image / Post 13 cr. Перемикач **Use brand kit / Ignore** (`use_brand`, дефолт так): з брендом у **текст** промпта йдуть назва, кольори, шрифт, тон, ніша; зал / людина / товар — ще файли в `images.edit`; лого на кадр — лише якщо `logo_on_photos` (наш шар, не малюнок моделі). Без бренду — лише бриф. UI показує, що піде на картинку.
+**Create.** Сітка 5 форматів — **§2.3**. **Коротке відео** / Картинка — активні. **Відео** і **Реклама** — окремі заглушки, не одна кнопка. Social — теж «soon». TikTok окремим чіпом **не** показуємо. Промпт — від 8 до 2 000 символів. Copy: речення може вистачити; якщо ні — офер, місце, для кого. Reel 150 cr · Image / Post 13 cr. Перемикач **Use brand kit / Ignore** (`use_brand`, дефолт так): з брендом у **текст** промпта йдуть назва, кольори, шрифт, тон, ніша; зал / людина / товар — ще файли в `images.edit`; лого на кадр — лише якщо `logo_on_photos` (наш шар, не малюнок моделі). Без бренду — лише бриф. UI показує, що піде на картинку. Для **invite / info / offer** — чіпи **Follow the brief / English / Ukrainian** (`picture_language`: порожньо / `en` / `uk`). Якщо бриф іншою мовою — **спочатку перекласти бриф**, потім намалювати той переклад. Усе на вибрану мову, включно з іменами, датами й адресами. Photo і Reel — без цього чіпа.
 
-**Studio.** Коротке відео: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: **photo** — 1:1. **invite / info / offer** — прев’ю **2:3** `contain`. На екрані JPG з OpenAI цілком. Полів флаєра немає; `PATCH …/invite` лише JSON. Зверху лише **Бриф** (textarea), `Save brief` (PATCH, 0 cr) і `Copy brief` (з fallback, якщо браузер блокує clipboard). Рядок `image post · …` і нагадування «кіт N% — додайте лого» **не показуємо** (лого опційне). На Create — список збережених брифів, клік вставляє. Після Pictures: Download JPG; takes поруч; *Share* і *Would you publish?* **сховані** (`SHOW_SHARE_AND_PUBLISH`). Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
+**Studio.** Коротке відео: вертикальний прев’ю 9:16 (після Create — `<video>` з mp4), 6 кроків. Image Post: **photo** — 1:1. **invite / info / offer** — прев’ю **2:3** `contain`. На екрані JPG з OpenAI цілком. Полів флаєра немає; `PATCH …/invite` лише JSON. Зверху лише **Бриф** (textarea), `Save brief` (PATCH, 0 cr) і `Copy brief` (з fallback, якщо браузер блокує clipboard). Рядок `image post · …` і нагадування «кіт N% — додайте лого» **не показуємо** (лого опційне). На Create — список збережених брифів, клік вставляє. Після Pictures: Download JPG; takes поруч; *Share* і *Would you publish?* **сховані** (`SHOW_SHARE_AND_PUBLISH`). На **invite / info / offer** після JPG: **Same picture in English / Ukrainian** · **8 cr** — бере **картинку на екрані** (поточний take, не обов’язково live `still-1.jpg`) і **бриф**, шле в `images.edit`. У запиті явно: спочатку **gpt-4o-mini перекладає весь бриф** обраною мовою (**імена, дати й адреси теж**), потім `images.edit` **повертає картинку, яка зараз на екрані** (вибраний take, не останній live-файл, якщо клікнули інший варіант) тією мовою (`gpt-image-1` + `input_fidelity=high`, без generate). Нової сцени немає. Попередній take лишається, restore безкоштовний. Лого **не** штампуємо вдруге. Photo і Reel — без цієї кнопки. Після JPG також поле **змінити слова** (додати / прибрати рядок) · **8 cr** — `images.edit` картинки на екрані, `copyEdit`. Photo теж. Панель **одного** поточного кроку + `Make {step} · N credits`. Якщо крок уже є — `Not this {step}? Try again · N credits` (idea/script — confirm каскаду). Після 3 спроб: `Keep this, or another try · 2×`. Кадри з `placeholder: true` видимі. **Файл варто завантажити зараз**; проміжні відео-артефакти можуть зникнути через 7 днів, `reel.mp4` і `still-*.jpg` тримаємо 90 днів.
 
 **Brand Kit.** Дві групи: *How it looks & sounds* (кольори, шрифт, тон-чипси + optional note) і *About your business* (ім’я, **upload лого**, **до 3 опційних фото** — зал / людина / товар, vertical, сайт, Instagram) — друге опційне, **не** блокер Create. Vertical: salon / café / fitness / **other** + вільний текст; мікрокопі: лише каркас сцен, не обов’язково. Жива прев’ю-картка (CSS, 0 AI). Індикатор «Brand kit N% complete — …» (фото в % **не** входять — не нагадувати). Learned-картка зверху + **Reset learning**. Лого: `POST /brand/logo` — **max 2 MB, лише PNG/JPEG**, SVG заборонено; `DELETE /brand/logo` стирає лише лого, не фото. `GET /brand/logo` — файл, `nosniff`. Фото: `POST/DELETE/GET /brand/ref/{place|people|product}` — той самий ліміт. Якщо `use_brand=1` — у **текст** Idea/Script/Pictures йдуть назва, кольори, ніша, лого (як знак, не «намалюй його») і опис фото. У **`images.edit`** йдуть лише зал / людина / товар — **не лого**. Fallback — `images.generate`. Під лого — вибір **«фото без лого» / «поставити на фото»** (`logo_on_photos`, дефолт ні): власник не пише це в брифі. «Поставити» = **наш шар файлу** після кадру (ffmpeg), не малюнок моделі. Disclaimer: назва / лого / фото — його; людей лише за згодою.
 
@@ -531,6 +531,8 @@ Text AI  Image AI   TTS
 | type | text | див. формати |
 | prompt | text | речення користувача |
 | image_intent | text | лише `image_post`: `photo` / `invite` / `info` / `offer`; інакше порожньо |
+| use_brand | int 0/1 | дефолт 1. 0 = ігнорувати Brand Kit на цьому проєкті |
+| picture_language | text | лише invite / info / offer: `en` / `uk` / порожньо (мова брифу). Photo і Reel — порожньо |
 | invite_json | text | Лише `invite`: поля з Idea. На JPG **не** впливають. Порожньо для photo / info / offer |
 | status | text | `draft` / `generating` / `ready` / `expired` |
 | current_step | text | `prompt` / `idea` / `script` / `visuals` / `voice` / `captions` / `create` |
@@ -713,12 +715,12 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | POST | `/auth/login` | ні | `{ email, password }` → `{ token, user }` |
 | GET | `/auth/me` | так | `{ user, subscription, credits }` |
 | GET | `/projects` | так | список + `fullVideoCost` + `fullImageCost` |
-| POST | `/projects` | так | `{ type, prompt, imageIntent? }` → 201 `{ project }`; невалідний `imageIntent` → **400** |
+| POST | `/projects` | так | `{ type, prompt, imageIntent?, useBrand?, pictureLanguage? }` → 201 `{ project }`; невалідний `imageIntent` / `pictureLanguage` → **400**. `pictureLanguage` лише invite/info/offer: `en` / `uk` / порожньо |
 | GET | `/projects/:id` | так | проєкт + таблиця costs |
 | DELETE | `/projects/:id` | так | стерти проєкт, версії й файли з бібліотеки; кредити не повертаються |
 | PATCH | `/projects/:id` | так | `{ prompt }` — змінити бриф; credits 0; щоб застосувати — regenerate idea |
 | PATCH | `/projects/:id/invite` | так | `{ invite }` — пише `invite_json`, 0 cr. JPG не чіпає |
-| POST | `/projects/:id/steps/:step` | так | `{ regenerate?, sceneId?, idempotencyKey?, feedbackReason?, feedbackNote? }` + `Idempotency-Key`; 20 req/хв |
+| POST | `/projects/:id/steps/:step` | так | `{ regenerate?, sceneId?, idempotencyKey?, feedbackReason?, feedbackNote?, keepStill?, pictureLanguage?, keepStillVersionId?, copyEdit? }` + `Idempotency-Key`; 20 req/хв. `keepStill` + `pictureLanguage` en/uk — та сама картинка іншою мовою (8 cr). `keepStill` + `copyEdit` — додати/прибрати слова на картинці на екрані (8 cr) |
 | POST | `/projects/:id/feedback` | так | `{ publishable: yes\|edits\|no, reasons[] }` після mp4 |
 | POST | `/projects/:id/share` | так | preview-лінк, TTL 7д |
 | GET | `/projects/:id/preview` | ні | `?token=` — JSON прев’ю |
@@ -828,6 +830,8 @@ Image / Post: idea → visuals. Один JPG з OpenAI (§3.6). `PATCH /invite` 
 | --- | --- | --- | --- |
 | Єдиний кадр упав після авто-retry | `failed` | резерв **8 лишається** (вендор виставлений) | Немає JPG. Повідомлення «picture», не «frames» |
 | Є `still-1.jpg` | `succeeded` | **8** | Фінал: JPG з OpenAI (+ лого-шар, якщо `logo_on_photos`) |
+| Same picture in EN/UK (`keepStill`) | `succeeded` | **8** (як звичайний retry Pictures) | `images.edit` **вибраного take** + перекладений бриф. Без generate fallback. Без другого overlay лого. Попередній take в versions |
+| Edit words on this picture (`keepStill` + `copyEdit`) | `succeeded` | **8** | `images.edit` take на екрані: додати або прибрати слова. Без нової сцени |
 | Немає ключа | не стартує | 0 | той самий **400**, що й для Reel Visuals |
 
 ---
@@ -839,7 +843,7 @@ Image / Post: idea → visuals. Один JPG з OpenAI (§3.6). `PATCH /invite` 
 | Крок | З ключами | Без ключів |
 | --- | --- | --- |
 | Idea / Script / Captions / voice *direction* | `gpt-4o-mini`, JSON | studio preview JSON |
-| Visuals (Reel і Image / Post) | Якщо є фото залу / людини / товару: спочатку **`images.edit`** (gpt-image) з цими файлами як reference. **Лого в edit не йде.** Інакше / fallback — `images.generate`. Потім, якщо `logo_on_photos`, ffmpeg кладе PNG лого в кут | **400**, ключ обов’язковий. Немає preview-кадрів без ключа |
+| Visuals (Reel і Image / Post) | Якщо є фото залу / людини / товару: спочатку **`images.edit`** (gpt-image) з цими файлами як reference. **Лого в edit не йде.** Інакше / fallback — `images.generate`. Потім, якщо `logo_on_photos`, ffmpeg кладе PNG лого в кут. **Same-picture language:** **gpt-4o-mini** перекладає бриф у EN/UK. Потім `images.edit` **вибраної картинки** (`gpt-image-1`, high fidelity) — та сама картинка вибраною мовою. **Правка слів:** `copyEdit` — додати/прибрати рядки на take на екрані. **Без** brand refs, **без** generate fallback, **без** другого overlay лого | **400**, ключ обов’язковий. Немає preview-кадрів без ключа |
 | Voice *аудіо* | **OpenAI `tts-1` / `nova`** | macOS `say` (dev); тиша — лише якщо немає `say`; **не бета** |
 | Create | **ffmpeg** 1080×1920 + SRT | той самий рендер; без кадру — колір бренду |
 | Captions | scene-level cues під тривалість аудіо | той самий алгоритм |
@@ -960,7 +964,7 @@ Brand Kit, коли `use_brand=1`: кольори / ніша / лого — у *
 3. Крок Voice не вважається done без аудіофайла (`audio_url`).
 4. Після повного шляху баланс = 250 (при вартості 150 і старті 400), у Library статус ready **і** файл.
 5. Повторний Idea **без** `regenerate` не списує 5 credits і **не викликає AI**; **з** `regenerate` — списує і каскадить; 4-та спроба Idea — **10 credits (2×)**, не 429 (§7.2).
-6. Video / Ad / Social post не створюють проєкт. **Image / Post створює** (13 cr; `GET …/image/:sceneId` = `still-1.jpg` з OpenAI).
+6. Video / Ad / Social post не створюють проєкт. **Image / Post створює** (13 cr; `GET …/image/:sceneId` = `still-1.jpg` з OpenAI). Invite / info / offer: Same picture in EN/UK — 8 cr, той самий JPG-layout.
 7. Brand Kit зберігається і впливає на Idea; якщо `use_brand=1` — кольори/ніша в тексті, фото залу/людини/товару в `images.edit`, лого на кадр лише шаром якщо `logo_on_photos`. Лого і фото не обов’язкові.
 8. Credits: плани, пакети, таблиця 150/13, поточний план виділено. Лог generation у API є, у UI **схований**. Checkout без Stripe не відкривається.
 9. Idea / Script / Captions без ключа дають preview-JSON. **Visuals без `OPENAI_API_KEY` — 400.** Voice без ключа: `say` або тиша. **Бета і зовнішнє демо — ключ + TTS + ffmpeg**, не тихий wav.

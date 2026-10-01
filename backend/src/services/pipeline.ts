@@ -13,15 +13,19 @@ import {
   generateOneVisual,
   regenInstruction,
   stillPicturePrompt,
+  rewriteStillLanguagePrompt,
+  rewriteStillCopyPrompt,
+  translatePictureCopy,
   tidyIdea,
   tidyVoice,
   type BrandKit,
   type CaptionCue,
   type Idea,
+  type PictureLanguage,
   type Script,
   type Visual,
 } from "./ai.js";
-import { hasStillFile, hasVideoFile, hasVoiceFile, persistStills, removeVideoFile, removeVoiceFile, renderReel, restoreStillSnapshot, snapshotStills, synthesizeSpeech, voiceDurationSec } from "./media.js";
+import { copySelectedStill, hasStillVersionFile, hasVideoFile, hasVoiceFile, persistStills, removeVideoFile, removeVoiceFile, renderReel, restoreStillSnapshot, snapshotStills, synthesizeSpeech, voiceDurationSec } from "./media.js";
 import { assertArchiveRoom, evictOverLimit } from "./archive.js";
 import { inviteFrom, parseInvite, preferBriefInvite } from "./invite.js";
 import { parseStepFeedback, recordStepRejection } from "./feedback.js";
@@ -65,12 +69,29 @@ export function readCreateImageIntent(type: string, raw: unknown): { intent: Ima
   return { error: "Choose photo, invitation, information or offer." };
 }
 
+export function parsePictureLanguage(raw: unknown): PictureLanguage {
+  if (raw === "en" || raw === "uk") return raw;
+  return "";
+}
+
+export function readCreatePictureLanguage(
+  type: string,
+  intent: ImageIntent | "",
+  raw: unknown
+): { language: PictureLanguage } | { error: string } {
+  if (!isTextPoster(type, intent)) return { language: "" };
+  if (raw == null || raw === "") return { language: "" };
+  if (raw === "en" || raw === "uk") return { language: raw };
+  return { error: "Choose English, Ukrainian, or follow the brief." };
+}
+
 function imageCarousel(
   prompt: string,
   idea: Idea,
   intent: ImageIntent | "" = "photo",
   feedback?: { reason?: string; note?: string },
-  brand?: BrandKit | null
+  brand?: BrandKit | null,
+  pictureLanguage: PictureLanguage = ""
 ): Script {
   const kind = intent || "photo";
   return {
@@ -82,7 +103,17 @@ function imageCarousel(
         time: "Picture",
         onScreen: "Finished picture",
         voiceover: "",
-        visualPrompt: stillPicturePrompt(prompt, idea, "one finished picture from the whole brief", 1, 1, kind, feedback, brand),
+        visualPrompt: stillPicturePrompt(
+          prompt,
+          idea,
+          "one finished picture from the whole brief",
+          1,
+          1,
+          kind,
+          feedback,
+          brand,
+          pictureLanguage
+        ),
       },
     ],
   };
@@ -148,7 +179,9 @@ function finishGeneration(
 
 function saveStepVersion(projectId: string, step: string, payload: unknown, generationId: string, sceneId?: number) {
   const id = uuid();
-  if (sceneId) {
+  if (step === "visuals") {
+    db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = 'visuals'").run(projectId);
+  } else if (sceneId) {
     db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = ? AND scene_id = ?").run(
       projectId,
       step,
@@ -286,6 +319,7 @@ export function serializeProject(row: Record<string, unknown>) {
     type: row.type,
     prompt: row.prompt,
     imageIntent: row.image_intent || "",
+    pictureLanguage: parsePictureLanguage(row.picture_language),
     useBrand: Number(row.use_brand) !== 0,
     invite: row.invite_json ? parseInvite(parse(row.invite_json)) : null,
     status: running ? "generating" : row.status,
@@ -423,13 +457,15 @@ export function createProject(
   type: FormatType,
   prompt: string,
   imageIntent: ImageIntent | "" = "",
-  useBrand = true
+  useBrand = true,
+  pictureLanguage: PictureLanguage = ""
 ) {
   const id = uuid();
+  const language = isTextPoster(type, imageIntent) ? parsePictureLanguage(pictureLanguage) : "";
   db.prepare(
-    `INSERT INTO projects (id, user_id, type, prompt, image_intent, use_brand, status, current_step)
-     VALUES (?, ?, ?, ?, ?, ?, 'draft', 'prompt')`
-  ).run(id, userId, type, prompt, imageIntent, useBrand ? 1 : 0);
+    `INSERT INTO projects (id, user_id, type, prompt, image_intent, use_brand, picture_language, status, current_step)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', 'prompt')`
+  ).run(id, userId, type, prompt, imageIntent, useBrand ? 1 : 0, language);
   return getProject(id, userId);
 }
 
@@ -444,6 +480,10 @@ export async function runStep(
     feedbackReason?: unknown;
     feedbackNote?: unknown;
     evictOldest?: boolean;
+    pictureLanguage?: unknown;
+    keepStill?: boolean;
+    keepStillVersionId?: unknown;
+    copyEdit?: unknown;
   } = {}
 ) {
   const project = getProject(projectId, userId);
@@ -455,7 +495,17 @@ export async function runStep(
   const prompt = String(project.prompt);
   const type = String(project.type);
   const imageIntent = parseImageIntent(type, project.image_intent);
-  const regenerate = Boolean(opts.regenerate);
+  const keepStill = Boolean(opts.keepStill);
+  const keepStillVersionId = String(opts.keepStillVersionId || "").trim().slice(0, 80);
+  const copyEdit = String(opts.copyEdit || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 400);
+  const requestedLang = parsePictureLanguage(opts.pictureLanguage);
+  const pictureLanguage =
+    requestedLang || parsePictureLanguage(project.picture_language);
+  const regenerate = Boolean(opts.regenerate) || keepStill;
+  let keepStillPath = "";
 
   const alreadyDone =
     (step === "idea" && Boolean(project.idea_json)) ||
@@ -482,6 +532,11 @@ export async function runStep(
       throw Object.assign(new Error("This request is already running."), { status: 409 });
     }
   }
+  db.prepare(
+    `UPDATE ai_generations
+     SET status = 'failed', finished_at = datetime('now')
+     WHERE project_id = ? AND type = ? AND status = 'running' AND started_at < ?`
+  ).run(projectId, step, new Date(Date.now() - 3 * 60 * 1000).toISOString());
   const inflight = db
     .prepare(`SELECT id FROM ai_generations WHERE project_id = ? AND type = ? AND status = 'running'`)
     .get(projectId, step);
@@ -510,10 +565,55 @@ export async function runStep(
   if (step === "visuals" && !config.openaiKey) {
     throw Object.assign(new Error("Pictures need an OpenAI key. Add OPENAI_API_KEY and restart the API."), { status: 400 });
   }
+  if (keepStill) {
+    if (step !== "visuals" || !isImagePost(type)) {
+      throw Object.assign(new Error("Text changes are only for still pictures."), { status: 400 });
+    }
+    if (requestedLang && copyEdit) {
+      throw Object.assign(new Error("Choose a language remake or a text change, not both."), { status: 400 });
+    }
+    if (requestedLang && !isTextPoster(type, imageIntent)) {
+      throw Object.assign(new Error("Same-picture language is only for invitations, information and offers."), {
+        status: 400,
+      });
+    }
+    if (!requestedLang && !copyEdit) {
+      throw Object.assign(new Error("Say what to add or remove on the picture, or choose English or Ukrainian."), {
+        status: 400,
+      });
+    }
+    if (copyEdit && copyEdit.length < 4) {
+      throw Object.assign(new Error("Say what to add or remove on the picture — a few words is enough."), {
+        status: 400,
+      });
+    }
+    const keepScene = sceneId || 1;
+    let useLiveIfMissing = !keepStillVersionId;
+    if (keepStillVersionId) {
+      const chosen = db
+        .prepare(
+          `SELECT id, accepted FROM project_step_versions WHERE id = ? AND project_id = ? AND step = 'visuals'`
+        )
+        .get(keepStillVersionId, projectId) as { id: string; accepted: number } | undefined;
+      if (!chosen) {
+        throw Object.assign(new Error("That picture is gone."), { status: 404 });
+      }
+      const hasChosenFile = hasStillVersionFile(projectId, keepScene, keepStillVersionId);
+      useLiveIfMissing = Number(chosen.accepted) === 1 && !hasChosenFile;
+      if (!hasChosenFile && !useLiveIfMissing) {
+        throw Object.assign(new Error("That picture is gone."), { status: 404 });
+      }
+    }
+    keepStillPath = copySelectedStill(projectId, keepScene, keepStillVersionId || undefined, useLiveIfMissing);
+    if (!keepStillPath) {
+      throw Object.assign(new Error("Make the picture first."), { status: 400 });
+    }
+  }
   if ((step === "visuals" || step === "voice" || step === "captions" || step === "render") && !script && !isImagePost(type)) {
     throw Object.assign(new Error("Generate the script first."), { status: 400 });
   }
-  const imageScript = isImagePost(type) && idea ? imageCarousel(prompt, idea, imageIntent, feedback, brand) : script;
+  const imageScript =
+    isImagePost(type) && idea ? imageCarousel(prompt, idea, imageIntent, feedback, brand, pictureLanguage) : script;
   if (step === "visuals" && sceneId && imageScript && !imageScript.scenes.find((item) => item.id === sceneId)) {
     throw Object.assign(new Error("Unknown scene."), { status: 400 });
   }
@@ -599,6 +699,29 @@ export async function runStep(
       providerTouched = true;
       const poster = isImagePost(type) && isTextPoster(type, imageIntent || "photo");
       const kind = poster ? "poster" : isImagePost(type) ? "still" : "video";
+      const skipLogoStamp = keepStill;
+      let paintedCopy = "";
+      if (keepStill && requestedLang) {
+        paintedCopy = await translatePictureCopy(prompt, requestedLang);
+      }
+      const frameOpts = {
+        keepStill,
+        pictureLanguage: (keepStill ? requestedLang : pictureLanguage) || undefined,
+        keepStillPath: keepStillPath || undefined,
+        brief: prompt,
+        paintedCopy: paintedCopy || undefined,
+        copyEdit: keepStill && copyEdit ? copyEdit : undefined,
+      };
+      if (keepStill && imageScript && copyEdit) {
+        const rewrite = rewriteStillCopyPrompt(copyEdit);
+        for (const scene of imageScript.scenes) scene.visualPrompt = rewrite;
+      } else if (keepStill && imageScript && requestedLang) {
+        const rewrite = rewriteStillLanguagePrompt(prompt, requestedLang, paintedCopy);
+        for (const scene of imageScript.scenes) scene.visualPrompt = rewrite;
+      }
+      if (requestedLang && isTextPoster(type, imageIntent)) {
+        updates.picture_language = requestedLang;
+      }
       const avoid = regenInstruction(feedback);
       if (avoid) {
         for (const scene of imageScript.scenes) {
@@ -622,13 +745,14 @@ export async function runStep(
       if (sceneId) {
         const scene = imageScript.scenes.find((item) => item.id === sceneId)!;
         const current = parse<Visual[]>(project.visuals_json) || [];
-        const one = await generateOneVisual(scene, brand, kind);
+        const one = await generateOneVisual(scene, brand, kind, frameOpts);
         const next = await persistStills(
           projectId,
           current.some((item) => item.sceneId === sceneId)
             ? current.map((item) => (item.sceneId === sceneId ? one.data : item))
             : [...current, one.data],
-          brand
+          brand,
+          skipLogoStamp
         );
         updates.visuals_json = JSON.stringify(next);
         updates.current_step = "visuals";
@@ -637,9 +761,9 @@ export async function runStep(
         actualCost = one.cost;
       } else {
         const result = await generateVisuals(imageScript, brand, kind, async (visual) => {
-          const [saved] = await persistStills(projectId, [visual], brand);
+          const [saved] = await persistStills(projectId, [visual], brand, true);
           return saved;
-        });
+        }, frameOpts);
         const minLive = visualMinLive(imageScript.scenes.length);
         if (result.usedOpenAI && result.live < minLive) {
           throw Object.assign(
@@ -649,7 +773,7 @@ export async function runStep(
             { status: 400 }
           );
         }
-        const persisted = await persistStills(projectId, result.data, brand);
+        const persisted = await persistStills(projectId, result.data, brand, skipLogoStamp);
         updates.visuals_json = JSON.stringify(persisted);
         updates.current_step = "visuals";
         provider = result.provider;

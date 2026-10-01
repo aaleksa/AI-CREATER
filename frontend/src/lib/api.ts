@@ -80,6 +80,7 @@ export type Project = {
   type: string;
   prompt: string;
   imageIntent?: string;
+  pictureLanguage?: "en" | "uk" | "";
   useBrand?: boolean;
   invite?: InviteCard | null;
   status: string;
@@ -150,8 +151,11 @@ export const api = {
     request<{ project: Project; archive?: ArchiveState; costs: Record<string, number>; fullVideoCost: number }>(
       `/projects/${id}`
     ),
-  createProject: (type: string, prompt: string, imageIntent?: string, useBrand = true) =>
-    request<{ project: Project }>("/projects", { method: "POST", body: JSON.stringify({ type, prompt, imageIntent, useBrand }) }),
+  createProject: (type: string, prompt: string, imageIntent?: string, useBrand = true, pictureLanguage?: string) =>
+    request<{ project: Project }>("/projects", {
+      method: "POST",
+      body: JSON.stringify({ type, prompt, imageIntent, useBrand, pictureLanguage }),
+    }),
   deleteProject: (id: string) => request<{ ok: boolean }>(`/projects/${id}`, { method: "DELETE" }),
   updatePrompt: (id: string, prompt: string) =>
     request<{ project: Project }>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify({ prompt }) }),
@@ -165,7 +169,8 @@ export const api = {
     regenerate = false,
     sceneId?: number,
     feedback?: { reason?: string; note?: string },
-    evictOldest = false
+    evictOldest = false,
+    extra?: { pictureLanguage?: string; keepStill?: boolean; keepStillVersionId?: string; copyEdit?: string }
   ) => {
     const idempotencyKey = crypto.randomUUID();
     return request<{ project: Project; archive?: ArchiveState }>(`/projects/${id}/steps/${step}`, {
@@ -178,6 +183,10 @@ export const api = {
         feedbackReason: feedback?.reason || undefined,
         feedbackNote: feedback?.note || undefined,
         evictOldest: evictOldest || undefined,
+        pictureLanguage: extra?.pictureLanguage,
+        keepStill: extra?.keepStill || undefined,
+        keepStillVersionId: extra?.keepStillVersionId || undefined,
+        copyEdit: extra?.copyEdit || undefined,
       }),
     });
   },
@@ -247,6 +256,7 @@ export async function fetchMedia(path: string) {
   const locale = currentLocale();
   const token = localStorage.getItem(TOKEN);
   const res = await fetch(path, {
+    cache: "no-store",
     headers: {
       "Accept-Language": locale === "uk" ? "uk" : "en",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
