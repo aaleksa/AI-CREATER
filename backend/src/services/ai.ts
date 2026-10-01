@@ -569,14 +569,15 @@ export function rewriteStillLanguagePrompt(brief: string, lang: PictureLanguage,
   const target = lang === "uk" ? "Ukrainian" : lang === "en" ? "English" : "";
   const copy = (paintedCopy || asked).trim();
   return [
-    "Edit the attached image only. Do not generate a new image. Do not change any other aspect of the image: photograph, people, objects, colours, lighting, layout, decorations, crop.",
     target
-      ? `The brief is already translated into ${target}. Paint this exact ${target} text in place of the current words:`
-      : "Paint this exact text in place of the current words:",
+      ? `Translate the text in this image to ${target}. Do not change any other aspect of the image.`
+      : "Do not change any other aspect of the image except the painted words.",
+    "Keep the same photograph, people, crowd, objects, colours, lighting, layout, decorations, icons, cassette, vinyl, equalizer, crop and badge shapes.",
+    target
+      ? `Replace only the painted letters with this exact ${target} text:`
+      : "Replace only the painted letters with this exact text:",
     copy,
-    target
-      ? `The words on the picture must all be ${target} — names, dates, times, prices and addresses too. The letters must change. Do not return the original wording. Return the picture they chose, in ${target}.`
-      : "Return the picture they chose.",
+    "Only the letterforms change. Do not redraw the scene.",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -963,8 +964,7 @@ async function generateSceneFrame(
       } as Parameters<typeof openai.images.edit>[0]);
       return readResult(model, image);
     };
-    const textChange = Boolean(opts?.copyEdit || opts?.pictureLanguage);
-    const preferred = keepStill && textChange ? "low" : keepStill ? "high" : "";
+    const preferred = keepStill ? (opts?.copyEdit ? "low" : "high") : "";
     try {
       return await run(preferred);
     } catch (error) {
