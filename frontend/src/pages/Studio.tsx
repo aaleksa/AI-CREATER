@@ -228,6 +228,7 @@ export default function Studio() {
   const [versionSrcs, setVersionSrcs] = useState<Record<string, string>>({});
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
   const [copyEdit, setCopyEdit] = useState("");
+  const [copyEditOpen, setCopyEditOpen] = useState(false);
   const [pendingRegen, setPendingRegen] = useState<{ step: string; sceneId?: number } | null>(null);
   const [regenReason, setRegenReason] = useState("");
   const [regenNote, setRegenNote] = useState("");
@@ -427,7 +428,10 @@ export default function Studio() {
       if (nextArchive) setArchive(nextArchive);
       setBrief(nextProject.prompt);
       if (nextProject.invite) setInviteDraft(draftFromInvite(nextProject.invite));
-      if (extra?.copyEdit) setCopyEdit("");
+      if (extra?.copyEdit) {
+        setCopyEdit("");
+        setCopyEditOpen(false);
+      }
       refreshMe();
       setPendingRegen(null);
       setRegenReason("");
@@ -909,63 +913,90 @@ export default function Studio() {
                     </p>
                     <p className="hint">{t("studio.samePictureHint")}</p>
                     <div className="action-row">
-                      {project.pictureLanguage !== "en" && (
-                        <button
-                          type="button"
-                          className="btn ghost"
-                          disabled={Boolean(busy)}
-                          onClick={() => remakeLanguage("en")}
-                        >
-                          {makingPicture
-                            ? t("studio.makingPicture")
-                            : t("studio.samePictureEn", { credits: extraPrice("visuals", project.visuals?.[scene]?.sceneId ?? 1).credits })}
-                        </button>
-                      )}
-                      {project.pictureLanguage !== "uk" && (
-                        <button
-                          type="button"
-                          className="btn ghost"
-                          disabled={Boolean(busy)}
-                          onClick={() => remakeLanguage("uk")}
-                        >
-                          {makingPicture
-                            ? t("studio.makingPicture")
-                            : t("studio.samePictureUk", { credits: extraPrice("visuals", project.visuals?.[scene]?.sceneId ?? 1).credits })}
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        disabled={Boolean(busy)}
+                        onClick={() => remakeLanguage("en")}
+                      >
+                        {makingPicture
+                          ? t("studio.makingPicture")
+                          : t("studio.samePictureEn", { credits: extraPrice("visuals", project.visuals?.[scene]?.sceneId ?? 1).credits })}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        disabled={Boolean(busy)}
+                        onClick={() => remakeLanguage("uk")}
+                      >
+                        {makingPicture
+                          ? t("studio.makingPicture")
+                          : t("studio.samePictureUk", { credits: extraPrice("visuals", project.visuals?.[scene]?.sceneId ?? 1).credits })}
+                      </button>
                     </div>
                   </div>
                 )}
                 {isImage && (
                   <div style={{ marginTop: 16 }}>
-                    <p className="hint">{t("studio.editPictureAsk")}</p>
-                    <p className="hint">{t("studio.editPictureHint")}</p>
-                    <textarea
-                      className="brief-box"
-                      value={copyEdit}
-                      onChange={(e) => setCopyEdit(e.target.value)}
-                      maxLength={400}
-                      rows={3}
-                      placeholder={t("studio.editPicturePlaceholder")}
-                      style={{ minHeight: 88, marginTop: 8 }}
-                    />
-                    {error && (
-                      <p className="err" style={{ marginTop: 8 }}>
-                        {error}
-                      </p>
-                    )}
-                    <div className="action-row" style={{ marginTop: 10 }}>
+                    {!copyEditOpen ? (
                       <button
                         type="button"
                         className="btn ghost"
                         disabled={Boolean(busy)}
-                        onClick={applyCopyEdit}
+                        onClick={() => {
+                          setError("");
+                          setCopyEditOpen(true);
+                        }}
                       >
-                        {makingPicture
-                          ? t("studio.makingPicture")
-                          : t("studio.editPictureApply", { credits: extraPrice("visuals", project.visuals?.[scene]?.sceneId ?? 1).credits })}
+                        {t("studio.editPictureAsk")}
                       </button>
-                    </div>
+                    ) : (
+                      <div className="edit-picture-panel">
+                        <div className="row" style={{ marginBottom: 8 }}>
+                          <p className="hint" style={{ margin: 0 }}>{t("studio.editPictureAsk")}</p>
+                          <button
+                            type="button"
+                            className="btn ghost"
+                            disabled={Boolean(busy)}
+                            onClick={() => {
+                              setCopyEditOpen(false);
+                              setCopyEdit("");
+                              setError("");
+                            }}
+                          >
+                            {t("studio.editPictureClose")}
+                          </button>
+                        </div>
+                        <p className="hint">{t("studio.editPictureHint")}</p>
+                        <textarea
+                          className="brief-box"
+                          value={copyEdit}
+                          onChange={(e) => setCopyEdit(e.target.value)}
+                          maxLength={400}
+                          rows={3}
+                          placeholder={t("studio.editPicturePlaceholder")}
+                          autoFocus
+                          style={{ minHeight: 88, marginTop: 8 }}
+                        />
+                        {error && (
+                          <p className="err" style={{ marginTop: 8 }}>
+                            {error}
+                          </p>
+                        )}
+                        <div className="action-row" style={{ marginTop: 10 }}>
+                          <button
+                            type="button"
+                            className="btn ghost"
+                            disabled={Boolean(busy)}
+                            onClick={applyCopyEdit}
+                          >
+                            {makingPicture
+                              ? t("studio.makingPicture")
+                              : t("studio.editPictureApply", { credits: extraPrice("visuals", project.visuals?.[scene]?.sceneId ?? 1).credits })}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

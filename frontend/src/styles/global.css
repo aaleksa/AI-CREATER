@@ -580,6 +580,13 @@ textarea.brief-box::placeholder {
   -webkit-text-fill-color: var(--muted);
   opacity: 1;
 }
+.edit-picture-panel {
+  margin-top: 4px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #12100e;
+}
 .recent-briefs { margin: 16px 0 8px; max-width: 720px; }
 .recent-briefs-list { display: grid; gap: 8px; }
 .recent-brief {

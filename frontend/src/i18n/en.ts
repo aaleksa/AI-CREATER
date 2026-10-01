@@ -168,6 +168,7 @@ export const en = {
     editPicturePlaceholder: "Add ‘RSVP by Friday’ at the bottom. Remove the last line.",
     editPictureApply: "Apply to this picture · {credits} credits",
     editPictureNeed: "Say what to add or remove — a few words is enough.",
+    editPictureClose: "Close",
     pictureLangBrief: "Words on this picture follow the brief.",
     pictureLangEn: "Words on this picture are English.",
     pictureLangUk: "Words on this picture are Ukrainian.",

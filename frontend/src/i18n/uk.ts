@@ -170,6 +170,7 @@ export const uk: Messages = {
     editPicturePlaceholder: "Додати «RSVP до п’ятниці» знизу. Прибрати останній рядок.",
     editPictureApply: "Застосувати до цієї картинки · {credits} кредитів",
     editPictureNeed: "Напишіть, що додати або прибрати — кількох слів досить.",
+    editPictureClose: "Закрити",
     pictureLangBrief: "Слова на цій картинці — як у брифі.",
     pictureLangEn: "Слова на цій картинці англійською.",
     pictureLangUk: "Слова на цій картинці українською.",
