@@ -558,26 +558,32 @@ export function pictureLanguageLine(lang: PictureLanguage) {
   return "Same language as the request. Proofread.";
 }
 
-export function rewriteStillLanguagePrompt(brief: string, lang: PictureLanguage, paintedCopy = "") {
-  const asked = brief
+function stripBrief(brief: string) {
+  return brief
     .replace(/\*\*/g, "")
     .replace(/[_#`]/g, "")
     .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, " ")
-    .replace(/\s+/g, " ")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
     .trim()
-    .slice(0, 1800);
+    .slice(0, 2000);
+}
+
+export function rewriteStillLanguagePrompt(brief: string, lang: PictureLanguage, paintedCopy = "") {
   const target = lang === "uk" ? "Ukrainian" : lang === "en" ? "English" : "";
-  const copy = (paintedCopy || asked).trim();
+  const copy = paintedCopy.trim() || stripBrief(brief);
   return [
     target
       ? `Translate the text in this image to ${target}. Do not change any other aspect of the image.`
       : "Do not change any other aspect of the image except the painted words.",
-    "Keep the same photograph, people, crowd, objects, colours, lighting, layout, decorations, icons, cassette, vinyl, equalizer, crop and badge shapes.",
+    "Keep the same photograph, people, crowd, objects, colours, lighting, layout, decorations, cassette, vinyl, equalizer, crop and badge shapes. Do not redraw the scene.",
+    "Keep every inscription already on the picture — titles, host, DJ credits, dates, times, address, price, vinyl badge, charity box. Do not drop a line even if it is short. Do not add a line. Do not add extra letters (not 90sS).",
+    "The owner's brief stays the same request — only the wording of existing inscriptions changes. Do not paint the brief as a new caption.",
     target
-      ? `Replace only the painted letters with this exact ${target} text:`
-      : "Replace only the painted letters with this exact text:",
+      ? `Replace only the letterforms with this exact ${target} wording, same places, same number of lines:`
+      : "Replace only the letterforms with this exact wording, same places, same number of lines:",
     copy,
-    "Only the letterforms change. Do not redraw the scene.",
+    "Only the letters change.",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -587,25 +593,95 @@ export function rewriteStillCopyPrompt(copyEdit: string) {
   const note = copyEdit.replace(/\s+/g, " ").trim().slice(0, 400);
   return [
     "Edit the attached image. Keep the same photograph, people, objects, colours, lighting, layout, decorations and crop.",
-    "You MUST change the painted words. Follow this instruction exactly:",
-    note,
-    "If they asked to add words, paint those new words on the picture. If they asked to remove words, those words must disappear. Leave every other line as it is.",
-    "The letters on the picture must change. Do not return the original wording. Do not generate a different scene.",
+    "The owner's message is an INSTRUCTION, not a caption. Do not paint that instruction on the picture.",
+    `Instruction: ${note}`,
+    "Follow the instruction: add or remove painted words as they asked. If they named a line to add, paint only those words. If they asked to remove a line, take that line off.",
+    "Never write the instruction itself onto the poster. Do not generate a different scene.",
   ].join("\n\n");
 }
 
-export async function translatePictureCopy(brief: string, lang: PictureLanguage) {
-  const asked = brief
-    .replace(/\*\*/g, "")
-    .replace(/[_#`]/g, "")
-    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim()
+export async function readPaintedCopy(imagePath: string) {
+  const openai = client();
+  if (!openai || !fs.existsSync(imagePath)) return "";
+  const bytes = fs.readFileSync(imagePath);
+  if (!bytes.length) return "";
+  const mime = logoKindFromBytes(bytes) === "png" ? "image/png" : "image/jpeg";
+  try {
+    const response = await openai.chat.completions.create({
+      model: config.openaiModel || "gpt-4o-mini",
+      temperature: 0,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: clipInput(
+                "Read every painted inscription on this poster, top to bottom, left to right. Keep original spelling. One inscription per output line. Include titles, host names, DJ credits (e.g. DJ Vitamin), dates, times, street addresses, prices, vinyl-sticker words and the charity box. Do not skip short overlay lines. Reply with the lines only — no bullets, no commentary."
+              ),
+            },
+            { type: "image_url", image_url: { url: `data:${mime};base64,${bytes.toString("base64")}` } },
+          ],
+        },
+      ],
+    });
+    return tidyPaintedLines(String(response.choices[0]?.message?.content || ""));
+  } catch (error) {
+    console.error("readPaintedCopy failed", error instanceof Error ? error.message : error);
+    return "";
+  }
+}
+
+function tidyPaintedLines(text: string) {
+  return text
+    .replace(/^```[\w]*\n?|\n?```$/g, "")
+    .split("\n")
+    .map((line) => line.replace(/^\s*(?:[-*]|\d+[.)])\s+/, "").replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n")
     .slice(0, 1800);
+}
+
+export async function translateBrief(brief: string, lang: PictureLanguage) {
+  const asked = stripBrief(brief);
+  if (!asked || (lang !== "en" && lang !== "uk")) return asked;
+  const openai = client();
+  if (!openai) return asked;
+  const target = lang === "uk" ? "Ukrainian" : "English";
+  try {
+    const response = await openai.chat.completions.create({
+      model: config.openaiModel || "gpt-4o-mini",
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content: clipInput(
+            `Translate this owner's brief into ${target}. It is the same request — do not add, remove or rewrite facts. Translate names, dates, times, prices and addresses. Write dates the way a ${target} speaker would (Ukrainian «23 жовтня» → English «23 October»). Reply with the translated brief only.`
+          ),
+        },
+        { role: "user", content: clipInput(asked) },
+      ],
+    });
+    const text = String(response.choices[0]?.message?.content || "")
+      .replace(/^```[\w]*\n?|\n?```$/g, "")
+      .trim()
+      .slice(0, 2000);
+    return looksLikeTargetLanguage(text, lang) ? text || asked : asked;
+  } catch (error) {
+    console.error("translateBrief failed", error instanceof Error ? error.message : error);
+    return asked;
+  }
+}
+
+export async function translatePictureCopy(painted: string, lang: PictureLanguage, brief = "") {
+  const asked = tidyPaintedLines(painted);
+  if (!asked) return "";
   if (lang !== "en" && lang !== "uk") return asked;
   const openai = client();
   if (!openai) return asked;
   const target = lang === "uk" ? "Ukrainian" : "English";
+  const glossary = stripBrief(brief);
+  const lines = asked.split("\n").filter(Boolean).length;
   const run = async (strict: boolean) => {
     const response = await openai.chat.completions.create({
       model: config.openaiModel || "gpt-4o-mini",
@@ -615,25 +691,30 @@ export async function translatePictureCopy(brief: string, lang: PictureLanguage)
           role: "system",
           content: clipInput(
             strict
-              ? `You are a translator. Translate the whole poster brief into ${target}. Reply with the ${target} translation only — no JSON, no quotes around the whole text, no commentary.
-Translate everything: titles, body, names, dates, times, prices and addresses. Write dates and times the way a ${target} speaker would (Ukrainian «23 жовтня» → English «23 October»). The output MUST be entirely ${target}. Do not leave mixed-language lines.`
-              : `Translate every word into ${target}, including names, dates and addresses. Reply with the translation only.`
+              ? `You are a translator. Translate each painted poster line into ${target}. Reply with the ${target} lines only — no JSON, no quotes around the whole text, no commentary.
+The owner's brief is the same request. Use it only as a glossary for names, dates, times, prices and addresses.
+Keep the same number of lines in the same order. Do not drop a line — including DJ credits, vinyl-badge text, price and charity — even if that line is not in the brief. Do not merge lines. Do not add a line.
+Proofread: no doubled letters (not 90sS); keep postcodes (EC1V not ECVT); write «from 19.00 to 23.00» not «t 23.00»; auction not auctidn. Write dates the way a ${target} speaker would (Ukrainian «23 жовтня» → English «23 October»). Keep DJ / brand names. Transliterate personal names if needed.`
+              : `Translate each painted line into ${target}. Same number of lines, same order. Do not drop a line, even a short DJ credit. Reply with the lines only.`
           ),
         },
-        { role: "user", content: clipInput(asked) },
+        {
+          role: "user",
+          content: clipInput(
+            [glossary ? `Owner's brief (same request, glossary only):\n${glossary}` : "", `${lines} painted lines to translate into ${target}:\n\n${asked}`]
+              .filter(Boolean)
+              .join("\n\n")
+          ),
+        },
       ],
     });
-    return String(response.choices[0]?.message?.content || "")
-      .replace(/^```[\w]*\n?|\n?```$/g, "")
-      .replace(/^["']|["']$/g, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 1800);
+    return tidyPaintedLines(String(response.choices[0]?.message?.content || ""));
   };
   let text = (await run(true)) || asked;
-  if (!looksLikeTargetLanguage(text, lang)) {
+  const short = (value: string) => value.split("\n").filter(Boolean).length;
+  if (!looksLikeTargetLanguage(text, lang) || short(text) < lines) {
     const again = await run(false);
-    if (again && looksLikeTargetLanguage(again, lang)) text = again;
+    if (again && looksLikeTargetLanguage(again, lang) && short(again) >= short(text)) text = again;
   }
   return text || asked;
 }

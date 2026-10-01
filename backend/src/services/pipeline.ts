@@ -15,6 +15,8 @@ import {
   stillPicturePrompt,
   rewriteStillLanguagePrompt,
   rewriteStillCopyPrompt,
+  readPaintedCopy,
+  translateBrief,
   translatePictureCopy,
   tidyIdea,
   tidyVoice,
@@ -701,14 +703,17 @@ export async function runStep(
       const kind = poster ? "poster" : isImagePost(type) ? "still" : "video";
       const skipLogoStamp = keepStill;
       let paintedCopy = "";
+      let translatedBrief = "";
       if (keepStill && requestedLang) {
-        paintedCopy = await translatePictureCopy(prompt, requestedLang);
+        const fromStill = await readPaintedCopy(keepStillPath);
+        translatedBrief = await translateBrief(prompt, requestedLang);
+        paintedCopy = (await translatePictureCopy(fromStill, requestedLang, prompt)) || translatedBrief;
       }
       const frameOpts = {
         keepStill,
         pictureLanguage: (keepStill ? requestedLang : pictureLanguage) || undefined,
         keepStillPath: keepStillPath || undefined,
-        brief: prompt,
+        brief: translatedBrief || prompt,
         paintedCopy: paintedCopy || undefined,
         copyEdit: keepStill && copyEdit ? copyEdit : undefined,
       };
@@ -716,7 +721,7 @@ export async function runStep(
         const rewrite = rewriteStillCopyPrompt(copyEdit);
         for (const scene of imageScript.scenes) scene.visualPrompt = rewrite;
       } else if (keepStill && imageScript && requestedLang) {
-        const rewrite = rewriteStillLanguagePrompt(prompt, requestedLang, paintedCopy);
+        const rewrite = rewriteStillLanguagePrompt(translatedBrief || prompt, requestedLang, paintedCopy);
         for (const scene of imageScript.scenes) scene.visualPrompt = rewrite;
       }
       if (requestedLang && isTextPoster(type, imageIntent)) {

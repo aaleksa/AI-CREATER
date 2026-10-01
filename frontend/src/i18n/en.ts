@@ -164,7 +164,7 @@ export const en = {
     samePictureEn: "Same picture in English · {credits} credits",
     samePictureUk: "Same picture in Ukrainian · {credits} credits",
     editPictureAsk: "Change the words on this picture?",
-    editPictureHint: "Uses the picture on screen — the take you selected. Add a line, or say which words to take off. The photo stays. Previous take stays here.",
+    editPictureHint: "Uses the picture on screen — the take you selected. This is an instruction for the AI (add or remove a line), not text to paint on the picture. The photo stays. Previous take stays here.",
     editPicturePlaceholder: "Add ‘RSVP by Friday’ at the bottom. Remove the last line.",
     editPictureApply: "Apply to this picture · {credits} credits",
     editPictureNeed: "Say what to add or remove — a few words is enough.",

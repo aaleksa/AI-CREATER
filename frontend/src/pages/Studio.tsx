@@ -395,6 +395,7 @@ export default function Studio() {
     (rawFrame.startsWith("data:") ? "" : rawFrame);
   const frame = previewVersionId ? versionSrcs[previewVersionId] || "" : currentFrame;
   const workingVersionId = previewVersionId || undefined;
+  const downloadSrc = frame && !frame.startsWith("linear") ? frame : currentFrame;
   const makingPicture = Boolean(busy === "visuals" || (typeof busy === "string" && busy.startsWith("visual-")));
   const frameIsPlaceholder = Boolean(project?.visuals?.[scene]?.placeholder);
   const placeholderCount = project?.visuals?.filter((v) => v.placeholder).length ?? 0;
@@ -876,24 +877,15 @@ export default function Studio() {
                 </p>
                 <p className="hint">{t(isInvite ? "studio.inviteKeep" : "studio.pictureKeep")}</p>
                 <div className="action-row">
-                  {isInvite
-                    ? project.visuals
-                        ?.filter((visual) => !visual.placeholder && imageSrcs[visual.sceneId])
-                        .slice(0, 1)
-                        .map((visual) => (
-                          <a key={visual.sceneId} className="btn accent" href={imageSrcs[visual.sceneId]} download="invitation.jpg">
-                            {t("studio.downloadInvite")}
-                          </a>
-                        ))
-                    : project.visuals?.map((visual, i) => {
-                        const src = imageSrcs[visual.sceneId];
-                        if (!src || visual.placeholder) return null;
-                        return (
-                          <a key={visual.sceneId} className="btn accent" href={src} download={`still-${i + 1}.jpg`}>
-                            {t("studio.downloadN", { n: i + 1 })}
-                          </a>
-                        );
-                      })}
+                  {downloadSrc && !String(downloadSrc).startsWith("linear") && (
+                    <a
+                      className="btn accent"
+                      href={downloadSrc}
+                      download={isInvite ? "invitation.jpg" : "still-1.jpg"}
+                    >
+                      {t(isInvite ? "studio.downloadInvite" : "studio.downloadN", { n: 1 })}
+                    </a>
+                  )}
                   {SHOW_SHARE_AND_PUBLISH && (
                     <button className="btn ghost" type="button" onClick={sharePreview}>
                       {shareCopied ? t("studio.shareCopied") : t("studio.share")}
