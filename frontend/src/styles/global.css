@@ -485,15 +485,16 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
   padding: 12px;
   background: #12100e;
 }
-.compare-card.on { border-color: var(--accent-2); }
-.compare-still-btn {
+.compare-card.pick {
   display: block;
   width: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
+.compare-card.on { border-color: var(--accent-2); }
 .compare-still {
   display: block;
   width: 100%;

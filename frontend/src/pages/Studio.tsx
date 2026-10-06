@@ -111,20 +111,16 @@ function PictureCompare({
   versions,
   srcs,
   liveSrc,
-  onRestore,
   onPreview,
   previewId,
-  busy,
   poster,
   t,
 }: {
   versions: { id: string; accepted: boolean }[];
   srcs: Record<string, string>;
   liveSrc?: string;
-  onRestore: (versionId: string) => void;
   onPreview: (versionId: string) => void;
   previewId: string | null;
-  busy: boolean;
   poster?: boolean;
   t: (path: string, vars?: Record<string, string | number>) => string;
 }) {
@@ -138,26 +134,21 @@ function PictureCompare({
           const showing = previewId === version.id || (!previewId && version.accepted);
           const label = version.accepted ? t("studio.current") : t("studio.takeN", { n: index + 1 });
           return (
-            <div key={version.id} className={`compare-card${showing ? " on" : ""}`}>
-              <p className="hint">{label}</p>
+            <button
+              key={version.id}
+              type="button"
+              className={`compare-card pick${showing ? " on" : ""}`}
+              onClick={() => onPreview(version.id)}
+              aria-pressed={showing}
+              aria-label={showing ? `${label}. ${t("studio.selectedTake")}` : label}
+            >
+              <p className="hint">{showing ? `${t("studio.selectedTake")} · ${label}` : label}</p>
               {src ? (
-                <button
-                  type="button"
-                  className="compare-still-btn"
-                  onClick={() => onPreview(version.id)}
-                  aria-label={label}
-                >
-                  <img className={`compare-still${poster ? " poster" : ""}`} src={src} alt={label} />
-                </button>
+                <img className={`compare-still${poster ? " poster" : ""}`} src={src} alt="" />
               ) : (
                 <p className="hint">{t("studio.gone")}</p>
               )}
-              {!version.accepted && src && (
-                <button className="btn ghost" type="button" disabled={busy} onClick={() => onRestore(version.id)}>
-                  {t("studio.useVersion")}
-                </button>
-              )}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -393,8 +384,10 @@ export default function Studio() {
   const currentFrame =
     (project?.visuals?.[scene] && imageSrcs[project.visuals[scene].sceneId]) ||
     (rawFrame.startsWith("data:") ? "" : rawFrame);
+  const acceptedVersionId = project?.versions?.visuals?.find((version) => version.accepted)?.id;
+  const selectedVersionId = previewVersionId || acceptedVersionId;
   const frame = previewVersionId ? versionSrcs[previewVersionId] || "" : currentFrame;
-  const workingVersionId = previewVersionId || undefined;
+  const workingVersionId = selectedVersionId || undefined;
   const downloadSrc = frame && !frame.startsWith("linear") ? frame : currentFrame;
   const makingPicture = Boolean(busy === "visuals" || (typeof busy === "string" && busy.startsWith("visual-")));
   const frameIsPlaceholder = Boolean(project?.visuals?.[scene]?.placeholder);
@@ -1001,10 +994,8 @@ export default function Studio() {
                     srcs={versionSrcs}
                     liveSrc={imageSrcs[project.visuals?.[0]?.sceneId ?? 1]}
                     previewId={previewVersionId}
-                    busy={Boolean(busy)}
                     poster={isPoster}
                     onPreview={setPreviewVersionId}
-                    onRestore={(versionId) => restore("visuals", versionId)}
                     t={t}
                   />
                 )}
