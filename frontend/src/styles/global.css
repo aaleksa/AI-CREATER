@@ -814,3 +814,97 @@ textarea.brief-box::placeholder {
 .account-panel .field:last-of-type { margin-bottom: 12px; }
 .btn.danger { color: var(--danger); border-color: var(--danger); }
 .danger-zone { border-color: var(--danger); }
+
+/* ---- Brand Kit redesign ---- */
+.brand-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.chip-link {
+  font: inherit; font-size: 14px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 999px; padding: 6px 14px; cursor: pointer;
+}
+.chip-link:hover { border-color: var(--accent-2); }
+.brand-section { margin-bottom: 18px; scroll-margin-top: 90px; }
+.brand-section h2 { margin: 0 0 4px; font-family: var(--serif); font-size: 24px; }
+.brand-section:focus { outline: none; }
+.brand-section .where { margin: 22px 0 6px; font-size: 15px; }
+.hint.warn { color: var(--danger); margin-top: 8px; }
+input.bad { border-color: var(--danger); }
+.tones .choice .hint { font-style: italic; }
+details.more { margin-top: 8px; }
+details.more > summary, details.learned > summary { cursor: pointer; font-weight: 600; }
+details.learned > summary { font-family: var(--serif); font-size: 20px; }
+
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+.tile { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tile-img {
+  display: grid; place-items: center; aspect-ratio: 1; overflow: hidden; cursor: pointer;
+  border: 1px dashed var(--line); border-radius: 14px; background: var(--surface-soft);
+  color: var(--muted); font-size: 14px;
+}
+.tile-img img { width: 100%; height: 100%; object-fit: cover; }
+.tile-img.contain img { object-fit: contain; padding: 10px; }
+.tile-img:hover { border-color: var(--accent-2); }
+.tile-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
+.tile-actions .btn { padding: 6px 10px; font-size: 13px; }
+:where(.tile):has(input.sr-only:focus-visible) .tile-img { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+
+.switch-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--line); cursor: pointer; }
+.switch-row input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent-2); flex: none; }
+.switch-row > span { display: flex; flex-direction: column; gap: 2px; }
+.switch-row.off { cursor: default; opacity: .7; }
+
+.save-bar {
+  position: sticky; bottom: 16px; z-index: 20; margin-top: 18px;
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-radius: 16px;
+  background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow);
+}
+.save-actions { display: flex; gap: 8px; margin-left: auto; }
+
+.brand-aside { position: sticky; top: 24px; }
+.post-mock {
+  position: relative; aspect-ratio: 1; border-radius: 18px; padding: 8% 9%; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: center; gap: 4%;
+  box-shadow: var(--shadow); border: 1px solid rgba(0, 0, 0, .08);
+}
+.post-mock hr { width: 22%; border: 0; margin: 0; }
+.mock-name { margin: 0; font-size: clamp(24px, 3.4vw, 36px); line-height: 1.1; overflow-wrap: anywhere; }
+.mock-line { margin: 0; font-size: 16px; line-height: 1.35; max-width: 80%; }
+.mock-logo { position: absolute; right: 6%; bottom: 6%; height: 12%; max-width: 30%; object-fit: contain; }
+.mock-contact {
+  position: absolute; left: 6%; bottom: 6%; max-width: 62%;
+  font: 600 12px/1 Arial, sans-serif; color: #fff; background: rgba(20, 16, 12, .72);
+  padding: 8px 12px; border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.checklist { margin-top: 18px; }
+.checklist-title { margin: 0 0 6px; font-weight: 600; }
+.checklist ul { list-style: none; margin: 0; padding: 0; }
+.checklist button {
+  font: inherit; font-size: 14px; color: var(--muted); background: none; border: 0;
+  padding: 5px 0; cursor: pointer; text-align: left;
+}
+.checklist button.done { color: var(--ok); }
+.checklist button:hover { color: var(--ink); }
+
+@media (max-width: 900px) {
+  .brand-aside { position: static; order: -1; }
+  .post-mock { aspect-ratio: auto; min-height: 150px; max-width: 320px; padding: 22px 22px 56px; }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 960px) {
+  .save-bar { bottom: calc(68px + env(safe-area-inset-bottom)); }
+  .save-actions { width: 100%; }
+  .save-actions .btn { flex: 1; min-height: 44px; }
+}
+
+/* Compact pick-one pills */
+.pills { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 6px; }
+.pill {
+  font: inherit; font-size: 15px; color: var(--ink); cursor: pointer;
+  background: var(--surface-soft); border: 1px solid var(--line);
+  border-radius: 999px; padding: 8px 16px; min-height: 40px;
+}
+.pill:hover { border-color: var(--accent-2); }
+.pill.on { border-color: var(--accent-2); background: var(--accent-soft); font-weight: 600; }
+.pill-hint { margin: 0 0 8px; min-height: 20px; }
+@media (max-width: 960px) { .pill { min-height: 44px; } }

@@ -1,13 +1,13 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, fetchMedia, type BrandKitRow } from "../lib/api";
-import { formatBrandHint, useLocale } from "../i18n/locale";
+import { useLocale } from "../i18n/locale";
 
 const TONES = [
-  { id: "warm", labelKey: "brand.toneWarm", text: "Warm and friendly. Like a regular, not an ad." },
-  { id: "professional", labelKey: "brand.tonePro", text: "Professional and polished. Clear, short, never stiff." },
-  { id: "playful", labelKey: "brand.tonePlay", text: "Fun and playful. Light. Never try-hard." },
-  { id: "calm", labelKey: "brand.toneCalm", text: "Calm and minimal. Unhurried. Quiet, not luxury-speak." },
+  { id: "warm", labelKey: "brand.toneWarm", exKey: "brand.toneWarmEx", text: "Warm and friendly. Like a regular, not an ad." },
+  { id: "professional", labelKey: "brand.tonePro", exKey: "brand.toneProEx", text: "Professional and polished. Clear, short, never stiff." },
+  { id: "playful", labelKey: "brand.tonePlay", exKey: "brand.tonePlayEx", text: "Fun and playful. Light. Never try-hard." },
+  { id: "calm", labelKey: "brand.toneCalm", exKey: "brand.toneCalmEx", text: "Calm and minimal. Unhurried. Quiet, not luxury-speak." },
 ];
 
 function toneOf(text: string) {
@@ -15,6 +15,37 @@ function toneOf(text: string) {
 }
 
 const HEX = /^#[0-9A-Fa-f]{6}$/;
+const DEFAULT_PRIMARY = "#C45C26";
+const DEFAULT_SECONDARY = "#F4EFE8";
+
+function luminance(hex: string) {
+  const channel = (start: number) => {
+    const v = Number.parseInt(hex.slice(start, start + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+}
+
+function contrast(a: string, b: string) {
+  if (!HEX.test(a) || !HEX.test(b)) return 21;
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** Same line the server prints on photos: "@name · site". */
+function contactLine(instagram: string, website: string) {
+  const handle = instagram.trim().replace(/[?#].*$/, "").replace(/\/+$/, "").replace(/^https?:\/\/[^/]*\//i, "").replace(/^@+/, "").split("/").pop() || "";
+  const site = website.trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/+$/, "").slice(0, 40);
+  return [/^[A-Za-z0-9._]{1,30}$/.test(handle) ? `@${handle}` : "", site].filter(Boolean).join("  ·  ");
+}
+
+function goTo(id: string) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const calm = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "center" });
+  if (typeof (el as HTMLElement).focus === "function") (el as HTMLElement).focus({ preventScroll: true });
+}
 
 function snapshot(form: typeof empty, logoOnPhotos: boolean, contactOnPhotos: boolean) {
   // Photos and logo save on their own, so they do not count as unsaved.
@@ -42,8 +73,8 @@ const REF_SLOTS = [
 const empty = {
   business_name: "",
   logo_url: "",
-  primary_color: "#C45C26",
-  secondary_color: "#F4EFE8",
+  primary_color: DEFAULT_PRIMARY,
+  secondary_color: DEFAULT_SECONDARY,
   font: "Fraunces",
   tone_of_voice: TONES[0].text,
   tone_note: "",
@@ -109,7 +140,6 @@ export default function Brand() {
   const [learnedFrom, setLearnedFrom] = useState(0);
   const [learnedLines, setLearnedLines] = useState<string[]>([]);
   const [readyProjects, setReadyProjects] = useState(0);
-  const [hint, setHint] = useState("");
   const [ownNote, setOwnNote] = useState(false);
   const [logoOnPhotos, setLogoOnPhotos] = useState(false);
   const [contactOnPhotos, setContactOnPhotos] = useState(false);
@@ -123,7 +153,6 @@ export default function Brand() {
     setLearnedFrom(kit.learned_summary?.basedOnProjects || 0);
     setLearnedLines(kit.learned_lines || []);
     setReadyProjects(kit.ready_projects || 0);
-    setHint(formatBrandHint(t, kit.completeness));
   }
 
   // Whole kit from the server: after load and after Save.
@@ -267,333 +296,329 @@ export default function Brand() {
     }
   }
 
+  function discard() {
+    setError("");
+    api.brand().then((d) => {
+      if (d.brandKit) apply(d.brandKit);
+    });
+  }
+
   function set(key: string, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
   const tone = toneOf(form.tone_of_voice);
-  const vertical = TYPES.find((item) => item.id === form.vertical);
-  const verticalLabel = vertical
-    ? form.vertical === "other" && form.vertical_note.trim()
-      ? form.vertical_note.trim()
-      : t(vertical.labelKey)
-    : "";
+  const stampText = contactLine(form.instagram, form.website);
+  const lowContrast = contrast(form.primary_color, form.secondary_color) < 3;
+  const checks = [
+    { key: "colours", label: t("brand.checkColours"), done: form.primary_color.toUpperCase() !== DEFAULT_PRIMARY || form.secondary_color.toUpperCase() !== DEFAULT_SECONDARY, target: "primary_color" },
+    { key: "tone", label: t("brand.checkTone"), done: Boolean(tone), target: "brand-tone" },
+    { key: "name", label: t("brand.checkName"), done: Boolean(form.business_name.trim()), target: "business_name" },
+    { key: "type", label: t("brand.checkType"), done: Boolean(form.vertical), target: "brand-vertical" },
+    { key: "logo", label: t("brand.checkLogo"), done: Boolean(logoSrc), target: "brand-logo" },
+  ];
+  const doneCount = checks.filter((item) => item.done).length;
+
+  const sections = [
+    { id: "brand-business", label: t("brand.navBusiness") },
+    { id: "brand-look", label: t("brand.navLook") },
+    { id: "brand-assets", label: t("brand.navAssets") },
+    { id: "brand-contacts", label: t("brand.navContacts") },
+  ];
+
+  function Tile({
+    id,
+    label,
+    src,
+    contain,
+    onPick,
+    onRemove,
+    hint: tileHint,
+  }: {
+    id: string;
+    label: string;
+    src: string;
+    contain?: boolean;
+    onPick: (file: File | undefined) => void;
+    onRemove: () => void;
+    hint?: string;
+  }) {
+    return (
+      <div className="tile">
+        <label htmlFor={id} className={`tile-img${src ? "" : " empty"}${contain ? " contain" : ""}`}>
+          {src ? <img src={src} alt="" /> : <span>+ {t("brand.tileEmpty")}</span>}
+        </label>
+        <b>{label}</b>
+        {tileHint && <span className="hint">{tileHint}</span>}
+        <div className="tile-actions">
+          <label className="btn ghost" htmlFor={id}>{src ? t("brand.replaceRef") : t("brand.addRef")}</label>
+          {src && (
+            <button className="btn ghost" type="button" onClick={onRemove}>{t("brand.removeRef")}</button>
+          )}
+        </div>
+        <input id={id} className="sr-only" type="file" accept="image/png,image/jpeg" onChange={(e) => onPick(e.target.files?.[0])} />
+      </div>
+    );
+  }
+
+  const learnedOpen = learnedFrom >= 3 || readyProjects >= 3;
 
   return (
     <div>
       <h1 className="page-title" style={{ fontSize: 48 }}>{t("brand.title")}</h1>
-      <p className="lede">
-        {t("brand.lede")}
-      </p>
-      {hint && <p className="hint" style={{ marginTop: 12 }}>{hint}</p>}
-
-      {(learnedFrom >= 3 || readyProjects >= 3) && (
-        <div className="panel" style={{ marginTop: 20, maxWidth: 920 }}>
-          <p className="ok">
-            {learnedFrom >= 3
-              ? t("brand.learned", { n: learnedFrom })
-              : t("brand.canLearn")}
-          </p>
-          <p className="lede" style={{ marginTop: 8 }}>
-            {learnedLines.length
-              ? learnedLines.join(" · ")
-              : readyProjects >= 3
-                ? t("brand.resetNow")
-                : t("brand.keepReasons")}
-          </p>
-          <button className="btn ghost" type="button" style={{ marginTop: 12 }} onClick={resetLearning}>
-            {t("brand.reset")}
-          </button>
-          <p className="hint" style={{ marginTop: 8 }}>
-            {t("brand.resetHint")}
-          </p>
-        </div>
-      )}
+      <p className="lede">{t("brand.lede")}</p>
+      <nav className="brand-nav" aria-label={t("brand.sections")}>
+        {sections.map((item) => (
+          <button key={item.id} type="button" className="chip-link" onClick={() => goTo(item.id)}>{item.label}</button>
+        ))}
+      </nav>
 
       <div className="brand-layout">
-        <form className="panel" onSubmit={onSubmit}>
-          <h2>{t("brand.looks")}</h2>
-          <p className="hint">{t("brand.looksHint")}</p>
-          <div className="field">
-            <label>{t("brand.colours")}</label>
-            <p className="hint">{t("brand.coloursHint")}</p>
-            <div className="color-row">
-              <div>
-                <span className="hint">{t("brand.main")}</span>
-                <div className="color-row">
-                  <input type="color" value={HEX.test(form.primary_color) ? form.primary_color : "#C45C26"} onChange={(e) => set("primary_color", e.target.value)} />
-                  <input value={form.primary_color} aria-invalid={!HEX.test(form.primary_color)} className={HEX.test(form.primary_color) ? "" : "bad"} onChange={(e) => set("primary_color", e.target.value)} />
-                </div>
-              </div>
-              <div>
-                <span className="hint">{t("brand.soft")}</span>
-                <div className="color-row">
-                  <input type="color" value={HEX.test(form.secondary_color) ? form.secondary_color : "#F4EFE8"} onChange={(e) => set("secondary_color", e.target.value)} />
-                  <input value={form.secondary_color} aria-invalid={!HEX.test(form.secondary_color)} className={HEX.test(form.secondary_color) ? "" : "bad"} onChange={(e) => set("secondary_color", e.target.value)} />
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="field">
-            <label htmlFor="font">{t("brand.font")}</label>
-            <p className="hint">{t("brand.fontHint")}</p>
-            <select id="font" value={form.font} onChange={(e) => set("font", e.target.value)}>
-              {FONTS.map((font) => (
-                <option key={font}>{font}</option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>{t("brand.tone")}</label>
-            <p className="hint">{t("brand.toneHint")}</p>
-            <div className="choice-row tones">
-              {TONES.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`choice ${tone?.id === item.id ? "on" : ""}`}
-                  onClick={() => set("tone_of_voice", item.text)}
-                >
-                  <b>{t(item.labelKey)}</b>
-                </button>
-              ))}
-            </div>
-            <button className="btn ghost" type="button" onClick={() => setOwnNote((v) => !v)}>
-              {ownNote ? t("brand.hideNote") : t("brand.addNote")}
-            </button>
-            {ownNote && (
-              <textarea
-                value={form.tone_note}
-                onChange={(e) => set("tone_note", e.target.value)}
-                rows={2}
-                maxLength={400}
-                placeholder={t("brand.notePh")}
-                style={{ marginTop: 10 }}
+        <form onSubmit={onSubmit}>
+          <section className="panel brand-section" id="brand-business" tabIndex={-1}>
+            <h2>{t("brand.businessTitle")}</h2>
+            <p className="hint">{t("brand.businessHint")}</p>
+            <div className="field" style={{ marginTop: 14 }}>
+              <label htmlFor="business_name">{t("brand.businessName")}</label>
+              <input
+                id="business_name"
+                value={form.business_name}
+                onChange={(e) => set("business_name", e.target.value)}
+                placeholder={t("brand.businessPh")}
               />
-            )}
-          </div>
-
-          <h2 style={{ marginTop: 32 }}>{t("brand.about")}</h2>
-          <p className="hint">{t("brand.aboutHint")}</p>
-          <div className="field">
-            <label htmlFor="business_name">{t("brand.businessName")}</label>
-            <input
-              id="business_name"
-              value={form.business_name}
-              onChange={(e) => set("business_name", e.target.value)}
-              placeholder={t("brand.businessPh")}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="logo">{t("brand.logo")}</label>
-            <p className="hint">{t("brand.logoHint")}</p>
-            <div className="logo-pick">
-              {logoSrc && <img src={logoSrc} alt="" className="logo-pick-thumb" />}
-              <div>
-                {logoSrc && <p className="ok">{t("brand.logoOn")}</p>}
-                <label className="btn ghost" htmlFor="logo" style={{ display: "inline-block", marginTop: logoSrc ? 8 : 0 }}>
-                  {logoSrc ? t("brand.replaceLogo") : t("brand.addLogo")}
-                </label>
-                {logoSrc && (
-                  <button className="btn ghost" type="button" style={{ marginLeft: 8, marginTop: 8 }} onClick={removeLogo}>
-                    {t("brand.removeLogo")}
+            </div>
+            <div className="field" id="brand-vertical" tabIndex={-1}>
+              <label>{t("brand.vertical")}</label>
+              <p className="hint">{t("brand.verticalHint")}</p>
+              <div className="pills" role="group" aria-label={t("brand.vertical")}>
+                {TYPES.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-pressed={form.vertical === item.id}
+                    className={`pill ${form.vertical === item.id ? "on" : ""}`}
+                    onClick={() =>
+                      setForm((f) => ({
+                        ...f,
+                        vertical: item.id,
+                        vertical_note: item.id === "other" ? f.vertical_note : "",
+                      }))
+                    }
+                  >
+                    {t(item.labelKey)}
                   </button>
-                )}
-                <input id="logo" className="sr-only" type="file" accept="image/png,image/jpeg" onChange={(e) => onLogo(e.target.files?.[0])} />
+                ))}
               </div>
+              <p className="hint pill-hint" aria-live="polite">
+                {t((TYPES.find((item) => item.id === form.vertical) || TYPES[0]).hintKey)}
+              </p>
+              {form.vertical === "other" && (
+                <input
+                  value={form.vertical_note}
+                  onChange={(e) => set("vertical_note", e.target.value)}
+                  placeholder={t("brand.verticalOther")}
+                  maxLength={80}
+                />
+              )}
             </div>
-            <p className="hint" style={{ marginTop: 14 }}>{t("brand.logoStampAsk")}</p>
-            <p className="hint">{t("brand.logoStampHint")}</p>
-            <div className="choice-row tones">
-              <button type="button" className={`choice ${!logoOnPhotos ? "on" : ""}`} onClick={() => setLogoOnPhotos(false)}>
-                <b>{t("brand.logoStampOff")}</b>
-                <span className="hint">{t("brand.logoStampOffHint")}</span>
-              </button>
-              <button type="button" className={`choice ${logoOnPhotos ? "on" : ""}`} onClick={() => setLogoOnPhotos(true)}>
-                <b>{t("brand.logoStampOn")}</b>
-                <span className="hint">{t("brand.logoStampOnHint")}</span>
-              </button>
+            <div className="field">
+              <label htmlFor="address">{t("brand.address")}</label>
+              <p className="hint">{t("brand.addressHint")}</p>
+              <input
+                id="address"
+                value={form.address}
+                maxLength={160}
+                autoComplete="street-address"
+                onChange={(e) => set("address", e.target.value)}
+                placeholder={t("brand.addressPh")}
+              />
             </div>
-          </div>
-          <div className="field">
-            <label>{t("brand.refs")}</label>
-            <p className="hint">{t("brand.refsHint")}</p>
-            {REF_SLOTS.map((slot) => {
-              const src = refSrc[slot.id];
-              return (
-                <div key={slot.id} className="logo-pick" style={{ marginTop: 14 }}>
-                  {src && <img src={src} alt="" className="logo-pick-thumb ref-thumb" />}
-                  <div>
-                    <p style={{ margin: 0 }}><b>{t(slot.labelKey)}</b></p>
-                    <p className="hint">{t(slot.hintKey)}</p>
-                    {src && <p className="ok">{t("brand.refOn")}</p>}
-                    <label className="btn ghost" htmlFor={`ref-${slot.id}`} style={{ display: "inline-block", marginTop: 8 }}>
-                      {src ? t("brand.replaceRef") : t("brand.addRef")}
-                    </label>
-                    {src && (
-                      <button className="btn ghost" type="button" style={{ marginLeft: 8, marginTop: 8 }} onClick={() => removeRef(slot.id)}>
-                        {t("brand.removeRef")}
-                      </button>
-                    )}
-                    <input
-                      id={`ref-${slot.id}`}
-                      className="sr-only"
-                      type="file"
-                      accept="image/png,image/jpeg"
-                      onChange={(e) => onRef(slot.id, e.target.files?.[0])}
-                    />
+          </section>
+
+          <section className="panel brand-section" id="brand-look" tabIndex={-1}>
+            <h2>{t("brand.looks")}</h2>
+            <p className="hint">{t("brand.looksHint")}</p>
+            <div className="field" style={{ marginTop: 14 }}>
+              <label>{t("brand.colours")}</label>
+              <p className="hint">{t("brand.coloursHint")}</p>
+              <div className="color-row">
+                <div>
+                  <span className="hint">{t("brand.main")}</span>
+                  <div className="color-row">
+                    <input type="color" aria-label={t("brand.main")} value={HEX.test(form.primary_color) ? form.primary_color : DEFAULT_PRIMARY} onChange={(e) => set("primary_color", e.target.value)} />
+                    <input id="primary_color" value={form.primary_color} aria-invalid={!HEX.test(form.primary_color)} className={HEX.test(form.primary_color) ? "" : "bad"} onChange={(e) => set("primary_color", e.target.value)} />
                   </div>
                 </div>
-              );
-            })}
-          </div>
-          <div className="field">
-            <label>{t("brand.vertical")}</label>
-            <p className="hint">{t("brand.verticalHint")}</p>
-            <div className="choice-row">
-              {TYPES.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`choice ${form.vertical === item.id ? "on" : ""}`}
-                  onClick={() =>
-                    setForm((f) => ({
-                      ...f,
-                      vertical: item.id,
-                      vertical_note: item.id === "other" ? f.vertical_note : "",
-                    }))
-                  }
-                >
-                  <b>{t(item.labelKey)}</b>
-                  <span className="hint">{t(item.hintKey)}</span>
-                </button>
+                <div>
+                  <span className="hint">{t("brand.soft")}</span>
+                  <div className="color-row">
+                    <input type="color" aria-label={t("brand.soft")} value={HEX.test(form.secondary_color) ? form.secondary_color : DEFAULT_SECONDARY} onChange={(e) => set("secondary_color", e.target.value)} />
+                    <input value={form.secondary_color} aria-invalid={!HEX.test(form.secondary_color)} className={HEX.test(form.secondary_color) ? "" : "bad"} onChange={(e) => set("secondary_color", e.target.value)} />
+                  </div>
+                </div>
+              </div>
+              {lowContrast && <p className="hint warn">{t("brand.contrastLow")}</p>}
+            </div>
+            <div className="field" id="brand-tone" tabIndex={-1}>
+              <label>{t("brand.tone")}</label>
+              <p className="hint">{t("brand.toneHint")}</p>
+              <div className="choice-row tones" role="group" aria-label={t("brand.tone")}>
+                {TONES.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-pressed={tone?.id === item.id}
+                    className={`choice ${tone?.id === item.id ? "on" : ""}`}
+                    onClick={() => set("tone_of_voice", item.text)}
+                  >
+                    <b>{t(item.labelKey)}</b>
+                    <span className="hint">“{t(item.exKey)}”</span>
+                  </button>
+                ))}
+              </div>
+              <button className="btn ghost" type="button" onClick={() => setOwnNote((v) => !v)}>
+                {ownNote ? t("brand.hideNote") : t("brand.addNote")}
+              </button>
+              {ownNote && (
+                <textarea
+                  value={form.tone_note}
+                  onChange={(e) => set("tone_note", e.target.value)}
+                  rows={2}
+                  maxLength={400}
+                  placeholder={t("brand.notePh")}
+                  style={{ marginTop: 10 }}
+                />
+              )}
+            </div>
+            <details className="more">
+              <summary>{t("brand.moreOptions")}</summary>
+              <div className="field" style={{ marginTop: 12 }}>
+                <label htmlFor="font">{t("brand.font")}</label>
+                <p className="hint">{t("brand.fontHint")}</p>
+                <select id="font" value={form.font} onChange={(e) => set("font", e.target.value)}>
+                  {FONTS.map((font) => (
+                    <option key={font}>{font}</option>
+                  ))}
+                </select>
+              </div>
+            </details>
+          </section>
+
+          <section className="panel brand-section" id="brand-assets" tabIndex={-1}>
+            <h2>{t("brand.assetsTitle")}</h2>
+            <p className="hint">{t("brand.assetsHint")}</p>
+            <div className="tiles" id="brand-logo" tabIndex={-1}>
+              <Tile id="logo" label={t("brand.logo")} src={logoSrc} contain onPick={onLogo} onRemove={removeLogo} hint={t("brand.logoHint")} />
+              {REF_SLOTS.map((slot) => (
+                <Tile
+                  key={slot.id}
+                  id={`ref-${slot.id}`}
+                  label={t(slot.labelKey)}
+                  src={refSrc[slot.id]}
+                  onPick={(file) => onRef(slot.id, file)}
+                  onRemove={() => removeRef(slot.id)}
+                  hint={t(slot.hintKey)}
+                />
               ))}
             </div>
-            {form.vertical === "other" && (
-              <input
-                value={form.vertical_note}
-                onChange={(e) => set("vertical_note", e.target.value)}
-                placeholder={t("brand.verticalOther")}
-                maxLength={80}
-              />
-            )}
-          </div>
-          <div className="field">
-            <label htmlFor="instagram">{t("brand.instagram")}</label>
-            <p className="hint">{t("brand.contactHint")}</p>
-            <input
-              id="instagram"
-              value={form.instagram}
-              onChange={(e) => set("instagram", e.target.value)}
-              placeholder="@studio"
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="website">{t("brand.website")}</label>
-            <input id="website" value={form.website} onChange={(e) => set("website", e.target.value)} placeholder="https://" />
-          </div>
-          <div className="field">
-            <label htmlFor="address">{t("brand.address")}</label>
-            <p className="hint">{t("brand.addressHint")}</p>
-            <input
-              id="address"
-              value={form.address}
-              maxLength={160}
-              autoComplete="street-address"
-              onChange={(e) => set("address", e.target.value)}
-              placeholder={t("brand.addressPh")}
-            />
-          </div>
-          {(form.instagram.trim() || form.website.trim()) && (
+          </section>
+
+          <section className="panel brand-section" id="brand-contacts" tabIndex={-1}>
+            <h2>{t("brand.contactsTitle")}</h2>
+            <div className="field" style={{ marginTop: 14 }}>
+              <label htmlFor="instagram">{t("brand.instagram")}</label>
+              <p className="hint">{t("brand.contactHint")}</p>
+              <input id="instagram" value={form.instagram} onChange={(e) => set("instagram", e.target.value)} placeholder="@studio" />
+            </div>
             <div className="field">
-              <label>{t("brand.contactStampAsk")}</label>
-              <p className="hint">{t("brand.contactStampHint")}</p>
-              <div className="choice-row tones">
-                <button type="button" className={`choice ${!contactOnPhotos ? "on" : ""}`} onClick={() => setContactOnPhotos(false)}>
-                  <b>{t("brand.contactStampOff")}</b>
-                  <span className="hint">{t("brand.contactStampOffHint")}</span>
-                </button>
-                <button type="button" className={`choice ${contactOnPhotos ? "on" : ""}`} onClick={() => setContactOnPhotos(true)}>
-                  <b>{t("brand.contactStampOn")}</b>
-                  <span className="hint">{t("brand.contactStampOnHint")}</span>
-                </button>
+              <label htmlFor="website">{t("brand.website")}</label>
+              <input id="website" value={form.website} onChange={(e) => set("website", e.target.value)} placeholder="https://" />
+            </div>
+            <h3 className="where">{t("brand.whereTitle")}</h3>
+            <label className={`switch-row${logoSrc ? "" : " off"}`}>
+              <input type="checkbox" role="switch" checked={logoOnPhotos && Boolean(logoSrc)} disabled={!logoSrc} onChange={(e) => setLogoOnPhotos(e.target.checked)} />
+              <span>
+                <b>{t("brand.logoSwitch")}</b>
+                <span className="hint">{logoSrc ? t("brand.logoSwitchHint") : t("brand.needLogo")}</span>
+              </span>
+            </label>
+            <label className={`switch-row${stampText ? "" : " off"}`}>
+              <input type="checkbox" role="switch" checked={contactOnPhotos && Boolean(stampText)} disabled={!stampText} onChange={(e) => setContactOnPhotos(e.target.checked)} />
+              <span>
+                <b>{t("brand.contactSwitch")}</b>
+                <span className="hint">{stampText ? t("brand.contactSwitchHint") : t("brand.needContact")}</span>
+              </span>
+            </label>
+          </section>
+
+          <p className="hint" style={{ marginTop: 16 }}>{t("brand.legal")}</p>
+
+          {learnedOpen ? (
+            <details className="panel brand-section learned">
+              <summary>{t("brand.learnedTitle")}</summary>
+              <p className="ok" style={{ marginTop: 12 }}>
+                {learnedFrom >= 3 ? t("brand.learned", { n: learnedFrom }) : t("brand.canLearn")}
+              </p>
+              <p className="lede" style={{ marginTop: 8 }}>
+                {learnedLines.length ? learnedLines.join(" · ") : readyProjects >= 3 ? t("brand.resetNow") : t("brand.keepReasons")}
+              </p>
+              <button className="btn ghost" type="button" style={{ marginTop: 12 }} onClick={resetLearning}>
+                {t("brand.reset")}
+              </button>
+              <p className="hint" style={{ marginTop: 8 }}>{t("brand.resetHint")}</p>
+            </details>
+          ) : (
+            <p className="hint" style={{ marginTop: 16 }}>
+              {t("brand.afterThree")} <Link to="/app">{t("brand.makeOne")}</Link>
+            </p>
+          )}
+
+          {(dirty || error || saved) && (
+            <div className="save-bar" role="region" aria-label={t("brand.save")}>
+              <div>
+                {error && <p className="err" role="alert" style={{ margin: 0 }}>{error}</p>}
+                {!error && dirty && <p style={{ margin: 0 }}>{t("brand.unsaved")}</p>}
+                {!error && !dirty && saved && <p className="ok" role="status" style={{ margin: 0 }}>{t("brand.saved")}</p>}
+              </div>
+              <div className="save-actions">
+                {dirty && (
+                  <button className="btn ghost" type="button" onClick={discard}>{t("brand.discard")}</button>
+                )}
+                <button className="btn" disabled={!dirty}>{dirty ? t("brand.saveDirty") : t("brand.save")}</button>
               </div>
             </div>
           )}
-
-          <p className="hint">{t("brand.legal")}</p>
-          {error && <p className="err">{error}</p>}
-          {saved && !dirty && <p className="ok">{t("brand.saved")}</p>}
-          {dirty && <p className="hint">{t("brand.unsaved")}</p>}
-          <button className="btn" style={{ marginTop: 12 }}>
-            {dirty ? t("brand.saveDirty") : t("brand.save")}
-          </button>
         </form>
 
-        <aside>
+        <aside className="brand-aside">
           <p className="hint">{t("brand.previewHint")}</p>
-          <div className="brand-preview" style={{ background: form.secondary_color, color: "#1a1612" }}>
-            {logoSrc ? (
-              <img src={logoSrc} alt="" className="brand-logo" />
-            ) : (
-              <p className="hint" style={{ color: "inherit", opacity: 0.55 }}>{t("brand.logo")}: {t("brand.notSet")}</p>
-            )}
-            <p className="hint" style={{ color: "inherit", marginTop: 8 }}>
-              {logoOnPhotos ? t("brand.logoStampOn") : t("brand.logoStampOff")}
-            </p>
-            {(placeSrc || peopleSrc || productSrc) && (
-              <div className="ref-preview-row">
-                {placeSrc && <img src={placeSrc} alt="" className="ref-preview-thumb" />}
-                {peopleSrc && <img src={peopleSrc} alt="" className="ref-preview-thumb" />}
-                {productSrc && <img src={productSrc} alt="" className="ref-preview-thumb" />}
-              </div>
-            )}
-            <p
-              style={{
-                fontFamily: form.font,
-                fontSize: 32,
-                lineHeight: 1.1,
-                margin: "8px 0 0",
-                color: form.primary_color,
-              }}
-            >
+          <div className="post-mock" style={{ background: form.secondary_color, color: "#1a1612" }}>
+            <p className="mock-name" style={{ fontFamily: form.font, color: form.primary_color }}>
               {form.business_name.trim() || t("brand.businessPh")}
             </p>
-            <hr style={{ border: 0, borderTop: `3px solid ${form.primary_color}`, margin: "16px 0" }} />
-            <div className="preview-swatches">
-              <span>
-                <i style={{ background: form.primary_color }} />
-                {t("brand.main")} {form.primary_color}
-              </span>
-              <span>
-                <i style={{ background: form.secondary_color, boxShadow: "inset 0 0 0 1px rgba(0,0,0,.15)" }} />
-                {t("brand.soft")} {form.secondary_color}
-              </span>
-            </div>
-            <p style={{ marginTop: 12, fontFamily: form.font }}>
-              {t("brand.previewFont")}: {form.font}
+            <hr style={{ borderTop: `3px solid ${form.primary_color}` }} />
+            <p className="mock-line" style={{ fontFamily: form.font }}>
+              “{t((tone || TONES[0]).exKey)}”
             </p>
-            <p style={{ marginTop: 8 }}>“{tone ? t(tone.labelKey) : t("brand.notSet")}”</p>
-            {form.tone_note && <p className="hint" style={{ color: "inherit", marginTop: 8 }}>{form.tone_note}</p>}
-            <p style={{ marginTop: 12 }}>
-              {t("brand.previewType")}: {verticalLabel || t("brand.notSet")}
-            </p>
-            <p style={{ marginTop: 6 }}>
-              {t("brand.instagram")}: {form.instagram.trim() || t("brand.notSet")}
-            </p>
-            <p style={{ marginTop: 6 }}>
-              {t("brand.website")}: {form.website.trim() || t("brand.notSet")}
-            </p>
-            <p style={{ marginTop: 6 }}>
-              {t("brand.address")}: {form.address.trim() || t("brand.notSet")}
-            </p>
+            {logoOnPhotos && logoSrc && <img src={logoSrc} alt="" className="mock-logo" />}
+            {contactOnPhotos && stampText && <span className="mock-contact">{stampText}</span>}
           </div>
-          {learnedFrom < 3 && (
-            <p className="hint" style={{ marginTop: 16 }}>
-              {t("brand.afterThree")}{" "}
-              <Link to="/app">{t("brand.makeOne")}</Link>
+          <p className="hint" style={{ marginTop: 8 }}>{t("brand.previewNote")}</p>
+
+          <div className="checklist">
+            <p className="checklist-title">
+              {t("brand.checkTitle")} · {t("brand.checkCount", { done: doneCount, total: checks.length })}
             </p>
-          )}
+            <ul>
+              {checks.map((item) => (
+                <li key={item.key}>
+                  <button type="button" className={item.done ? "done" : ""} onClick={() => goTo(item.target)}>
+                    <span aria-hidden>{item.done ? "✓" : "○"}</span> {item.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         </aside>
       </div>
     </div>
