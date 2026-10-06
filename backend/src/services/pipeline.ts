@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { v4 as uuid } from "uuid";
 import { brandImageUrls } from "./brandAssets.js";
+import { exampleRefList, listExampleRefs } from "./projectRefs.js";
 import { db } from "../db/index.js";
 import { attemptCost, config, CREDIT_COSTS, EXTRA_ATTEMPT_MULTIPLIER, IMAGE_SLIDE_COUNT, MAX_STEP_ATTEMPTS, MAX_REGENERATES_PER_STEP, VISUAL_SCENE_CREDITS, visualMinLive } from "../config.js";
 import { getBalance, refundCredits, spendCredits } from "./credits.js";
@@ -323,6 +324,7 @@ export function serializeProject(row: Record<string, unknown>) {
     imageIntent: row.image_intent || "",
     pictureLanguage: parsePictureLanguage(row.picture_language),
     useBrand: Number(row.use_brand) !== 0,
+    refs: exampleRefList(id),
     invite: row.invite_json ? parseInvite(parse(row.invite_json)) : null,
     status: running ? "generating" : row.status,
     currentStep: row.current_step,
@@ -719,6 +721,7 @@ export async function runStep(
         brief: translatedBrief || prompt,
         paintedCopy: paintedCopy || undefined,
         copyEdit: keepStill && copyEdit ? copyEdit : undefined,
+        exampleRefs: keepStill ? [] : listExampleRefs(projectId),
       };
       if (keepStill && imageScript && copyEdit) {
         const rewrite = rewriteStillCopyPrompt(copyEdit);

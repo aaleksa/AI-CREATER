@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import OpenAI, { toFile } from "openai";
 import { config } from "../config.js";
-import { listBrandRefFiles, logoKindFromBytes } from "./brandAssets.js";
+import { listBrandRefFiles, logoKindFromBytes, type BrandImageFile } from "./brandAssets.js";
 import { guessPoster, type InviteCard } from "./invite.js";
 
 export type LearnedSummary = {
@@ -925,6 +925,8 @@ export type FrameOpts = {
   brief?: string;
   paintedCopy?: string;
   copyEdit?: string;
+  /** Pictures the person attached to this brief as examples. Sent with the request. */
+  exampleRefs?: BrandImageFile[];
 };
 
 export async function generateVisuals(
@@ -1022,6 +1024,13 @@ type FrameResult = {
   error: string;
 };
 
+function exampleRefLine(count: number, kind: "video" | "still" | "poster") {
+  const which = count === 1 ? "The first attached image is" : `The first ${count} attached images are`;
+  return `${which} the user's own example${count === 1 ? "" : "s"} for this request. Take the subject, style, composition and mood from ${count === 1 ? "it" : "them"} and make a new finished picture${
+    kind === "poster" ? " — it may become the photo area of the design" : ""
+  }. Do not copy letters, logos or watermarks from ${count === 1 ? "it" : "them"} unless the brief asks for those words.`;
+}
+
 async function generateSceneFrame(
   scene: ScriptScene,
   brand?: BrandKit | null,
@@ -1045,7 +1054,7 @@ async function generateSceneFrame(
   if (keepRequested && !keepStill?.length) {
     return { ...placeholder, error: "Make the picture first." };
   }
-  const prompt = keepStill
+  const basePrompt = keepStill
     ? opts?.copyEdit
       ? rewriteStillCopyPrompt(opts.copyEdit)
       : rewriteStillLanguagePrompt(opts?.brief || "", opts?.pictureLanguage || "", opts?.paintedCopy || "")
@@ -1057,7 +1066,10 @@ async function generateSceneFrame(
           kind === "poster" ? "designed" : "photo"
         );
 
-  const refs = keepStill || kind === "poster" ? [] : brand?.user_id ? listBrandRefFiles(brand.user_id) : [];
+  const examples = keepStill ? [] : opts?.exampleRefs || [];
+  const brandRefs = keepStill || kind === "poster" ? [] : brand?.user_id ? listBrandRefFiles(brand.user_id) : [];
+  const refs = [...examples, ...brandRefs];
+  const prompt = examples.length && !keepStill ? `${basePrompt}\n${exampleRefLine(examples.length, kind)}` : basePrompt;
   const keepKind = keepStill ? logoKindFromBytes(keepStill) : "";
   const keepType = keepKind === "png" ? "image/png" : "image/jpeg";
   const keepName = keepKind === "png" ? `keep-still-${scene.id}.png` : `keep-still-${scene.id}.jpg`;
@@ -1090,7 +1102,7 @@ async function generateSceneFrame(
   const editOnce = async (model: string) => {
     const files = await Promise.all([
       ...(keepStill ? [toFile(keepStill, keepName, { type: keepType })] : []),
-      ...refs.map((ref) => toFile(fs.readFileSync(ref.file), `${ref.slot}-${ref.filename}`, { type: ref.type })),
+      ...refs.map((ref, i) => toFile(fs.readFileSync(ref.file), `${i + 1}-${ref.filename}`, { type: ref.type })),
     ]);
     const run = async (fidelity: "high" | "low" | "") => {
       const image = await openai.images.edit({

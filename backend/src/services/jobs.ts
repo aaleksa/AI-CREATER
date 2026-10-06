@@ -16,7 +16,7 @@ function removeIntermediates(projectId: string) {
   if (!fs.existsSync(dir)) return;
   removeVoiceFile(projectId);
   for (const name of fs.readdirSync(dir)) {
-    if (name === "reel.mp4" || name.startsWith("still-")) continue;
+    if (name === "reel.mp4" || name.startsWith("still-") || name.startsWith("example-")) continue;
     fs.rmSync(path.join(dir, name), { force: true });
   }
 }

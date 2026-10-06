@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, type BrandKitRow, type Project } from "../lib/api";
 import BrandToggle from "../components/BrandToggle";
+import ExampleImages from "../components/ExampleImages";
 import { detectLocale, translate, useLocale } from "../i18n/locale";
 
 const FORMAT_IDS = ["video", "instagram_reel", "image_post", "advertisement", "social_post"] as const;
@@ -27,6 +28,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [kit, setKit] = useState<BrandKitRow | null>(null);
   const [useBrand, setUseBrand] = useState(true);
+  const [exampleFiles, setExampleFiles] = useState<{ id: string; src: string }[]>([]);
   const [recentBriefs, setRecentBriefs] = useState<string[]>([]);
   const isImage = type === "image_post";
   const isPoster = isImage && imageIntent !== "photo";
@@ -36,7 +38,7 @@ export default function Home() {
 
   const examples = useMemo(
     () => ({
-      instagram_reel: t("examples.instagram_reel"),
+      instagram_reel: t("briefImages.instagram_reel"),
     }),
     [t, locale]
   );
@@ -95,6 +97,13 @@ export default function Home() {
         useBrand,
         isPoster ? pictureLanguage : undefined
       );
+      for (const item of exampleFiles) {
+        try {
+          await api.addProjectRef(project.id, item.src);
+        } catch {
+          /* the project exists; examples can be added again in the Studio */
+        }
+      }
       nav(`/app/studio/${project.id}`);
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("home.fallback"));
@@ -193,6 +202,13 @@ export default function Home() {
         offHint={t("home.skipBrandHint")}
         usingLabel={t("home.brandUsing")}
         kit={kit}
+      />
+
+      <ExampleImages
+        items={exampleFiles}
+        note={t("briefImages.pending")}
+        onAdd={(src) => setExampleFiles((list) => [...list, { id: String(Date.now() + list.length), src }])}
+        onRemove={(id) => setExampleFiles((list) => list.filter((item) => item.id !== id))}
       />
 
       {recentBriefs.length > 0 && (

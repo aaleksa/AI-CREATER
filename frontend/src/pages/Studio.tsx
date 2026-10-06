@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ApiError, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type Project } from "../lib/api";
 import { copyText } from "../lib/copy";
 import BrandToggle from "../components/BrandToggle";
+import ExampleImages, { useProjectImageSrcs } from "../components/ExampleImages";
 import { useLocale } from "../i18n/locale";
 
 const VIDEO_STEPS = [
@@ -210,6 +211,7 @@ export default function Studio() {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [brief, setBrief] = useState("");
+  const refSrcs = useProjectImageSrcs(project?.refs);
   const [briefSaved, setBriefSaved] = useState(false);
   const [briefCopied, setBriefCopied] = useState(false);
   const [briefSaving, setBriefSaving] = useState(false);
@@ -675,6 +677,18 @@ export default function Studio() {
           rows={10}
         />
       </div>
+      <ExampleImages
+        items={(project.refs || []).map((ref) => ({ id: ref.id, src: refSrcs[ref.id] || "" }))}
+        note={t("briefImages.nextTime")}
+        onAdd={async (image) => {
+          const { refs } = await api.addProjectRef(project.id, image);
+          setProject((p) => (p ? { ...p, refs } : p));
+        }}
+        onRemove={async (slot) => {
+          const { refs } = await api.deleteProjectRef(project.id, slot);
+          setProject((p) => (p ? { ...p, refs } : p));
+        }}
+      />
       <div className="row" style={{ marginBottom: 20 }}>
         <button className="btn ghost" type="button" disabled={briefSaving} onClick={saveBrief}>
           {briefSaving ? t("studio.savingBrief") : t("studio.saveBrief")}

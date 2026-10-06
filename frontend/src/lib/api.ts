@@ -82,6 +82,7 @@ export type Project = {
   imageIntent?: string;
   pictureLanguage?: "en" | "uk" | "";
   useBrand?: boolean;
+  refs?: { id: string; url: string }[];
   invite?: InviteCard | null;
   status: string;
   currentStep: string;
@@ -208,6 +209,10 @@ export const api = {
   logoutAll: () => request<{ ok: boolean }>("/auth/logout-all", { method: "POST" }),
   deleteAccount: (password: string) =>
     request<{ ok: boolean }>("/auth/account", { method: "DELETE", body: JSON.stringify({ password }) }),
+  addProjectRef: (id: string, image: string) =>
+    request<{ refs: { id: string; url: string }[] }>(`/projects/${id}/refs`, { method: "POST", body: JSON.stringify({ image }) }),
+  deleteProjectRef: (id: string, slot: string) =>
+    request<{ refs: { id: string; url: string }[] }>(`/projects/${id}/refs/${slot}`, { method: "DELETE" }),
   brand: () => request<{ brandKit: BrandKitRow | null }>("/brand"),
   saveBrand: (body: Record<string, string | boolean>) =>
     request<{ brandKit: BrandKitRow }>("/brand", { method: "PUT", body: JSON.stringify(body) }),

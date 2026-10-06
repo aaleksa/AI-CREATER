@@ -83,6 +83,16 @@ export const en = {
     createLink: "Create an account",
     fallback: "Could not continue.",
   },
+  briefImages: {
+    title: "Example pictures — optional",
+    hint: "Attach up to 3 pictures that show what you want. We send them with your request. Works with or without the Brand Kit.",
+    add: "Add picture",
+    remove: "Remove picture",
+    alt: "Example {n}",
+    badFile: "Use a PNG or JPG under 2 MB.",
+    nextTime: "Used the next time you make pictures.",
+    pending: "Added when you create.",
+  },
   home: {
     kicker: "The studio",
     title: "What do you want to create?",

@@ -908,3 +908,26 @@ details.learned > summary { font-family: var(--serif); font-size: 20px; }
 .pill.on { border-color: var(--accent-2); background: var(--accent-soft); font-weight: 600; }
 .pill-hint { margin: 0 0 8px; min-height: 20px; }
 @media (max-width: 960px) { .pill { min-height: 44px; } }
+
+/* Example pictures attached to a brief */
+.examples { margin: 18px 0; max-width: 720px; }
+.examples-title { margin: 0 0 2px; font-weight: 600; }
+.examples-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 6px; }
+.example {
+  position: relative; width: 96px; height: 96px; border-radius: 14px; overflow: hidden;
+  border: 1px solid var(--line); background: var(--surface-soft);
+}
+.example img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.example.add {
+  display: grid; place-items: center; cursor: pointer; border-style: dashed;
+  color: var(--muted); font-size: 13px; text-align: center; padding: 6px;
+}
+.example.add:hover { border-color: var(--accent-2); color: var(--ink); }
+.example.add.off { opacity: .6; cursor: default; }
+.example.add:has(input:focus-visible) { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.example-x {
+  position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border-radius: 50%;
+  border: 0; cursor: pointer; font-size: 18px; line-height: 1;
+  background: rgba(20, 16, 12, .75); color: #fff;
+}
+@media (max-width: 960px) { .example-x { width: 32px; height: 32px; } }

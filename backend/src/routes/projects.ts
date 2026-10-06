@@ -7,6 +7,7 @@ import { createPreviewLink, findPreview, serializePreview } from "../services/sh
 import { hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
 import { archiveState } from "../services/archive.js";
 import { rateLimit } from "../middleware/rateLimit.js";
+import { addExampleRef, exampleRefFile, exampleRefList, readExampleUpload, removeExampleRef } from "../services/projectRefs.js";
 
 function readPrompt(value: unknown) {
   const text = String(value || "").trim();
@@ -73,6 +74,55 @@ projectsRouter.post("/", (req, res) => {
     language.language
   );
   res.status(201).json({ project: serializeProject(project) });
+});
+
+function ownProject(req: { params: Record<string, unknown>; user?: { id: string } }) {
+  return db
+    .prepare("SELECT id FROM projects WHERE id = ? AND user_id = ?")
+    .get(String(req.params.id), req.user!.id) as { id: string } | undefined;
+}
+
+projectsRouter.get("/:id/refs/:slot", (req, res) => {
+  const row = ownProject(req);
+  const ref = row ? exampleRefFile(row.id, String(req.params.slot)) : null;
+  if (!ref) {
+    res.status(404).json({ error: "No picture." });
+    return;
+  }
+  res.type(ref.type);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.sendFile(ref.file);
+});
+
+projectsRouter.post("/:id/refs", rateLimit(30, 60_000), (req, res) => {
+  const row = ownProject(req);
+  if (!row) {
+    res.status(404).json({ error: "Project not found." });
+    return;
+  }
+  const upload = readExampleUpload(req.body?.image);
+  if ("error" in upload) {
+    res.status(400).json({ error: upload.error });
+    return;
+  }
+  try {
+    addExampleRef(row.id, upload.buffer, upload.kind);
+  } catch (error) {
+    const err = error as Error & { status?: number };
+    res.status(err.status || 500).json({ error: err.message });
+    return;
+  }
+  res.json({ refs: exampleRefList(row.id) });
+});
+
+projectsRouter.delete("/:id/refs/:slot", (req, res) => {
+  const row = ownProject(req);
+  if (!row) {
+    res.status(404).json({ error: "Project not found." });
+    return;
+  }
+  removeExampleRef(row.id, String(req.params.slot));
+  res.json({ refs: exampleRefList(row.id) });
 });
 
 projectsRouter.get("/:id/file", (req, res) => {
