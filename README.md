@@ -6,7 +6,7 @@ Auteur is not a Canva clone. It is a simple AI content studio: the user never ch
 
 UI: **English and Ukrainian** (EN / УК, stored in the browser). The brief stays in the language they wrote. **Light and dark theme** (☀ / ☾, follows the device until you choose) and a phone layout with a bottom tab bar.
 
-Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.38).
+Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.39).
 
 The first studio is **one short video** (30 seconds, Instagram or TikTok — same file) and still **Image / Posts**. A Reel is 150 credits; a still post is 13 (idea + one picture). **Video** and **Advertisement** stay as two separate Create stubs (TZ §2.3). Social post is a third stub.
 
@@ -16,9 +16,9 @@ The first studio is **one short video** (30 seconds, Instagram or TikTok — sam
 | --- | --- |
 | Landing | Promise, not a tool list. Language switch. |
 | Sign up / Sign in | Account + **400** free credits |
-| Create | Short video or Image, optional photo / invite / info / offer, words in EN or UK on designed stills, brand on/off, saved briefs to insert |
-| Studio | Reel: six steps. Image: Idea → Pictures. Brief, copy brief. Click a take to select it (used for language, word edits and download). Brand on/off is read-only here |
-| Brand kit | Logo and up to 3 optional photos (place / person / product), colours, font, tone, niche, Instagram. Photos go into photo posts and Reels only when the scene is about them — never onto designed flyers. Your business address is printed on invitations and offers when the brief names no place, so you stop repeating it. Instagram and website end every Reel with a real call to action (“find us on Instagram…”) and can print one line on photo posts. Completeness counts colours, tone, name, niche, logo. Unsaved edits are flagged; logo and photo uploads no longer overwrite them. |
+| Create | Short video or Image. For Image: kind (photo / invite / info / offer) and **where you will post it** (Instagram or Facebook post square or portrait, Stories / Reels, Facebook wide). The brief is the main field. Under **More options**: brand on/off, words in EN or UK on designed stills, up to 3 **example pictures** sent with the request, saved briefs |
+| Studio | Reel: six steps. Image: Idea → Pictures. Brief, copy brief, example pictures (add or remove). The idea is written in the interface language. Click a take to select it (used for language, word edits and download). Brand on/off is read-only here |
+| Brand kit | One page in four sections (Business, Look, Logo & photos, Contacts) with a live preview, a setup checklist and a sticky Save bar. Logo and up to 3 optional photos (place / person / product), colours, font, tone, niche, Instagram. Photos go into photo posts and Reels only when the scene is about them — never onto designed flyers. Your business address is printed on invitations and offers when the brief names no place, so you stop repeating it. Instagram and website end every Reel with a real call to action (“find us on Instagram…”) and can print one line on photo posts. Completeness counts colours, tone, name, niche, logo. Unsaved edits are flagged; logo and photo uploads no longer overwrite them. |
 | Account | Name, email (needs password), change password, **download my data** (JSON), sign out on all devices, delete account (needs password) |
 | Credits | Plans (current one highlighted), pack prices. Checkout hidden until Stripe. AI cost log hidden |
 | Library | Every project — open, copy the brief, or **delete** |
@@ -36,7 +36,10 @@ Plans (provisional until real unit cost is measured):
 
 - One finished OpenAI picture per Image / Post (photo, invite, info, offer). We do not compose a text layer. Invite / info / offer: the model paints the words on the image.
 - Model: `OPENAI_IMAGE_MODEL` (default **gpt-image-2.5-sunburst**, same family as the OpenAI Images playground).
-- Invite / info / offer: portrait **1024×1536**, shown 2:3 without cropping the footer.
+- **Format = where you post it.** Square 1:1 (Instagram / Facebook feed), portrait 4:5, Stories and Reels 9:16, Facebook wide 1.91:1. Default: photo square, flyers portrait 4:5. Older projects keep their shape (photo 1:1, flyer 2:3).
+- **No cropping.** The image model paints the exact shape: `gpt-image-2.x` takes any size (multiple of 16, up to 3:1): 1024×1024, 1024×1280, 864×1536, 1536×800. Only if an account falls back to `gpt-image-1` / `dall-e-3` (square, 2:3, 3:2 only) do we paint the closest shape and trim it.
+- **Example pictures.** Up to 3 per brief (PNG / JPG, 2 MB), independent of the Brand Kit. They go to `images.edit` with the request: take subject, style and mood, never copy letters or logos. Word edits and Same-picture do not resend them.
+- The idea text follows the interface language (UK or EN), whatever language the brief is in.
 - On Create, choose whether painted words follow the brief, or are English / Ukrainian. After the picture, **Same picture in EN/UK** is 8 credits: we read the words already painted on the selected take, translate them line by line (your brief is the glossary; names, dates and addresses too; no line is dropped) and return the picture on screen in that language. You can also **edit the words** on that picture (add or remove a line) for 8 credits.
 - If **Use brand kit** is on (chosen on Create only), the picture prompt gets name, colours, font, tone, niche. Owner photos are sent to the model for photo posts and Reels, not for invite / info / offer flyers. Logo is optional — no nag in Studio.
 - Previous takes stay in the project; restore is free.
