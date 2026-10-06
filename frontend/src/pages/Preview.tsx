@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import LanguageSwitch from "../components/LanguageSwitch";
+import ThemeSwitch from "../components/ThemeSwitch";
 import { useLocale } from "../i18n/locale";
 
 type Preview = {
@@ -36,7 +37,7 @@ export default function Preview() {
         <Link to="/" className="brand">
           Aut<span>eur</span>
         </Link>
-        <LanguageSwitch />
+        <span style={{ display: "inline-flex", gap: 8 }}><ThemeSwitch /><LanguageSwitch /></span>
       </header>
       {error && <p className="err">{error}</p>}
       {!error && !data && <p className="hint">{t("preview.opening")}</p>}

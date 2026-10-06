@@ -7,6 +7,11 @@ export const en = {
     uk: "УК",
     label: "Language",
   },
+  theme: {
+    label: "Theme",
+    light: "Light",
+    dark: "Dark",
+  },
   nav: {
     create: "Create",
     library: "Library",

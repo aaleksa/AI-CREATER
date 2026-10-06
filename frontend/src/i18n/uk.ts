@@ -9,6 +9,11 @@ export const uk: Messages = {
     uk: "УК",
     label: "Мова",
   },
+  theme: {
+    label: "Тема",
+    light: "Світла",
+    dark: "Темна",
+  },
   nav: {
     create: "Створити",
     library: "Бібліотека",

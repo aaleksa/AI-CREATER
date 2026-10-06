@@ -2,6 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { ApiError, api, clearSession, type Me } from "../lib/api";
 import LanguageSwitch from "./LanguageSwitch";
+import ThemeSwitch from "./ThemeSwitch";
 import { useLocale } from "../i18n/locale";
 
 export default function AppLayout() {
@@ -39,6 +40,7 @@ export default function AppLayout() {
             {t("nav.creditsLabel")}
             <b>{me?.credits ?? "—"}</b>
           </NavLink>
+          <ThemeSwitch />
           <LanguageSwitch compact />
           <div className="side-account">
             <b>{me?.user.name}</b>

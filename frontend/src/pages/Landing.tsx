@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import LanguageSwitch from "../components/LanguageSwitch";
+import ThemeSwitch from "../components/ThemeSwitch";
 import { useLocale } from "../i18n/locale";
 
 export default function Landing() {
@@ -9,7 +10,7 @@ export default function Landing() {
       <header className="topbar">
         <div className="brand">Aut<span>eur</span></div>
         <div className="row">
-          <LanguageSwitch />
+          <span style={{ display: "inline-flex", gap: 8 }}><ThemeSwitch /><LanguageSwitch /></span>
           <Link to="/login" className="btn ghost">{t("landing.signIn")}</Link>
           <Link to="/signup" className="btn">{t("landing.start")}</Link>
         </div>

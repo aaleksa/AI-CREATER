@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, saveSession } from "../lib/api";
 import LanguageSwitch from "../components/LanguageSwitch";
+import ThemeSwitch from "../components/ThemeSwitch";
 import { useLocale } from "../i18n/locale";
 
 export default function Auth({ mode }: { mode: "login" | "signup" }) {
@@ -35,7 +36,7 @@ export default function Auth({ mode }: { mode: "login" | "signup" }) {
     <div className="landing">
       <header className="topbar">
         <Link to="/" className="brand">Aut<span>eur</span></Link>
-        <LanguageSwitch />
+        <span style={{ display: "inline-flex", gap: 8 }}><ThemeSwitch /><LanguageSwitch /></span>
       </header>
       <form className="auth-card" onSubmit={onSubmit}>
         <h1 className="page-title" style={{ fontSize: 36 }}>
