@@ -127,6 +127,8 @@ export const uk: Messages = {
       en: "Перекласти весь бриф англійською, разом з іменами, датами й адресами.",
       uk: "Перекласти весь бриф українською, разом з іменами, датами й адресами.",
     },
+    optionsTitle: "Додатково",
+    optionsExamples: "Приклади: {n}",
     recentBriefs: "Збережені брифи — натисніть, щоб вставити",
     insertBrief: "Вставити",
   },
@@ -141,6 +143,22 @@ export const uk: Messages = {
   examples: {
     instagram_reel: "Зробіть 30-секундний Reel про найкращі місця в Лондоні.",
     tiktok: "Зробіть TikTok про ранковий ритуал моєї кав’ярні.",
+  },
+  shapes: {
+    ask: "Де ви опублікуєте цю картинку?",
+    why: "Від місця залежить форма картинки. Не впевнені — оберіть «Пост: квадрат», він підходить усюди.",
+    square: "Пост: квадрат",
+    squareWhere: "Instagram, Facebook",
+    squareHint: "1:1 · пасує до будь-якої стрічки",
+    portrait: "Пост: портрет",
+    portraitWhere: "Instagram, Facebook",
+    portraitHint: "4:5 · займає більше місця в стрічці",
+    story: "Stories і Reels",
+    storyWhere: "Instagram, Facebook, TikTok",
+    storyHint: "9:16 · на весь екран телефона",
+    wide: "Facebook: широкий",
+    wideWhere: "Пост із посиланням або широке фото",
+    wideHint: "1.91:1 · горизонтальна",
   },
   kinds: {
     photo: {

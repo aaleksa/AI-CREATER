@@ -931,3 +931,28 @@ details.learned > summary { font-family: var(--serif); font-size: 20px; }
   background: rgba(20, 16, 12, .75); color: #fff;
 }
 @media (max-width: 960px) { .example-x { width: 32px; height: 32px; } }
+
+/* Picture shape picker */
+.pill.shape { display: inline-flex; align-items: center; gap: 8px; }
+.shape-icon { display: inline-block; border: 2px solid currentColor; border-radius: 3px; opacity: .8; }
+.shape-icon.square { width: 16px; height: 16px; }
+.shape-icon.portrait { width: 14px; height: 18px; }
+.shape-icon.story { width: 11px; height: 20px; }
+.shape-icon.wide { width: 24px; height: 13px; }
+.phone.post.invite, .phone.post.poster { max-width: 360px; }
+
+.choice-row.shapes { grid-template-columns: repeat(4, 1fr); margin-top: 10px; }
+.choice-row.shapes .choice span { color: var(--muted); font-size: 13px; line-height: 1.35; }
+.choice-row.shapes .choice .shape-ratio { color: var(--ink); }
+.shape-head { display: flex; align-items: center; gap: 10px; }
+.shape-head b { color: var(--ink); }
+.choice-row.shapes .shape-icon { flex: none; }
+@media (max-width: 900px) { .choice-row.shapes { grid-template-columns: 1fr 1fr; } }
+
+/* Create: compact steps */
+.create-step { margin: 22px 0 6px; max-width: 760px; }
+.step-label { margin: 0 0 4px; font-weight: 600; }
+details.options { margin: 16px 0 4px; border-top: 1px solid var(--line); padding-top: 12px; }
+details.options > summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+.options-now { color: var(--muted); font-size: 14px; }
+details.options > .brand-toggle, details.options > .examples { margin-top: 14px; }

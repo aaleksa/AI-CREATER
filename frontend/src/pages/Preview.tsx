@@ -56,7 +56,7 @@ export default function Preview() {
                   key={sceneId}
                   src={`/share/${token}/image/${sceneId}`}
                   alt={t("preview.slide", { n: sceneId })}
-                  style={{ width: 180, height: 180, objectFit: "cover", borderRadius: 16 }}
+                  style={{ width: 180, height: "auto", borderRadius: 16 }}
                 />
               ))}
             </div>

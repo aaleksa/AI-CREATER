@@ -8,6 +8,7 @@ import { Resvg } from "@resvg/resvg-js";
 import { config } from "../config.js";
 import { contactStampText, wantsContactStamp, wantsLogoStamp, type BrandKit, type CaptionCue, type Script, type Visual } from "./ai.js";
 import { brandLogoPath } from "./brandAssets.js";
+import { cropToFormat, type ImageFormat } from "./imageFormats.js";
 
 export {
   brandLogoDir,
@@ -213,9 +214,11 @@ export async function persistStills(
   visuals: Visual[],
   brand?: BrandKit | null,
   skipLogoStamp = false,
-  stampContact = false
+  stampContact = false,
+  format?: ImageFormat
 ) {
   const next: Visual[] = [];
+  const fresh = new Set<number>();
   for (const visual of visuals) {
     if (visual.placeholder) {
       next.push(visual);
@@ -226,6 +229,7 @@ export async function persistStills(
       const buffer = Buffer.from(visual.imageUrl.slice(comma + 1), "base64");
       if (buffer.length > 0) {
         fs.writeFileSync(stillFile(projectId, visual.sceneId), buffer);
+        fresh.add(visual.sceneId);
         next.push({ ...visual, imageUrl: `/projects/${projectId}/image/${visual.sceneId}` });
         continue;
       }
@@ -241,9 +245,17 @@ export async function persistStills(
         continue;
       }
       fs.writeFileSync(stillFile(projectId, visual.sceneId), Buffer.from(await res.arrayBuffer()));
+      fresh.add(visual.sceneId);
       next.push({ ...visual, imageUrl: `/projects/${projectId}/image/${visual.sceneId}` });
     } catch {
       next.push(visual);
+    }
+  }
+  // Trim to the chosen shape first, so the logo and contact line sit in the corners of the final picture.
+  if (format) {
+    for (const visual of next) {
+      if (visual.placeholder || !hasStillFile(projectId, visual.sceneId)) continue;
+      if (fresh.has(visual.sceneId)) await cropToFormat(stillFile(projectId, visual.sceneId), format);
     }
   }
   const logo = !skipLogoStamp && brand?.user_id && wantsLogoStamp(brand) ? brandLogoPath(brand.user_id) : "";

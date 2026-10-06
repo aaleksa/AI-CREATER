@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { v4 as uuid } from "uuid";
 import { brandImageUrls } from "./brandAssets.js";
 import { exampleRefList, listExampleRefs } from "./projectRefs.js";
+import { IMAGE_FORMATS, parseImageFormat, resolveImageFormat, type ImageFormat } from "./imageFormats.js";
 import { db } from "../db/index.js";
 import { attemptCost, config, CREDIT_COSTS, EXTRA_ATTEMPT_MULTIPLIER, IMAGE_SLIDE_COUNT, MAX_STEP_ATTEMPTS, MAX_REGENERATES_PER_STEP, VISUAL_SCENE_CREDITS, visualMinLive } from "../config.js";
 import { getBalance, refundCredits, spendCredits } from "./credits.js";
@@ -86,6 +87,18 @@ export function readCreatePictureLanguage(
   if (raw == null || raw === "") return { language: "" };
   if (raw === "en" || raw === "uk") return { language: raw };
   return { error: "Choose English, Ukrainian, or follow the brief." };
+}
+
+export function readCreateImageFormat(
+  type: string,
+  intent: ImageIntent | "",
+  raw: unknown
+): { format: (typeof IMAGE_FORMATS)[number] | "" } | { error: string } {
+  if (type !== "image_post") return { format: "" };
+  if (raw == null || raw === "") return { format: isTextPoster(type, intent) ? "portrait" : "square" };
+  const format = parseImageFormat(raw);
+  if (!format) return { error: "Choose where the picture will be posted." };
+  return { format };
 }
 
 function imageCarousel(
@@ -323,6 +336,7 @@ export function serializeProject(row: Record<string, unknown>) {
     prompt: row.prompt,
     imageIntent: row.image_intent || "",
     pictureLanguage: parsePictureLanguage(row.picture_language),
+    imageFormat: String(row.type) === "image_post" ? resolveImageFormat(isTextPoster(String(row.type), String(row.image_intent || "photo")) ? "poster" : "still", row.image_format) : "",
     useBrand: Number(row.use_brand) !== 0,
     refs: exampleRefList(id),
     invite: row.invite_json ? parseInvite(parse(row.invite_json)) : null,
@@ -462,14 +476,15 @@ export function createProject(
   prompt: string,
   imageIntent: ImageIntent | "" = "",
   useBrand = true,
-  pictureLanguage: PictureLanguage = ""
+  pictureLanguage: PictureLanguage = "",
+  imageFormat = ""
 ) {
   const id = uuid();
   const language = isTextPoster(type, imageIntent) ? parsePictureLanguage(pictureLanguage) : "";
   db.prepare(
-    `INSERT INTO projects (id, user_id, type, prompt, image_intent, use_brand, picture_language, status, current_step)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', 'prompt')`
-  ).run(id, userId, type, prompt, imageIntent, useBrand ? 1 : 0, language);
+    `INSERT INTO projects (id, user_id, type, prompt, image_intent, use_brand, picture_language, image_format, status, current_step)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'prompt')`
+  ).run(id, userId, type, prompt, imageIntent, useBrand ? 1 : 0, language, type === "image_post" ? imageFormat : "");
   return getProject(id, userId);
 }
 
@@ -722,6 +737,7 @@ export async function runStep(
         paintedCopy: paintedCopy || undefined,
         copyEdit: keepStill && copyEdit ? copyEdit : undefined,
         exampleRefs: keepStill ? [] : listExampleRefs(projectId),
+        format: (isImagePost(type) ? resolveImageFormat(kind === "poster" ? "poster" : "still", project.image_format) : undefined) as ImageFormat | undefined,
       };
       if (keepStill && imageScript && copyEdit) {
         const rewrite = rewriteStillCopyPrompt(copyEdit);
@@ -764,7 +780,8 @@ export async function runStep(
             : [...current, one.data],
           brand,
           skipLogoStamp,
-          stampContact
+          stampContact,
+          frameOpts.format
         );
         updates.visuals_json = JSON.stringify(next);
         updates.current_step = "visuals";
@@ -773,7 +790,7 @@ export async function runStep(
         actualCost = one.cost;
       } else {
         const result = await generateVisuals(imageScript, brand, kind, async (visual) => {
-          const [saved] = await persistStills(projectId, [visual], brand, true);
+          const [saved] = await persistStills(projectId, [visual], brand, true, false, frameOpts.format);
           return saved;
         }, frameOpts);
         const minLive = visualMinLive(imageScript.scenes.length);
@@ -785,7 +802,7 @@ export async function runStep(
             { status: 400 }
           );
         }
-        const persisted = await persistStills(projectId, result.data, brand, skipLogoStamp, stampContact);
+        const persisted = await persistStills(projectId, result.data, brand, skipLogoStamp, stampContact, frameOpts.format);
         updates.visuals_json = JSON.stringify(persisted);
         updates.current_step = "visuals";
         provider = result.provider;

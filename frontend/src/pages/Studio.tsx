@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ApiError, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type Project } from "../lib/api";
+import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type Project } from "../lib/api";
 import { copyText } from "../lib/copy";
 import BrandToggle from "../components/BrandToggle";
 import ExampleImages, { useProjectImageSrcs } from "../components/ExampleImages";
@@ -115,6 +115,7 @@ function PictureCompare({
   onPreview,
   previewId,
   poster,
+  ratio,
   t,
 }: {
   versions: { id: string; accepted: boolean }[];
@@ -123,6 +124,7 @@ function PictureCompare({
   onPreview: (versionId: string) => void;
   previewId: string | null;
   poster?: boolean;
+  ratio?: string;
   t: (path: string, vars?: Record<string, string | number>) => string;
 }) {
   if (versions.length < 2) return null;
@@ -145,7 +147,7 @@ function PictureCompare({
             >
               <p className="hint">{showing ? `${t("studio.selectedTake")} · ${label}` : label}</p>
               {src ? (
-                <img className={`compare-still${poster ? " poster" : ""}`} src={src} alt="" />
+                <img className={`compare-still${poster ? " poster" : ""}`} style={ratio ? { aspectRatio: ratio, objectFit: "contain" } : undefined} src={src} alt="" />
               ) : (
                 <p className="hint">{t("studio.gone")}</p>
               )}
@@ -363,6 +365,7 @@ export default function Studio() {
 
   const isImage = project?.type === "image_post";
   const isInvite = Boolean(isImage && project?.imageIntent === "invite");
+  const shapeRatio = isImage && project?.imageFormat ? SHAPE_RATIO[project.imageFormat] : undefined;
   const isPoster = Boolean(isImage && (project?.imageIntent === "invite" || project?.imageIntent === "info" || project?.imageIntent === "offer"));
   const STEPS = isImage
     ? [
@@ -743,7 +746,7 @@ export default function Studio() {
 
       <div className={`studio${isImage ? " image" : ""}`}>
         <div>
-          <div className={`phone${isImage ? " post" : ""}${isPoster ? " poster" : ""}${isInvite ? " invite" : ""}`} style={typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : undefined}>
+          <div className={`phone${isImage ? " post" : ""}${isPoster ? " poster" : ""}${isInvite ? " invite" : ""}`} style={{ ...(shapeRatio ? { aspectRatio: shapeRatio } : {}), ...(typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : {}) }}>
             {project.hasVideo && videoSrc ? (
               <video className="phone-video" src={videoSrc} controls playsInline />
             ) : (
@@ -985,6 +988,7 @@ export default function Studio() {
                     liveSrc={imageSrcs[project.visuals?.[0]?.sceneId ?? 1]}
                     previewId={previewVersionId}
                     poster={isPoster}
+                    ratio={shapeRatio}
                     onPreview={setPreviewVersionId}
                     t={t}
                   />

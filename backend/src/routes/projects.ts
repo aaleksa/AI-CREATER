@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_INVITE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, readCreateImageIntent, readCreatePictureLanguage, restoreStepVersion, runStep, saveFeedback, serializeProject, updateInvite } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, restoreStepVersion, runStep, saveFeedback, serializeProject, updateInvite } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
 import { hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
 import { archiveState } from "../services/archive.js";
@@ -64,6 +64,11 @@ projectsRouter.post("/", (req, res) => {
     res.status(400).json({ error: language.error });
     return;
   }
+  const shape = readCreateImageFormat(type, intent.intent, req.body?.imageFormat);
+  if ("error" in shape) {
+    res.status(400).json({ error: shape.error });
+    return;
+  }
   const useBrand = req.body?.useBrand !== false && req.body?.useBrand !== 0;
   const project = createProject(
     req.user!.id,
@@ -71,7 +76,8 @@ projectsRouter.post("/", (req, res) => {
     parsed.text,
     intent.intent,
     useBrand,
-    language.language
+    language.language,
+    shape.format
   );
   res.status(201).json({ project: serializeProject(project) });
 });

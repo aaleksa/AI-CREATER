@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import OpenAI, { toFile } from "openai";
 import { config } from "../config.js";
+import { canvasLine, padToNative, paintsExactSize, sizeFor, type ImageFormat } from "./imageFormats.js";
 import { listBrandRefFiles, logoKindFromBytes, type BrandImageFile } from "./brandAssets.js";
 import { guessPoster, type InviteCard } from "./invite.js";
 
@@ -927,6 +928,8 @@ export type FrameOpts = {
   copyEdit?: string;
   /** Pictures the person attached to this brief as examples. Sent with the request. */
   exampleRefs?: BrandImageFile[];
+  /** Shape of the picture (image posts only). */
+  format?: ImageFormat;
 };
 
 export async function generateVisuals(
@@ -996,13 +999,15 @@ function imageModels() {
   return [...new Set([preferred, "gpt-image-2.5-sunburst", "gpt-image-1", "dall-e-3"])];
 }
 
-function keepStillModels() {
-  return [...new Set(["gpt-image-1", ...imageModels().filter((name) => /^gpt-image/i.test(name))])];
+function keepStillModels(format?: ImageFormat) {
+  const models = [...new Set(["gpt-image-1", ...imageModels().filter((name) => /^gpt-image/i.test(name))])];
+  // Models that can paint the exact shape go first, so the picture is never stretched or trimmed.
+  return format && format !== "square" ? [...models.filter(paintsExactSize), ...models.filter((m) => !paintsExactSize(m))] : models;
 }
 
-function imageSize(model: string, kind: "video" | "still" | "poster") {
+function imageSize(model: string, kind: "video" | "still" | "poster", format?: ImageFormat) {
+  if (format && kind !== "video") return sizeFor(format, model);
   if (kind === "still") return "1024x1024" as const;
-  if (kind === "poster") return model === "dall-e-3" ? ("1024x1792" as const) : ("1024x1536" as const);
   return model === "dall-e-3" ? ("1024x1792" as const) : ("1024x1536" as const);
 }
 
@@ -1049,8 +1054,15 @@ async function generateSceneFrame(
   if (!openai) return placeholder;
 
   const keepRequested = Boolean(opts?.keepStill || opts?.keepStillPath);
+  // Models that paint any size edit the picture as it is. Older ones need it extended back to their shape first.
   const keepStill =
     opts?.keepStillPath && fs.existsSync(opts.keepStillPath) ? fs.readFileSync(opts.keepStillPath) : null;
+  let keepPadded: Buffer | null = null;
+  if (keepStill && opts?.format && kind !== "video" && opts.keepStillPath) {
+    const out = `${opts.keepStillPath}.pad.jpg`;
+    if (await padToNative(opts.keepStillPath, opts.format, out)) keepPadded = fs.readFileSync(out);
+    fs.rmSync(out, { force: true });
+  }
   if (keepRequested && !keepStill?.length) {
     return { ...placeholder, error: "Make the picture first." };
   }
@@ -1061,7 +1073,9 @@ async function generateSceneFrame(
     : kind === "video"
       ? videoFramePrompt(scene, brand)
       : withBrandLook(
-          kind === "poster" ? scene.visualPrompt : `${scene.visualPrompt}. Square 1:1 finished image.`,
+          kind === "poster"
+            ? `${scene.visualPrompt}${opts?.format ? `\n${canvasLine(opts.format)}` : ""}`
+            : `${scene.visualPrompt}. ${opts?.format ? canvasLine(opts.format) : "Square 1:1 finished image."} Finished image.`,
           brand,
           kind === "poster" ? "designed" : "photo"
         );
@@ -1069,7 +1083,7 @@ async function generateSceneFrame(
   const examples = keepStill ? [] : opts?.exampleRefs || [];
   const brandRefs = keepStill || kind === "poster" ? [] : brand?.user_id ? listBrandRefFiles(brand.user_id) : [];
   const refs = [...examples, ...brandRefs];
-  const prompt = examples.length && !keepStill ? `${basePrompt}\n${exampleRefLine(examples.length, kind)}` : basePrompt;
+  const prompt = !keepStill && examples.length ? `${basePrompt}\n${exampleRefLine(examples.length, kind)}` : basePrompt;
   const keepKind = keepStill ? logoKindFromBytes(keepStill) : "";
   const keepType = keepKind === "png" ? "image/png" : "image/jpeg";
   const keepName = keepKind === "png" ? `keep-still-${scene.id}.png` : `keep-still-${scene.id}.jpg`;
@@ -1092,7 +1106,7 @@ async function generateSceneFrame(
     const image = await openai.images.generate({
       model,
       prompt: prompt.slice(0, gptImage ? 32000 : 4000),
-      size: imageSize(model, kind),
+      size: imageSize(model, kind, opts?.format),
       n: 1,
       ...(gptImage ? { output_format: "png", quality: "high" } : {}),
     });
@@ -1100,16 +1114,21 @@ async function generateSceneFrame(
   };
 
   const editOnce = async (model: string) => {
+    const usePad = Boolean(keepPadded) && !(opts?.format && paintsExactSize(model));
+    const source = usePad ? keepPadded : keepStill;
+    const editPrompt = usePad
+      ? `${prompt}\nThe blurred bands at the edges are only padding. Leave them alone; change nothing in the sharp picture except what is asked.`
+      : prompt;
     const files = await Promise.all([
-      ...(keepStill ? [toFile(keepStill, keepName, { type: keepType })] : []),
+      ...(source ? [toFile(source, keepName, { type: keepType })] : []),
       ...refs.map((ref, i) => toFile(fs.readFileSync(ref.file), `${i + 1}-${ref.filename}`, { type: ref.type })),
     ]);
     const run = async (fidelity: "high" | "low" | "") => {
       const image = await openai.images.edit({
         model,
         image: files.length === 1 ? files[0] : files,
-        prompt: prompt.slice(0, 32000),
-        size: kind === "still" ? "1024x1024" : "1024x1536",
+        prompt: editPrompt.slice(0, 32000),
+        size: opts?.format && kind !== "video" ? sizeFor(opts.format, model) : kind === "still" ? "1024x1024" : "1024x1536",
         n: 1,
         quality: "high",
         ...(fidelity ? { input_fidelity: fidelity } : {}),
@@ -1151,7 +1170,7 @@ async function generateSceneFrame(
   };
 
   if (keepRequested) {
-    for (const model of keepStillModels()) {
+    for (const model of keepStillModels(opts?.format)) {
       const edited = await tryModel(model, editOnce);
       if (edited) return edited;
     }

@@ -26,6 +26,7 @@ export default function BrandToggle({
   usingLabel,
   kit,
   locked = false,
+  compact = false,
 }: {
   value: boolean;
   onChange?: (next: boolean) => void;
@@ -37,6 +38,7 @@ export default function BrandToggle({
   usingLabel?: string;
   kit?: BrandBits | null;
   locked?: boolean;
+  compact?: boolean;
 }) {
   const { t } = useLocale();
   const niche =
@@ -57,7 +59,20 @@ export default function BrandToggle({
   return (
     <div className="brand-toggle">
       <p className="hint">{ask}</p>
-      {!locked && (
+      {!locked && compact && (
+        <>
+          <div className="pills" role="group" aria-label={ask}>
+            <button type="button" aria-pressed={value} className={`pill ${value ? "on" : ""}`} onClick={() => onChange?.(true)}>
+              {onLabel}
+            </button>
+            <button type="button" aria-pressed={!value} className={`pill ${!value ? "on" : ""}`} onClick={() => onChange?.(false)}>
+              {offLabel}
+            </button>
+          </div>
+          <p className="hint pill-hint" aria-live="polite">{value ? onHint : offHint}</p>
+        </>
+      )}
+      {!locked && !compact && (
         <div className="choice-row tones">
           <button type="button" className={`choice ${value ? "on" : ""}`} onClick={() => onChange?.(true)}>
             <b>{onLabel}</b>
@@ -82,7 +97,7 @@ export default function BrandToggle({
             {kit?.logo_url && (
               <span>
                 {kit.logo_on_photos === true || kit.logo_on_photos === 1 || kit.logo_on_photos === "1"
-                  ? t("brand.logoStampOn")
+                  ? t("brand.logoSwitch")
                   : t("brand.logo")}
               </span>
             )}

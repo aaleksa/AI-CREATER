@@ -75,6 +75,14 @@ export type ArchiveState = {
   oldestId: string | null;
   oldestPrompt: string | null;
 };
+export const SHAPE_RATIO: Record<string, string> = {
+  square: "1 / 1",
+  portrait: "4 / 5",
+  story: "9 / 16",
+  wide: "191 / 100",
+  tall: "2 / 3",
+};
+
 export type Project = {
   id: string;
   type: string;
@@ -82,6 +90,7 @@ export type Project = {
   imageIntent?: string;
   pictureLanguage?: "en" | "uk" | "";
   useBrand?: boolean;
+  imageFormat?: "square" | "portrait" | "story" | "wide" | "tall" | "";
   refs?: { id: string; url: string }[];
   invite?: InviteCard | null;
   status: string;
@@ -152,10 +161,10 @@ export const api = {
     request<{ project: Project; archive?: ArchiveState; costs: Record<string, number>; fullVideoCost: number }>(
       `/projects/${id}`
     ),
-  createProject: (type: string, prompt: string, imageIntent?: string, useBrand = true, pictureLanguage?: string) =>
+  createProject: (type: string, prompt: string, imageIntent?: string, useBrand = true, pictureLanguage?: string, imageFormat?: string) =>
     request<{ project: Project }>("/projects", {
       method: "POST",
-      body: JSON.stringify({ type, prompt, imageIntent, useBrand, pictureLanguage }),
+      body: JSON.stringify({ type, prompt, imageIntent, useBrand, pictureLanguage, imageFormat }),
     }),
   deleteProject: (id: string) => request<{ ok: boolean }>(`/projects/${id}`, { method: "DELETE" }),
   updatePrompt: (id: string, prompt: string) =>

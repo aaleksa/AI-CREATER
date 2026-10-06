@@ -17,11 +17,15 @@ const EMOJI: Record<string, string> = {
 const KIND_IDS = ["photo", "invite", "info", "offer"] as const;
 const PIC_LANGS = ["", "en", "uk"] as const;
 
+const SHAPES = ["square", "portrait", "story", "wide"] as const;
+
 export default function Home() {
   const nav = useNavigate();
   const { t, te, locale } = useLocale();
   const [type, setType] = useState("instagram_reel");
   const [imageIntent, setImageIntent] = useState("photo");
+  const [imageFormat, setImageFormat] = useState<"square" | "portrait" | "story" | "wide">("square");
+  const [shapeTouched, setShapeTouched] = useState(false);
   const [pictureLanguage, setPictureLanguage] = useState<"" | "en" | "uk">("");
   const [prompt, setPrompt] = useState(() => translate(detectLocale(), "examples.instagram_reel"));
   const [error, setError] = useState("");
@@ -95,7 +99,8 @@ export default function Home() {
         prompt,
         isImage ? imageIntent : undefined,
         useBrand,
-        isPoster ? pictureLanguage : undefined
+        isPoster ? pictureLanguage : undefined,
+        isImage ? imageFormat : undefined
       );
       for (const item of exampleFiles) {
         try {
@@ -111,6 +116,14 @@ export default function Home() {
       setBusy(false);
     }
   }
+
+  const optionsNow = [
+    useBrand ? t("home.useBrand") : t("home.skipBrand"),
+    isPoster ? t(`home.picLang.${pictureLanguage || "brief"}`) : "",
+    exampleFiles.length ? t("home.optionsExamples", { n: exampleFiles.length }) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div className="hero-home">
@@ -130,6 +143,7 @@ export default function Home() {
                 setError("");
                 if (id === "image_post") {
                   setImageIntent("photo");
+                  if (!shapeTouched) setImageFormat("square");
                   setPictureLanguage("");
                   setPrompt(kindExamples.photo);
                   return;
@@ -149,85 +163,53 @@ export default function Home() {
       </div>
 
       {isImage && (
-        <div className="image-kinds">
-          <p className="hint">{t("home.kindAsk")}</p>
-          <div className="choice-row kinds">
+        <section className="create-step">
+          <p className="step-label">{t("home.kindAsk")}</p>
+          <div className="pills" role="group" aria-label={t("home.kindAsk")}>
             {KIND_IDS.map((id) => (
               <button
                 key={id}
                 type="button"
-                className={`choice ${imageIntent === id ? "on" : ""}`}
+                aria-pressed={imageIntent === id}
+                className={`pill ${imageIntent === id ? "on" : ""}`}
                 onClick={() => {
                   setImageIntent(id);
+                  if (!shapeTouched) setImageFormat(id === "photo" ? "square" : "portrait");
                   if (id === "photo") setPictureLanguage("");
                   if (Object.values(kindExamples).includes(prompt) || !prompt.trim()) {
                     setPrompt(kindExamples[id]);
                   }
                 }}
               >
-                <b>{t(`kinds.${id}.label`)}</b>
-                <span>{t(`kinds.${id}.hint`)}</span>
+                {t(`kinds.${id}.label`)}
               </button>
             ))}
           </div>
-        </div>
-      )}
+          <p className="hint pill-hint" aria-live="polite">{kindHint}</p>
 
-      {isPoster && (
-        <div className="image-kinds">
-          <p className="hint">{t("home.picLangAsk")}</p>
-          <div className="choice-row langs">
-            {PIC_LANGS.map((id) => (
+          <p className="step-label" style={{ marginTop: 18 }}>{t("shapes.ask")}</p>
+          <div className="pills" role="group" aria-label={t("shapes.ask")}>
+            {SHAPES.map((id) => (
               <button
-                key={id || "brief"}
+                key={id}
                 type="button"
-                className={`choice ${pictureLanguage === id ? "on" : ""}`}
-                onClick={() => setPictureLanguage(id)}
+                aria-pressed={imageFormat === id}
+                className={`pill shape ${imageFormat === id ? "on" : ""}`}
+                onClick={() => {
+                  setImageFormat(id);
+                  setShapeTouched(true);
+                }}
               >
-                <b>{t(`home.picLang.${id || "brief"}`)}</b>
-                <span>{t(`home.picLangHint.${id || "brief"}`)}</span>
+                <span className={`shape-icon ${id}`} aria-hidden />
+                {t(`shapes.${id}`)}
               </button>
             ))}
           </div>
-        </div>
-      )}
-
-      <BrandToggle
-        value={useBrand}
-        onChange={setUseBrand}
-        ask={t("home.useBrandAsk")}
-        onLabel={t("home.useBrand")}
-        onHint={t("home.useBrandHint")}
-        offLabel={t("home.skipBrand")}
-        offHint={t("home.skipBrandHint")}
-        usingLabel={t("home.brandUsing")}
-        kit={kit}
-      />
-
-      <ExampleImages
-        items={exampleFiles}
-        note={t("briefImages.pending")}
-        onAdd={(src) => setExampleFiles((list) => [...list, { id: String(Date.now() + list.length), src }])}
-        onRemove={(id) => setExampleFiles((list) => list.filter((item) => item.id !== id))}
-      />
-
-      {recentBriefs.length > 0 && (
-        <div className="recent-briefs">
-          <p className="hint">{t("home.recentBriefs")}</p>
-          <div className="recent-briefs-list">
-            {recentBriefs.map((text) => (
-              <button
-                key={text.slice(0, 80)}
-                type="button"
-                className="recent-brief"
-                onClick={() => setPrompt(text)}
-              >
-                {text.replace(/\s+/g, " ").slice(0, 140)}
-                {text.length > 140 ? "…" : ""}
-              </button>
-            ))}
-          </div>
-        </div>
+          <p className="hint pill-hint" aria-live="polite">
+            {t(`shapes.${imageFormat}Where`)} · {t(`shapes.${imageFormat}Hint`)}
+          </p>
+          <p className="hint">{t("shapes.why")}</p>
+        </section>
       )}
 
       <div className="prompt-stage">
@@ -237,6 +219,71 @@ export default function Home() {
           maxLength={2000}
           placeholder={isImage ? kindHint : t("home.placeholderReel")}
         />
+        <details className="options">
+          <summary>
+            <b>{t("home.optionsTitle")}</b>
+            <span className="options-now">{optionsNow}</span>
+          </summary>
+
+          <BrandToggle
+            compact
+            value={useBrand}
+            onChange={setUseBrand}
+            ask={t("home.useBrandAsk")}
+            onLabel={t("home.useBrand")}
+            onHint={t("home.useBrandHint")}
+            offLabel={t("home.skipBrand")}
+            offHint={t("home.skipBrandHint")}
+            usingLabel={t("home.brandUsing")}
+            kit={kit}
+          />
+
+          {isPoster && (
+            <div className="brand-toggle">
+              <p className="hint">{t("home.picLangAsk")}</p>
+              <div className="pills" role="group" aria-label={t("home.picLangAsk")}>
+                {PIC_LANGS.map((id) => (
+                  <button
+                    key={id || "brief"}
+                    type="button"
+                    aria-pressed={pictureLanguage === id}
+                    className={`pill ${pictureLanguage === id ? "on" : ""}`}
+                    onClick={() => setPictureLanguage(id)}
+                  >
+                    {t(`home.picLang.${id || "brief"}`)}
+                  </button>
+                ))}
+              </div>
+              <p className="hint pill-hint" aria-live="polite">{t(`home.picLangHint.${pictureLanguage || "brief"}`)}</p>
+            </div>
+          )}
+
+          <ExampleImages
+            items={exampleFiles}
+            note={t("briefImages.pending")}
+            onAdd={(src) => setExampleFiles((list) => [...list, { id: String(Date.now() + list.length), src }])}
+            onRemove={(id) => setExampleFiles((list) => list.filter((item) => item.id !== id))}
+          />
+
+          {recentBriefs.length > 0 && (
+            <div className="recent-briefs">
+              <p className="hint">{t("home.recentBriefs")}</p>
+              <div className="recent-briefs-list">
+                {recentBriefs.map((text) => (
+                  <button
+                    key={text.slice(0, 80)}
+                    type="button"
+                    className="recent-brief"
+                    onClick={() => setPrompt(text)}
+                  >
+                    {text.replace(/\s+/g, " ").slice(0, 140)}
+                    {text.length > 140 ? "…" : ""}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </details>
         <div className="row">
           <span className="hint">
             {isImage ? t("home.hintImage", { hint: kindHint }) : t("home.hintReel")}

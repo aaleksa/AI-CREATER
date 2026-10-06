@@ -124,6 +124,8 @@ export const en = {
       en: "Translate the whole brief into English, including names, dates and addresses.",
       uk: "Translate the whole brief into Ukrainian, including names, dates and addresses.",
     },
+    optionsTitle: "Options",
+    optionsExamples: "Examples: {n}",
     recentBriefs: "Your saved briefs — tap to insert",
     insertBrief: "Insert",
   },
@@ -138,6 +140,22 @@ export const en = {
   examples: {
     instagram_reel: "Create a 30-second Reel about the best places to visit in London.",
     tiktok: "Make a TikTok promoting my coffee shop’s morning ritual.",
+  },
+  shapes: {
+    ask: "Where will you post this picture?",
+    why: "The place decides the shape of the picture. Not sure? Pick Post: square, it fits everywhere.",
+    square: "Post: square",
+    squareWhere: "Instagram, Facebook",
+    squareHint: "1:1 · fits any feed",
+    portrait: "Post: portrait",
+    portraitWhere: "Instagram, Facebook",
+    portraitHint: "4:5 · takes more room in the feed",
+    story: "Stories and Reels",
+    storyWhere: "Instagram, Facebook, TikTok",
+    storyHint: "9:16 · full phone screen",
+    wide: "Facebook: wide",
+    wideWhere: "Post with a link, or a wide photo",
+    wideHint: "1.91:1 · landscape",
   },
   kinds: {
     photo: {
