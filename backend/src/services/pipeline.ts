@@ -702,6 +702,8 @@ export async function runStep(
       const poster = isImagePost(type) && isTextPoster(type, imageIntent || "photo");
       const kind = poster ? "poster" : isImagePost(type) ? "still" : "video";
       const skipLogoStamp = keepStill;
+      // The contact line goes on photo posts only: flyers already carry their own text, Reels have captions.
+      const stampContact = kind === "still" && !keepStill;
       let paintedCopy = "";
       let translatedBrief = "";
       if (keepStill && requestedLang) {
@@ -757,7 +759,8 @@ export async function runStep(
             ? current.map((item) => (item.sceneId === sceneId ? one.data : item))
             : [...current, one.data],
           brand,
-          skipLogoStamp
+          skipLogoStamp,
+          stampContact
         );
         updates.visuals_json = JSON.stringify(next);
         updates.current_step = "visuals";
@@ -778,7 +781,7 @@ export async function runStep(
             { status: 400 }
           );
         }
-        const persisted = await persistStills(projectId, result.data, brand, skipLogoStamp);
+        const persisted = await persistStills(projectId, result.data, brand, skipLogoStamp, stampContact);
         updates.visuals_json = JSON.stringify(persisted);
         updates.current_step = "visuals";
         provider = result.provider;

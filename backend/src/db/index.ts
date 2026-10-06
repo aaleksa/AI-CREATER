@@ -39,6 +39,8 @@ addColumn("ALTER TABLE projects ADD COLUMN use_brand INTEGER NOT NULL DEFAULT 1"
 addColumn("ALTER TABLE brand_kits ADD COLUMN logo_on_photos INTEGER NOT NULL DEFAULT 0");
 addColumn("ALTER TABLE projects ADD COLUMN picture_language TEXT NOT NULL DEFAULT ''");
 addColumn("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0");
+addColumn("ALTER TABLE brand_kits ADD COLUMN contact_on_photos INTEGER NOT NULL DEFAULT 0");
+addColumn("ALTER TABLE brand_kits ADD COLUMN address TEXT NOT NULL DEFAULT ''");
 
 try {
   sqlite.exec(`

@@ -6,7 +6,7 @@ Auteur is not a Canva clone. It is a simple AI content studio: the user never ch
 
 UI: **English and Ukrainian** (EN / УК, stored in the browser). The brief stays in the language they wrote. **Light and dark theme** (☀ / ☾, follows the device until you choose) and a phone layout with a bottom tab bar.
 
-Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.31).
+Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.33).
 
 The first studio is **one short video** (30 seconds, Instagram or TikTok — same file) and still **Image / Posts**. A Reel is 150 credits; a still post is 13 (idea + one picture). **Video** and **Advertisement** stay as two separate Create stubs (TZ §2.3). Social post is a third stub.
 
@@ -18,7 +18,7 @@ The first studio is **one short video** (30 seconds, Instagram or TikTok — sam
 | Sign up / Sign in | Account + **400** free credits |
 | Create | Short video or Image, optional photo / invite / info / offer, words in EN or UK on designed stills, brand on/off, saved briefs to insert |
 | Studio | Reel: six steps. Image: Idea → Pictures. Brief, copy brief. Click a take to select it (used for language, word edits and download). Brand on/off is read-only here |
-| Brand kit | Logo and up to 3 optional photos (place / person / product), colours, font, tone, niche, Instagram. Photos go into photo posts and Reels only when the scene is about them — never onto designed flyers. Completeness counts colours, tone, name, niche, logo. Unsaved edits are flagged; logo and photo uploads no longer overwrite them. |
+| Brand kit | Logo and up to 3 optional photos (place / person / product), colours, font, tone, niche, Instagram. Photos go into photo posts and Reels only when the scene is about them — never onto designed flyers. Your business address is printed on invitations and offers when the brief names no place, so you stop repeating it. Instagram and website end every Reel with a real call to action (“find us on Instagram…”) and can print one line on photo posts. Completeness counts colours, tone, name, niche, logo. Unsaved edits are flagged; logo and photo uploads no longer overwrite them. |
 | Account | Name, email (needs password), change password, **download my data** (JSON), sign out on all devices, delete account (needs password) |
 | Credits | Plans (current one highlighted), pack prices. Checkout hidden until Stripe. AI cost log hidden |
 | Library | Every project — open, copy the brief, or **delete** |

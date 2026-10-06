@@ -4,8 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import OpenAI from "openai";
+import { Resvg } from "@resvg/resvg-js";
 import { config } from "../config.js";
-import { wantsLogoStamp, type BrandKit, type CaptionCue, type Script, type Visual } from "./ai.js";
+import { contactStampText, wantsContactStamp, wantsLogoStamp, type BrandKit, type CaptionCue, type Script, type Visual } from "./ai.js";
 import { brandLogoPath } from "./brandAssets.js";
 
 export {
@@ -150,11 +151,69 @@ function overlayLogoFile(stillPath: string, logoPath: string) {
   });
 }
 
+const SANS_FONTS = [
+  "/System/Library/Fonts/Supplemental/Arial.ttf",
+  "/System/Library/Fonts/Helvetica.ttc",
+  "/Library/Fonts/Arial.ttf",
+  "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+  "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+].filter((file) => fs.existsSync(file));
+
+function xmlEscape(text: string) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** One small line — "@name · site" — in a dark pill, bottom-left. We draw it, the model never does. */
+async function overlayContactFile(stillPath: string, text: string) {
+  if (!text || !ffmpegPath || !fs.existsSync(stillPath)) return false;
+  const size = 30;
+  const width = Math.round(text.length * size * 0.46 + 56);
+  const height = 62;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <rect width="${width}" height="${height}" rx="31" fill="rgba(12,11,10,0.62)"/>
+  <text x="${width / 2}" y="${height / 2 + size * 0.35}" text-anchor="middle" font-family="Arial, Helvetica, DejaVu Sans, sans-serif" font-size="${size}" fill="#f4efe8">${xmlEscape(text)}</text>
+</svg>`;
+  const pill = `${stillPath}.contact.png`;
+  const tmp = `${stillPath}.contact.jpg`;
+  try {
+    const png = new Resvg(svg, {
+      font: { loadSystemFonts: true, fontFiles: SANS_FONTS, defaultFontFamily: "Arial" },
+    })
+      .render()
+      .asPng();
+    fs.writeFileSync(pill, png);
+    await run(ffmpegPath, [
+      "-y",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-i",
+      stillPath,
+      "-i",
+      pill,
+      "-filter_complex",
+      "[0:v][1:v]overlay=36:H-h-36",
+      tmp,
+    ]);
+    if (fs.existsSync(tmp) && fs.statSync(tmp).size > 0) {
+      fs.renameSync(tmp, stillPath);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(pill, { force: true });
+    fs.rmSync(tmp, { force: true });
+  }
+}
+
 export async function persistStills(
   projectId: string,
   visuals: Visual[],
   brand?: BrandKit | null,
-  skipLogoStamp = false
+  skipLogoStamp = false,
+  stampContact = false
 ) {
   const next: Visual[] = [];
   for (const visual of visuals) {
@@ -192,6 +251,13 @@ export async function persistStills(
     for (const visual of next) {
       if (visual.placeholder || !hasStillFile(projectId, visual.sceneId)) continue;
       await overlayLogoFile(stillFile(projectId, visual.sceneId), logo);
+    }
+  }
+  if (stampContact && wantsContactStamp(brand)) {
+    const text = contactStampText(brand);
+    for (const visual of next) {
+      if (visual.placeholder || !hasStillFile(projectId, visual.sceneId)) continue;
+      await overlayContactFile(stillFile(projectId, visual.sceneId), text);
     }
   }
   return next;

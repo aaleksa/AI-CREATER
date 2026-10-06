@@ -31,10 +31,50 @@ export type BrandKit = {
   ref_people_url?: string;
   ref_product_url?: string;
   logo_on_photos?: boolean | number | string;
+  contact_on_photos?: boolean | number | string;
+  address?: string;
 };
 
 export function wantsLogoStamp(brand?: BrandKit | null) {
   return brand?.logo_on_photos === true || brand?.logo_on_photos === 1 || brand?.logo_on_photos === "1";
+}
+
+/** Instagram handle as "@name" and the site without protocol, the way people say and read them. */
+export function contactParts(brand?: BrandKit | null) {
+  const rawHandle = String(brand?.instagram || "").trim().replace(/[?#].*$/, "").replace(/\/+$/, "");
+  const handleName = rawHandle.replace(/^https?:\/\/[^/]*\//i, "").replace(/^@+/, "").split("/").pop() || "";
+  const handle = /^[A-Za-z0-9._]{1,30}$/.test(handleName) ? `@${handleName}` : "";
+  const site = String(brand?.website || "")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .replace(/\/+$/, "")
+    .replace(/[^\w.\-/~%]/g, "")
+    .slice(0, 40);
+  return { handle, site };
+}
+
+/** The one line we may print on a photo: "@name · site". */
+export function contactStampText(brand?: BrandKit | null) {
+  const { handle, site } = contactParts(brand);
+  return [handle, site].filter(Boolean).join("  ·  ");
+}
+
+export function wantsContactStamp(brand?: BrandKit | null) {
+  const on = brand?.contact_on_photos === true || brand?.contact_on_photos === 1 || brand?.contact_on_photos === "1";
+  return on && Boolean(contactStampText(brand));
+}
+
+/** Tells the script writer how to close with the owner's real handle or site. */
+function contactCtaLine(brand?: BrandKit | null) {
+  const { handle, site } = contactParts(brand);
+  if (!handle && !site) return "";
+  const where = [handle && `Instagram ${handle}`, site && `website ${site}`].filter(Boolean).join(" and ");
+  return [
+    `Call to action: the last scene invites the viewer to find them — ${where}.`,
+    "In the voiceover say it the way a person would (no @ sign, no https), for example: find us on Instagram, name of the account.",
+    `Write cta and the last onScreen caption with the exact text ${handle || site}. Do not invent another handle, site or address.`,
+  ].join(" ");
 }
 
 export type Idea = {
@@ -266,6 +306,8 @@ function brandContext(brand?: BrandKit | null) {
     brand.ref_place_url && `They uploaded a photo of their real place. Use that room only when the story is set in their own place; otherwise ignore it.`,
     brand.ref_people_url && `They uploaded a photo of a real person who works there. Prefer that person only when someone from the business belongs in the scene.`,
     brand.ref_product_url && `They uploaded a photo of their real product. Use that item only when the story needs it.`,
+    brand.address &&
+      `Business address: ${brand.address}. If an invitation or offer has no place in the request, use this address. If the request names another place, use that one. Never invent an address.`,
     brand.instagram && `Instagram: ${brand.instagram}`,
     brand.website && `Website: ${brand.website}`,
     niche,
@@ -406,7 +448,7 @@ function mockScript(prompt: string, idea: Idea, brand?: BrandKit | null): Script
   ];
   return {
     durationSec: 30,
-    cta: "Follow for the next city / offer / story.",
+    cta: contactParts(brand).handle || contactParts(brand).site || "Follow for the next city / offer / story.",
     scenes: beats.map((b, i) => ({
       id: i + 1,
       time: b.time,
@@ -729,6 +771,13 @@ function looksLikeTargetLanguage(text: string, lang: PictureLanguage) {
   return true;
 }
 
+/** Owner's saved address for flyers: used only when the request names no place of its own. */
+function addressLine(brand?: BrandKit | null) {
+  const address = String(brand?.address || "").trim();
+  if (!address) return "";
+  return `Their business address is "${address}". If this picture invites people to an event or offer at their business and the request names no place or address, print this address once as the place line, spelled exactly as given. If the request already names a place or address, use that and do not add this one. If the picture is not about visiting them, do not print it. Never invent a different address.`;
+}
+
 export function stillPicturePrompt(
   brief: string,
   idea: Idea,
@@ -754,6 +803,7 @@ export function stillPicturePrompt(
       : "Create one finished photograph from this request.",
     asked,
     brandLook(brand),
+    withCopy && addressLine(brand),
     withCopy &&
       `Fill the whole canvas edge to edge. Keep a clear empty margin at the bottom so the last line is fully visible. If a line does not fit, wrap it or move it — never clip, crop or run words off the edge. ${pictureLanguageLine(pictureLanguage)} No app UI, no watermark.`,
     regenInstruction(feedback),
@@ -854,7 +904,7 @@ export async function generateScript(prompt: string, idea: Idea, brand?: BrandKi
   const result = await jsonCompletion<Script>(
     `Write a 30-second vertical video script. 4–6 scenes. Voiceover should sound spoken, not marketed.
 visualPrompt describes a photograph we would shoot — a real place or moment. Never a title card, never type, never the voiceover printed on the picture.
-onScreen is a short later caption (2–6 words) with a normal space between every word.\n${brandContext(brand)}`,
+onScreen is a short later caption (2–6 words) with a normal space between every word.\n${brandContext(brand)}\n${contactCtaLine(brand)}`,
     `Request: ${prompt}\nIdea: ${JSON.stringify(idea)}${regenInstruction(feedback) ? `\n${regenInstruction(feedback)}` : ""}\nReturn JSON: { durationSec, cta, scenes: [{ id, time, onScreen, voiceover, visualPrompt }] }`,
     fallback
   );

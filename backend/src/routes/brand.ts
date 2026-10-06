@@ -89,6 +89,7 @@ function serializeBrand(row: Record<string, unknown> | undefined, userId: string
     ref_people_url: images.ref_people_url,
     ref_product_url: images.ref_product_url,
     logo_on_photos: Number(row.logo_on_photos) === 1,
+    contact_on_photos: Number(row.contact_on_photos) === 1,
     learned_summary,
     learned_lines,
     completeness: progress,
@@ -219,6 +220,8 @@ brandRouter.put("/", (req, res) => {
     vertical,
     vertical_note: vertical === "other" ? String(body.vertical_note ?? "").trim().slice(0, 80) : "",
     logo_on_photos: flag(body.logo_on_photos) ? 1 : 0,
+    contact_on_photos: flag(body.contact_on_photos) ? 1 : 0,
+    address: String(body.address ?? "").replace(/\s+/g, " ").trim().slice(0, 160),
   };
   const existing = db.prepare("SELECT id FROM brand_kits WHERE user_id = ?").get(req.user!.id) as { id: string } | undefined;
   if (existing) {
@@ -227,13 +230,13 @@ brandRouter.put("/", (req, res) => {
         business_name=@business_name, logo_url=@logo_url, primary_color=@primary_color,
         secondary_color=@secondary_color, font=@font, tone_of_voice=@tone_of_voice, tone_note=@tone_note,
         website=@website, instagram=@instagram, vertical=@vertical, vertical_note=@vertical_note,
-        logo_on_photos=@logo_on_photos, updated_at=datetime('now')
+        logo_on_photos=@logo_on_photos, contact_on_photos=@contact_on_photos, address=@address, updated_at=datetime('now')
        WHERE user_id=@user_id`
     ).run({ ...fields, user_id: req.user!.id });
   } else {
     db.prepare(
-      `INSERT INTO brand_kits (id, user_id, business_name, logo_url, primary_color, secondary_color, font, tone_of_voice, tone_note, website, instagram, vertical, vertical_note, logo_on_photos)
-       VALUES (@id, @user_id, @business_name, @logo_url, @primary_color, @secondary_color, @font, @tone_of_voice, @tone_note, @website, @instagram, @vertical, @vertical_note, @logo_on_photos)`
+      `INSERT INTO brand_kits (id, user_id, business_name, logo_url, primary_color, secondary_color, font, tone_of_voice, tone_note, website, instagram, vertical, vertical_note, logo_on_photos, contact_on_photos, address)
+       VALUES (@id, @user_id, @business_name, @logo_url, @primary_color, @secondary_color, @font, @tone_of_voice, @tone_note, @website, @instagram, @vertical, @vertical_note, @logo_on_photos, @contact_on_photos, @address)`
     ).run({ id: uuid(), user_id: req.user!.id, ...fields });
   }
   res.json({ brandKit: serializeBrand(kitOf(req.user!.id), req.user!.id) });

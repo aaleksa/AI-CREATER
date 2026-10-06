@@ -16,11 +16,11 @@ function toneOf(text: string) {
 
 const HEX = /^#[0-9A-Fa-f]{6}$/;
 
-function snapshot(form: typeof empty, logoOnPhotos: boolean) {
+function snapshot(form: typeof empty, logoOnPhotos: boolean, contactOnPhotos: boolean) {
   // Photos and logo save on their own, so they do not count as unsaved.
   const { logo_url, ref_place_url, ref_people_url, ref_product_url, ...rest } = form;
   void logo_url; void ref_place_url; void ref_people_url; void ref_product_url;
-  return JSON.stringify({ ...rest, logoOnPhotos });
+  return JSON.stringify({ ...rest, logoOnPhotos, contactOnPhotos });
 }
 
 const TYPES = [
@@ -49,6 +49,7 @@ const empty = {
   tone_note: "",
   website: "",
   instagram: "",
+  address: "",
   vertical: "",
   vertical_note: "",
   ref_place_url: "",
@@ -69,6 +70,7 @@ function applyKit(kit: BrandKitRow) {
     tone_note: kit.tone_note || "",
     website: kit.website || "",
     instagram: kit.instagram || "",
+    address: kit.address || "",
     vertical: kit.vertical || "",
     vertical_note: kit.vertical_note || "",
     ref_place_url: kit.ref_place_url || "",
@@ -110,6 +112,7 @@ export default function Brand() {
   const [hint, setHint] = useState("");
   const [ownNote, setOwnNote] = useState(false);
   const [logoOnPhotos, setLogoOnPhotos] = useState(false);
+  const [contactOnPhotos, setContactOnPhotos] = useState(false);
   const logoSrc = useKitImage(form.logo_url);
   const placeSrc = useKitImage(form.ref_place_url);
   const peopleSrc = useKitImage(form.ref_people_url);
@@ -131,7 +134,9 @@ export default function Brand() {
     side(kit);
     setOwnNote(Boolean(kit.tone_note));
     setLogoOnPhotos(stamp);
-    setSavedSnap(snapshot(next, stamp));
+    const contact = Boolean(Number(kit.contact_on_photos));
+    setContactOnPhotos(contact);
+    setSavedSnap(snapshot(next, stamp, contact));
   }
 
   // Logo and photos save on their own. Do not overwrite what is still being typed.
@@ -154,7 +159,7 @@ export default function Brand() {
     });
   }, [t]);
 
-  const dirty = savedSnap !== "" && snapshot(form, logoOnPhotos) !== savedSnap;
+  const dirty = savedSnap !== "" && snapshot(form, logoOnPhotos, contactOnPhotos) !== savedSnap;
 
   useEffect(() => {
     if (!dirty) return;
@@ -179,6 +184,7 @@ export default function Brand() {
         instagram: instagram ? `@${instagram}` : "",
         website: form.website.trim(),
         logo_on_photos: logoOnPhotos,
+        contact_on_photos: contactOnPhotos,
       });
       apply(brandKit);
       setSaved(true);
@@ -474,6 +480,7 @@ export default function Brand() {
           </div>
           <div className="field">
             <label htmlFor="instagram">{t("brand.instagram")}</label>
+            <p className="hint">{t("brand.contactHint")}</p>
             <input
               id="instagram"
               value={form.instagram}
@@ -485,6 +492,34 @@ export default function Brand() {
             <label htmlFor="website">{t("brand.website")}</label>
             <input id="website" value={form.website} onChange={(e) => set("website", e.target.value)} placeholder="https://" />
           </div>
+          <div className="field">
+            <label htmlFor="address">{t("brand.address")}</label>
+            <p className="hint">{t("brand.addressHint")}</p>
+            <input
+              id="address"
+              value={form.address}
+              maxLength={160}
+              autoComplete="street-address"
+              onChange={(e) => set("address", e.target.value)}
+              placeholder={t("brand.addressPh")}
+            />
+          </div>
+          {(form.instagram.trim() || form.website.trim()) && (
+            <div className="field">
+              <label>{t("brand.contactStampAsk")}</label>
+              <p className="hint">{t("brand.contactStampHint")}</p>
+              <div className="choice-row tones">
+                <button type="button" className={`choice ${!contactOnPhotos ? "on" : ""}`} onClick={() => setContactOnPhotos(false)}>
+                  <b>{t("brand.contactStampOff")}</b>
+                  <span className="hint">{t("brand.contactStampOffHint")}</span>
+                </button>
+                <button type="button" className={`choice ${contactOnPhotos ? "on" : ""}`} onClick={() => setContactOnPhotos(true)}>
+                  <b>{t("brand.contactStampOn")}</b>
+                  <span className="hint">{t("brand.contactStampOnHint")}</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           <p className="hint">{t("brand.legal")}</p>
           {error && <p className="err">{error}</p>}
@@ -548,6 +583,9 @@ export default function Brand() {
             </p>
             <p style={{ marginTop: 6 }}>
               {t("brand.website")}: {form.website.trim() || t("brand.notSet")}
+            </p>
+            <p style={{ marginTop: 6 }}>
+              {t("brand.address")}: {form.address.trim() || t("brand.notSet")}
             </p>
           </div>
           {learnedFrom < 3 && (
