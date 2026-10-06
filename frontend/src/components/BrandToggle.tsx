@@ -25,9 +25,10 @@ export default function BrandToggle({
   offHint,
   usingLabel,
   kit,
+  locked = false,
 }: {
   value: boolean;
-  onChange: (next: boolean) => void;
+  onChange?: (next: boolean) => void;
   ask: string;
   onLabel: string;
   onHint: string;
@@ -35,6 +36,7 @@ export default function BrandToggle({
   offHint: string;
   usingLabel?: string;
   kit?: BrandBits | null;
+  locked?: boolean;
 }) {
   const { t } = useLocale();
   const niche =
@@ -55,16 +57,18 @@ export default function BrandToggle({
   return (
     <div className="brand-toggle">
       <p className="hint">{ask}</p>
-      <div className="choice-row tones">
-        <button type="button" className={`choice ${value ? "on" : ""}`} onClick={() => onChange(true)}>
-          <b>{onLabel}</b>
-          <span>{onHint}</span>
-        </button>
-        <button type="button" className={`choice ${!value ? "on" : ""}`} onClick={() => onChange(false)}>
-          <b>{offLabel}</b>
-          <span>{offHint}</span>
-        </button>
-      </div>
+      {!locked && (
+        <div className="choice-row tones">
+          <button type="button" className={`choice ${value ? "on" : ""}`} onClick={() => onChange?.(true)}>
+            <b>{onLabel}</b>
+            <span>{onHint}</span>
+          </button>
+          <button type="button" className={`choice ${!value ? "on" : ""}`} onClick={() => onChange?.(false)}>
+            <b>{offLabel}</b>
+            <span>{offHint}</span>
+          </button>
+        </div>
+      )}
       {value && hasKit && (
         <div className="brand-using">
           {usingLabel && <p className="hint">{usingLabel}</p>}

@@ -228,7 +228,6 @@ export default function Studio() {
   const [kit, setKit] = useState<BrandKitRow | null>(null);
   const [inviteDraft, setInviteDraft] = useState<InviteCard>(EMPTY_INVITE);
   const [inviteSaved, setInviteSaved] = useState(false);
-  const [brandSaved, setBrandSaved] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -650,19 +649,6 @@ export default function Studio() {
     }
   }
 
-  async function saveUseBrand(next: boolean) {
-    if (!id || next === Boolean(project?.useBrand ?? true)) return;
-    setError("");
-    try {
-      const { project: nextProject } = await api.updateUseBrand(id, next);
-      setProject(nextProject);
-      setBrandSaved(true);
-      setTimeout(() => setBrandSaved(false), 2500);
-    } catch (err) {
-      setError(err instanceof Error ? te(err.message) : t("studio.failBrief"));
-    }
-  }
-
   if (!project) return <p className="hint">{error || t("studio.opening")}</p>;
 
   const makingLabel =
@@ -719,9 +705,9 @@ export default function Studio() {
         </p>
       )}
       <BrandToggle
+        locked
         value={project.useBrand ?? true}
-        onChange={saveUseBrand}
-        ask={t("studio.useBrandAsk")}
+        ask={t(project.useBrand ?? true ? "studio.brandLockedOn" : "studio.brandLockedOff")}
         onLabel={t("studio.useBrandOn")}
         onHint={t("home.useBrandHint")}
         offLabel={t("studio.useBrandOff")}
@@ -729,7 +715,6 @@ export default function Studio() {
         usingLabel={t("studio.brandUsing")}
         kit={kit}
       />
-      {brandSaved && <p className="ok">{t("studio.brandToggleSaved")}</p>}
       <div className="steps">
         {STEPS.map((s, i) => {
           const isDone = doneThrough(project, s.id);
