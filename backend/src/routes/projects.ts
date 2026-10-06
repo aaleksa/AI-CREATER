@@ -277,6 +277,7 @@ projectsRouter.post("/:id/steps/:step", rateLimit(20, 60_000), async (req, res) 
       keepStill: Boolean(req.body?.keepStill),
       keepStillVersionId: req.body?.keepStillVersionId,
       copyEdit: req.body?.copyEdit,
+      uiLanguage: /^uk\b/i.test(String(req.get("Accept-Language") || "")) ? "uk" : "en",
     });
     res.json({ project, archive: archiveState(req.user!.id) });
   } catch (error) {

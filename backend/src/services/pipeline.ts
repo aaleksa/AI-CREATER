@@ -486,6 +486,7 @@ export async function runStep(
     keepStill?: boolean;
     keepStillVersionId?: unknown;
     copyEdit?: unknown;
+    uiLanguage?: unknown;
   } = {}
 ) {
   const project = getProject(projectId, userId);
@@ -680,7 +681,7 @@ export async function runStep(
 
     if (step === "idea") {
       providerTouched = true;
-      const result = await generateIdea(prompt, type, brand, imageIntent, feedback);
+      const result = await generateIdea(prompt, type, brand, imageIntent, feedback, opts.uiLanguage === "uk" ? "uk" : opts.uiLanguage === "en" ? "en" : "");
       updates.idea_json = JSON.stringify(pickIdea(result.data));
       if (isInvitePoster(type, imageIntent)) {
         updates.invite_json = JSON.stringify(preferBriefInvite(result.data.invite, prompt, "invite"));

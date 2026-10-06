@@ -817,7 +817,8 @@ export async function generateIdea(
   type: string,
   brand?: BrandKit | null,
   imageIntent = "",
-  feedback?: RegenNote
+  feedback?: RegenNote,
+  uiLanguage: "uk" | "en" | "" = ""
 ) {
   const fallback: IdeaResult = {
     ...mockIdea(prompt, type, brand, imageIntent),
@@ -828,12 +829,18 @@ export async function generateIdea(
     imageIntent === "invite"
       ? "title, hook, concept, audience, visualDirection, invite { name, date, time, place, address, intro, closing, lines: string[], program: [{ time, title, detail }] }"
       : "title, hook, concept, audience, visualDirection";
+  const ideaLanguage =
+    uiLanguage === "uk"
+      ? "\nLanguage: write title, hook, concept, audience and visualDirection in Ukrainian, whatever language the request is in. Natural, simple Ukrainian."
+      : uiLanguage === "en"
+        ? "\nLanguage: write title, hook, concept, audience and visualDirection in English, whatever language the request is in."
+        : "\nLanguage: write title, hook, concept, audience and visualDirection in the language of the user request.";
   return jsonCompletion<IdeaResult>(
     `You are the creative director of Auteur, an AI content studio. The user never chooses models or prompts. You decide the concept. ${
       type === "image_post"
         ? "Format: still Instagram images. OpenAI gets the whole brief and returns a finished picture. We do not assemble pieces afterwards."
         : "Format: vertical short-form video unless told otherwise."
-    }${kindGuide ? `\n${kindGuide}` : ""}\n${brandContext(brand)}`,
+    }${kindGuide ? `\n${kindGuide}` : ""}${ideaLanguage}\n${brandContext(brand)}`,
     `Content type: ${
       type === "tiktok" || type.includes("reel")
         ? "short vertical video (Instagram or TikTok — same 30-second file)"
