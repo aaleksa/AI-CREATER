@@ -4,9 +4,9 @@ Tell us what you want to create. We'll do the rest.
 
 Auteur is not a Canva clone. It is a simple AI content studio: the user never chooses a model, a prompt stack, or a voice engine. They pick a format, write what they want, and the studio finishes a Reel or a still picture.
 
-UI: **English and Ukrainian** (EN / УК, stored in the browser). The brief stays in the language they wrote.
+UI: **English and Ukrainian** (EN / УК, stored in the browser). The brief stays in the language they wrote. **Light and dark theme** (☀ / ☾, follows the device until you choose) and a phone layout with a bottom tab bar.
 
-Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.29).
+Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.30).
 
 The first studio is **one short video** (30 seconds, Instagram or TikTok — same file) and still **Image / Posts**. A Reel is 150 credits; a still post is 13 (idea + one picture). **Video** and **Advertisement** stay as two separate Create stubs (TZ §2.3). Social post is a third stub.
 
@@ -17,8 +17,8 @@ The first studio is **one short video** (30 seconds, Instagram or TikTok — sam
 | Landing | Promise, not a tool list. Language switch. |
 | Sign up / Sign in | Account + **400** free credits |
 | Create | Short video or Image, optional photo / invite / info / offer, words in EN or UK on designed stills, brand on/off, saved briefs to insert |
-| Studio | Reel: six steps. Image: Idea → Pictures. Brief, copy brief, brand chips |
-| Brand kit | Logo and up to 3 optional photos (place / person / product), colours, font, tone, niche, Instagram. Photos go into the picture prompt when brand is on. |
+| Studio | Reel: six steps. Image: Idea → Pictures. Brief, copy brief. Click a take to select it (used for language, word edits and download). Brand on/off is read-only here |
+| Brand kit | Logo and up to 3 optional photos (place / person / product), colours, font, tone, niche, Instagram. Photos go into photo posts and Reels only when the scene is about them — never onto designed flyers. Completeness counts colours, tone, name, niche, logo. Unsaved edits are flagged; logo and photo uploads no longer overwrite them. |
 | Credits | Plans (current one highlighted), pack prices. Checkout hidden until Stripe. AI cost log hidden |
 | Library | Every project — open, copy the brief, or **delete** |
 
@@ -36,8 +36,8 @@ Plans (provisional until real unit cost is measured):
 - One finished OpenAI picture per Image / Post (photo, invite, info, offer). We do not compose a text layer. Invite / info / offer: the model paints the words on the image.
 - Model: `OPENAI_IMAGE_MODEL` (default **gpt-image-2.5-sunburst**, same family as the OpenAI Images playground).
 - Invite / info / offer: portrait **1024×1536**, shown 2:3 without cropping the footer.
-- On Create, choose whether painted words follow the brief, or are English / Ukrainian. After the picture, **Same picture in EN/UK** is 8 credits: we translate the whole brief (names, dates and addresses too) and return the picture on screen in that language. You can also **edit the words** on that picture (add or remove a line) for 8 credits.
-- If **Use brand kit** is on, the picture prompt gets name, colours, font, tone, niche. Logo is optional — no nag in Studio.
+- On Create, choose whether painted words follow the brief, or are English / Ukrainian. After the picture, **Same picture in EN/UK** is 8 credits: we read the words already painted on the selected take, translate them line by line (your brief is the glossary; names, dates and addresses too; no line is dropped) and return the picture on screen in that language. You can also **edit the words** on that picture (add or remove a line) for 8 credits.
+- If **Use brand kit** is on (chosen on Create only), the picture prompt gets name, colours, font, tone, niche. Owner photos are sent to the model for photo posts and Reels, not for invite / info / offer flyers. Logo is optional — no nag in Studio.
 - Previous takes stay in the project; restore is free.
 - *Share a preview* and *Would you publish this post?* are **hidden** until the closed beta needs them.
 

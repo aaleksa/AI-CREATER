@@ -10,6 +10,11 @@ export default function AppLayout() {
   const location = useLocation();
   const { t } = useLocale();
   const [me, setMe] = useState<Me | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     function load() {
@@ -27,8 +32,21 @@ export default function AppLayout() {
 
   return (
     <div className="app-shell">
-      <aside className="side">
+      <aside className={`side${menuOpen ? " open" : ""}`}>
         <div className="brand">Aut<span>eur</span></div>
+        <NavLink to="/app/billing" className="credits-top" aria-label={t("nav.creditsLabel")}>
+          {t("nav.creditsLabel")}
+          <b>{me?.credits ?? "—"}</b>
+        </NavLink>
+        <button
+          type="button"
+          className="menu-btn"
+          aria-expanded={menuOpen}
+          aria-label={t("nav.menu")}
+          onClick={() => setMenuOpen((v) => !v)}
+        >
+          {menuOpen ? "✕" : "☰"}
+        </button>
         <nav className="nav">
           <NavLink to="/app" end>{t("nav.create")}</NavLink>
           <NavLink to="/app/library">{t("nav.library")}</NavLink>
@@ -40,8 +58,10 @@ export default function AppLayout() {
             {t("nav.creditsLabel")}
             <b>{me?.credits ?? "—"}</b>
           </NavLink>
-          <ThemeSwitch />
-          <LanguageSwitch compact />
+          <div className="controls">
+            <ThemeSwitch />
+            <LanguageSwitch compact />
+          </div>
           <div className="side-account">
             <b>{me?.user.name}</b>
             <span>{t("nav.plan", { name: me?.subscription?.plan_name || "Free" })}</span>
@@ -61,6 +81,12 @@ export default function AppLayout() {
       <main className="main">
         <Outlet context={{ me, setMe }} />
       </main>
+      <nav className="tabbar" aria-label={t("nav.menu")}>
+        <NavLink to="/app" end><span aria-hidden>✦</span>{t("nav.create")}</NavLink>
+        <NavLink to="/app/library"><span aria-hidden>▤</span>{t("nav.library")}</NavLink>
+        <NavLink to="/app/brand"><span aria-hidden>◐</span>{t("nav.brand")}</NavLink>
+        <NavLink to="/app/billing"><span aria-hidden>◈</span>{t("nav.credits")}</NavLink>
+      </nav>
     </div>
   );
 }

@@ -22,6 +22,7 @@ export const uk: Messages = {
     signOut: "Вийти",
     plan: "План {name}",
     creditsLabel: "Кредити",
+    menu: "Меню",
   },
   landing: {
     signIn: "Увійти",

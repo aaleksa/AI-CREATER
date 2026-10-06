@@ -20,6 +20,7 @@ export const en = {
     signOut: "Sign out",
     plan: "{name} plan",
     creditsLabel: "Credits",
+    menu: "Menu",
   },
   landing: {
     signIn: "Sign in",
