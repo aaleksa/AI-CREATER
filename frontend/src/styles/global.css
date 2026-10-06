@@ -128,7 +128,7 @@ button { cursor: pointer; }
   color: var(--muted);
   padding: 6px 10px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 13px;
   letter-spacing: 0.04em;
 }
 .lang-switch button.on {
@@ -221,7 +221,6 @@ button { cursor: pointer; }
   background: transparent;
   border: 0;
   resize: vertical;
-  outline: none;
   font-size: 22px;
   font-family: var(--serif);
   line-height: 1.35;
@@ -372,13 +371,12 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
   overflow-wrap: break-word;
 }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-.field label { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.field label { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 .field input, .field textarea, .field select {
   background: var(--surface-field);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 12px 14px;
-  outline: none;
 }
 .color-row { display: flex; gap: 10px; align-items: center; }
 .color-row input.bad { border-color: #b3261e; }
@@ -491,12 +489,12 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
 .choice.on { border-color: var(--accent-2); }
 .choice-row.tones { grid-template-columns: 1fr 1fr; }
 .choice-row.kinds { grid-template-columns: repeat(4, 1fr); margin-top: 10px; }
-.choice-row.kinds .choice span { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.choice-row.kinds .choice span { color: var(--muted); font-size: 13px; line-height: 1.35; }
 .choice-row.langs { grid-template-columns: 1fr 1fr 1fr; margin-top: 10px; }
-.choice-row.langs .choice span { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.choice-row.langs .choice span { color: var(--muted); font-size: 13px; line-height: 1.35; }
 .image-kinds { margin: 8px 0 4px; }
 .brand-toggle { margin: 16px 0 8px; max-width: 720px; }
-.brand-toggle .choice span { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.brand-toggle .choice span { color: var(--muted); font-size: 13px; line-height: 1.35; }
 .brand-using { margin-top: 10px; }
 .brand-using-row {
   display: flex;
@@ -621,7 +619,6 @@ textarea.brief-box {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 12px 14px;
-  outline: none;
   resize: vertical;
 }
 textarea.brief-box::placeholder {
@@ -737,7 +734,7 @@ textarea.brief-box::placeholder {
     gap: 3px;
     min-height: 56px;
     padding: 6px 4px;
-    font-size: 12px;
+    font-size: 13px;
     color: var(--muted);
   }
   .tabbar a span { font-size: 18px; line-height: 1; }
@@ -784,3 +781,25 @@ textarea.brief-box::placeholder {
   line-height: 1;
 }
 .theme-switch button.on { background: var(--hover-strong); color: var(--ink); }
+
+/* Keyboard focus: visible on everything you can reach with Tab, hidden for mouse clicks. */
+:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+.prompt-stage textarea:focus-visible { outline-offset: 6px; border-radius: 6px; }
+/* The real file input is visually hidden: ring the button that opens it. */
+:has(> input.sr-only:focus-visible) > label.btn {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .format-card:hover { transform: none; }
+}
