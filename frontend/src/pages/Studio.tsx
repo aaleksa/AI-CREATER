@@ -887,15 +887,6 @@ export default function Studio() {
                 </div>
                 {isPoster && (
                   <div style={{ marginTop: 16 }}>
-                    <p className="hint">
-                      {t(
-                        project.pictureLanguage === "en"
-                          ? "studio.pictureLangEn"
-                          : project.pictureLanguage === "uk"
-                            ? "studio.pictureLangUk"
-                            : "studio.pictureLangBrief"
-                      )}
-                    </p>
                     <p className="hint">{t("studio.samePictureHint")}</p>
                     <div className="action-row">
                       <button
