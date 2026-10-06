@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { api, clearSession } from "../lib/api";
+import { Link } from "react-router-dom";
+import { api } from "../lib/api";
 import { useLocale } from "../i18n/locale";
 
 function gbp(amount: number, locale: string) {
@@ -18,7 +18,6 @@ const PLAN_DESC: Record<string, string> = {
 };
 
 export default function Billing() {
-  const nav = useNavigate();
   const { t, te, locale } = useLocale();
   const [plans, setPlans] = useState<{ id: string; name: string; price_gbp: number; monthly_credits: number; description: string }[]>([]);
   const [packs, setPacks] = useState<{ id: string; credits: number; price_gbp: number; label: string }[]>([]);
@@ -170,23 +169,10 @@ export default function Billing() {
       )}
 
       <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>{t("billing.account")}</h2>
-      <p className="hint">{t("billing.deleteHint")}</p>
-      <button
-        className="btn ghost"
-        style={{ marginTop: 12 }}
-        onClick={async () => {
-          if (!window.confirm(t("billing.deleteConfirm"))) return;
-          try {
-            await api.deleteAccount();
-            clearSession();
-            nav("/");
-          } catch (err) {
-            setMsg(err instanceof Error ? te(err.message) : t("billing.deleteFail"));
-          }
-        }}
-      >
-        {t("billing.delete")}
-      </button>
+      <p className="hint">{t("billing.accountHint")}</p>
+      <Link className="btn ghost" style={{ marginTop: 12 }} to="/app/account">
+        {t("billing.manageAccount")}
+      </Link>
     </div>
   );
 }

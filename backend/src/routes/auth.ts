@@ -6,6 +6,7 @@ import { FREE_CREDITS } from "../config.js";
 import { requireAuth, signToken } from "../middleware/auth.js";
 import { ensureCreditAccount, grantCredits } from "../services/credits.js";
 import { deleteAccount } from "../services/account.js";
+import { rateLimit } from "../middleware/rateLimit.js";
 
 export const authRouter = Router();
 
@@ -46,7 +47,7 @@ authRouter.post("/signup", (req, res) => {
       db.prepare(`INSERT INTO brand_kits (id, user_id, business_name) VALUES (?, ?, ?)`).run(uuid(), id, String(name));
     })();
     const user = { id, email: normalised, name: String(name) };
-    res.json({ token: signToken(user), user });
+    res.json({ token: signToken(user, 0), user });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Could not create the account." });
@@ -56,7 +57,7 @@ authRouter.post("/signup", (req, res) => {
 authRouter.post("/login", (req, res) => {
   const { email, password } = req.body ?? {};
   const row = db.prepare("SELECT * FROM users WHERE email = ?").get(String(email || "").toLowerCase().trim()) as
-    | { id: string; email: string; name: string; password_hash: string }
+    | { id: string; email: string; name: string; password_hash: string; token_version: number }
     | undefined;
   if (!row || !bcrypt.compareSync(String(password || ""), row.password_hash)) {
     res.status(401).json({ error: "Email or password is incorrect." });
@@ -65,7 +66,7 @@ authRouter.post("/login", (req, res) => {
   ensureCreditAccount(row.id, FREE_CREDITS, "Free plan credits");
   ensureBrandKit(row.id, row.name);
   const user = { id: row.id, email: row.email, name: row.name };
-  res.json({ token: signToken(user), user });
+  res.json({ token: signToken(user, Number(row.token_version || 0)), user });
 });
 
 authRouter.get("/me", requireAuth, (req, res) => {
@@ -90,7 +91,145 @@ authRouter.get("/me", requireAuth, (req, res) => {
   res.json({ user, subscription: sub ?? null, credits: Number(credits?.credits ?? 0) });
 });
 
-authRouter.delete("/account", requireAuth, async (req, res) => {
+const sensitive = rateLimit(10, 15 * 60_000, "Too many attempts. Wait a few minutes, then try again.", "account");
+
+type UserRow = { id: string; email: string; name: string; password_hash: string; token_version: number };
+
+function userRow(id: string) {
+  return db.prepare("SELECT * FROM users WHERE id = ?").get(id) as UserRow | undefined;
+}
+
+function passwordOk(row: UserRow, password: unknown) {
+  return bcrypt.compareSync(String(password || ""), row.password_hash);
+}
+
+authRouter.patch("/profile", requireAuth, sensitive, (req, res) => {
+  const row = userRow(req.user!.id);
+  if (!row) {
+    res.status(401).json({ error: "Session expired. Please sign in again." });
+    return;
+  }
+  const body = req.body ?? {};
+  const name = body.name === undefined ? row.name : String(body.name).trim();
+  const email = body.email === undefined ? row.email : String(body.email).toLowerCase().trim();
+  if (!name || name.length > 80) {
+    res.status(400).json({ error: "Enter a name (up to 80 characters)." });
+    return;
+  }
+  if (email !== row.email) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      res.status(400).json({ error: "Enter a valid email address." });
+      return;
+    }
+    if (!passwordOk(row, body.currentPassword)) {
+      res.status(403).json({ error: "Current password is incorrect." });
+      return;
+    }
+    const taken = db.prepare("SELECT id FROM users WHERE email = ? AND id != ?").get(email, row.id);
+    if (taken) {
+      res.status(409).json({ error: "An account with this email already exists." });
+      return;
+    }
+  }
+  db.prepare("UPDATE users SET name = ?, email = ? WHERE id = ?").run(name, email, row.id);
+  const user = { id: row.id, email, name };
+  res.json({ token: signToken(user, Number(row.token_version || 0)), user });
+});
+
+authRouter.post("/password", requireAuth, sensitive, (req, res) => {
+  const row = userRow(req.user!.id);
+  if (!row) {
+    res.status(401).json({ error: "Session expired. Please sign in again." });
+    return;
+  }
+  const { currentPassword, newPassword } = req.body ?? {};
+  if (!passwordOk(row, currentPassword)) {
+    res.status(403).json({ error: "Current password is incorrect." });
+    return;
+  }
+  if (String(newPassword || "").length < 6) {
+    res.status(400).json({ error: "Password must be at least 6 characters." });
+    return;
+  }
+  if (String(newPassword) === String(currentPassword)) {
+    res.status(400).json({ error: "Choose a new password that is different from the current one." });
+    return;
+  }
+  const version = Number(row.token_version || 0) + 1;
+  db.prepare("UPDATE users SET password_hash = ?, token_version = ? WHERE id = ?").run(
+    bcrypt.hashSync(String(newPassword), 10),
+    version,
+    row.id
+  );
+  // Every other device is signed out; this one gets a fresh token.
+  res.json({ token: signToken({ id: row.id, email: row.email, name: row.name }, version) });
+});
+
+authRouter.post("/logout-all", requireAuth, (req, res) => {
+  db.prepare("UPDATE users SET token_version = token_version + 1 WHERE id = ?").run(req.user!.id);
+  res.json({ ok: true });
+});
+
+const PRIVATE_PROJECT_KEYS = new Set(["preview_token", "preview_expires_at", "user_id"]);
+
+authRouter.get("/export", requireAuth, sensitive, (req, res) => {
+  const id = req.user!.id;
+  const user = db.prepare("SELECT id, email, name, created_at FROM users WHERE id = ?").get(id);
+  if (!user) {
+    res.status(401).json({ error: "Session expired. Please sign in again." });
+    return;
+  }
+  const parse = (value: unknown) => {
+    if (typeof value !== "string" || !value) return null;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  };
+  const projects = (db.prepare("SELECT * FROM projects WHERE user_id = ? ORDER BY created_at").all(id) as Record<string, unknown>[]).map(
+    (row) => {
+      const out: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(row)) {
+        if (PRIVATE_PROJECT_KEYS.has(key)) continue;
+        if (key.endsWith("_json")) out[key.slice(0, -5)] = parse(value);
+        else out[key] = value;
+      }
+      return out;
+    }
+  );
+  const brand = db.prepare("SELECT * FROM brand_kits WHERE user_id = ?").get(id) as Record<string, unknown> | undefined;
+  if (brand) {
+    delete brand.user_id;
+    brand.learned_summary = parse(brand.learned_summary_json);
+    delete brand.learned_summary_json;
+  }
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    note: "Text and settings only. Pictures, logo, photos and videos stay in the studio — download them from each project.",
+    user,
+    subscription: db.prepare("SELECT status, plan_id, current_period_end, created_at FROM subscriptions WHERE user_id = ?").all(id),
+    credits: db.prepare("SELECT credits FROM credit_balances WHERE user_id = ?").get(id) ?? null,
+    creditTransactions: db
+      .prepare("SELECT amount, type, description, created_at FROM credit_transactions WHERE user_id = ? ORDER BY created_at")
+      .all(id),
+    brandKit: brand ?? null,
+    projects,
+  };
+  res.setHeader("Content-Disposition", 'attachment; filename="auteur-export.json"');
+  res.json(payload);
+});
+
+authRouter.delete("/account", requireAuth, sensitive, async (req, res) => {
+  const row = userRow(req.user!.id);
+  if (!row) {
+    res.status(401).json({ error: "Session expired. Please sign in again." });
+    return;
+  }
+  if (!passwordOk(row, req.body?.password)) {
+    res.status(403).json({ error: "Password is incorrect." });
+    return;
+  }
   try {
     await deleteAccount(req.user!.id);
     res.json({ ok: true });

@@ -7,6 +7,7 @@ import Home from "./pages/Home";
 import Studio from "./pages/Studio";
 import Brand from "./pages/Brand";
 import Billing from "./pages/Billing";
+import Account from "./pages/Account";
 import Library from "./pages/Library";
 import Preview from "./pages/Preview";
 import { hasSession } from "./lib/api";
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="studio/:id" element={<Studio />} />
           <Route path="brand" element={<Brand />} />
           <Route path="billing" element={<Billing />} />
+          <Route path="account" element={<Account />} />
           <Route path="library" element={<Library />} />
         </Route>
       </Routes>

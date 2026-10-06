@@ -171,6 +171,9 @@ button { cursor: pointer; }
   gap: 2px;
 }
 .side-account b { color: var(--ink); font-weight: 500; }
+a.side-account { padding: 8px 10px; margin: -8px -10px; border-radius: 14px; }
+a.side-account:hover, a.side-account.active { background: var(--hover); }
+.side-account-link { color: var(--accent-2); font-size: 13px; }
 
 .main { padding: 36px 48px 80px; max-width: 1180px; }
 
@@ -803,3 +806,11 @@ textarea.brief-box::placeholder {
   }
   .format-card:hover { transform: none; }
 }
+
+.account { max-width: 640px; }
+.account-panel { margin-top: 20px; }
+.account-panel h2 { font-size: 22px; }
+.account-panel .btn { margin-top: 4px; }
+.account-panel .field:last-of-type { margin-bottom: 12px; }
+.btn.danger { color: var(--danger); border-color: var(--danger); }
+.danger-zone { border-color: var(--danger); }

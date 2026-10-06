@@ -62,10 +62,11 @@ export default function AppLayout() {
             <ThemeSwitch />
             <LanguageSwitch compact />
           </div>
-          <div className="side-account">
+          <NavLink to="/app/account" className="side-account" title={t("nav.account")}>
             <b>{me?.user.name}</b>
             <span>{t("nav.plan", { name: me?.subscription?.plan_name || "Free" })}</span>
-          </div>
+            <span className="side-account-link">{t("nav.account")} →</span>
+          </NavLink>
           <button
             type="button"
             className="ghost-link"

@@ -2,7 +2,7 @@
 
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
-**Версія документа:** 1.30  
+**Версія документа:** 1.31  
 **Мова інтерфейсу:** English і українська (перемикач EN / УК, зберігається в браузері)  
 **Валюта:** GBP (£)
 
@@ -109,7 +109,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 | Voice | TTS → `voice.mp3` (`audio_url`); JSON = direction | так; без файлу крок не done |
 | Create | ffmpeg → `reel.mp4` 1080×1920, плеєр + Download | так |
 | Регенерація кроку / одного кадру | `regenerate` + `sceneId` (8 cr) | так — §7.2–7.3 |
-| Видалення акаунта | `DELETE /auth/account` | так для етапу 4; на беті вже є |
+| Керування акаунтом | сторінка `/app/account`: профіль, пароль, експорт даних, вихід усюди, видалення (`DELETE /auth/account` з паролем) | так для етапу 4; на беті вже є |
 | Вертикаль Brand Kit | `salon` / `cafe` / `fitness` | так |
 | S3, постійний Download URL, HQ | немає | **не MVP** |
 | Закрита бета / публічний лендінг | код є; зовні не запускали | бета §1.5 перед ads |
@@ -281,7 +281,7 @@ Kling також уміє зробити відео одразу з тексту
 
 ---
 
-## 4. Екрани (15)
+## 4. Екрани (16)
 
 Усі приватні екрани — у спільному layout: логотип **Auteur**, навігація Create / Library / Brand kit / Credits. Сайдбар знизу окремими блоками: кредити (лінк на Billing) → тема ☀/☾ і EN/УК → ім’я + план → Sign out. На екрані до 960 px замість сайдбара — верхня панель і нижня вкладка (§4.2).
 
@@ -302,6 +302,7 @@ Kling також уміє зробити відео одразу з тексту
 | 13 | Buy credits | блок на billing | JWT |
 | 14 | Лог AI-вартості | той самий billing; **схований** | JWT / API |
 | 15 | Library | `/app/library` | JWT |
+| 16 | Account | `/app/account` | JWT |
 
 Кроки 5–10 — один маршрут студії з прогрес-баром, не окремі URL.
 
@@ -317,7 +318,9 @@ Kling також уміє зробити відео одразу з тексту
 
 **Brand Kit.** Дві групи: *How it looks & sounds* (кольори, шрифт, тон-чипси + optional note) і *About your business* (ім’я, **upload лого**, **до 3 опційних фото** — зал / людина / товар, vertical, сайт, Instagram) — друге опційне, **не** блокер Create. Vertical: salon / café / fitness / **other** + вільний текст; мікрокопі: лише каркас сцен, не обов’язково. Жива прев’ю-картка (CSS, 0 AI). Індикатор «Brand kit N% complete — …» рахує **лише те, що змінює картинки й голос**: кольори (відмінні від дефолту), тон (один зі справжніх чипів), назва, чим займаєтесь, лого — 5 пунктів, `ready` від 50%. Сайт, Instagram і фото в % **не** входять — не нагадувати. Тон розпізнається за початком речення (старі тексти не губляться). HEX у полі перевіряється: некоректний колір підсвічується, Save зупиняється з поясненням (не мовчки дефолт). Learned-картка зверху + **Reset learning**. Лого: `POST /brand/logo` — **max 2 MB, лише PNG/JPEG**, SVG заборонено; `DELETE /brand/logo` стирає лише лого, не фото. `GET /brand/logo` — файл, `nosniff`. Фото: `POST/DELETE/GET /brand/ref/{place|people|product}` — той самий ліміт. Якщо `use_brand=1` — у **текст** Idea/Script/Pictures йдуть назва, кольори, ніша, лого (як знак, не «намалюй його») і опис фото. У **`images.edit`** йдуть лише зал / людина / товар — **не лого** і **не на оформлених флаєрах** (`kind=poster`: invite / info / offer — фото не шлемо взагалі). Для фото-постів і Reel промпт каже: брати фото лише якщо сцена про їхній зал / людину / товар, інакше ігнорувати (флаєр на дискотеку не стає кав’ярнею). Fallback — `images.generate`. Під лого — вибір **«фото без лого» / «поставити на фото»** (`logo_on_photos`, дефолт ні): власник не пише це в брифі. «Поставити» = **наш шар файлу** після кадру (ffmpeg), не малюнок моделі. Disclaimer: назва / лого / фото — його; людей лише за згодою. **Збереження:** лого й фото зберігаються одразу після вибору файлу й **не затирають** поля, які ще вводяться; решта — кнопкою Save. Є рядок «Є зміни, які ще не збережені», кнопка стає «Зберегти зміни», браузер питає підтвердження при закритті з незбереженим. Після Save: нові ідеї й картинки візьмуть зміни, вже зроблені проєкти лишаються як є. Learned-картка рахує всі готові проєкти (пости й Reel).
 
-**Billing.** 4 плани (поточний виділено, `yourPlan`), 3 пакети з £, таблиця кроків 150 / 13. **Choose / Buy сховані**, поки немає `STRIPE_SECRET_KEY`. Лог generation **не показуємо** (`SHOW_AI_COST_LOG=false`). Видалити акаунт — кнопка тут (`DELETE /auth/account`). Окремої сторінки Account немає. Ціни **FROZEN**.
+**Billing.** 4 плани (поточний виділено, `yourPlan`), 3 пакети з £, таблиця кроків 150 / 13. **Choose / Buy сховані**, поки немає `STRIPE_SECRET_KEY`. Лог generation **не показуємо** (`SHOW_AI_COST_LOG=false`). Внизу — лише посилання на **Account** (видалення акаунта переїхало туди). Ціни **FROZEN**.
+
+**Account** (`/app/account`, відкривається кліком по імені в сайдбарі). Секції: **План і кредити** (план, баланс, «з нами з …», лінк на Billing) · **Профіль** (ім’я; пошта — зміна лише з поточним паролем, 409 якщо зайнята) · **Пароль** (поточний + новий двічі, мін. 6 символів, новий ≠ поточний; після зміни всі інші пристрої розлогінені, цей отримує свіжий токен) · **Ваші дані** (`GET /auth/export` → `auteur-export.json`: профіль, текст бренд-кіту, бріфи, idea / script / voice / captions, історія credits; **без** картинок, лого, фото й відео — їх качають з проєкту) · **Сесії** (Sign out; **Sign out on all devices** — підтвердження, потім токени всіх пристроїв стають недійсними) · **Delete account** (поле пароля + confirm; без правильного пароля — 403). Кнопки Save неактивні, поки нема змін. Помилки пароля — 403 `Current password is incorrect.` (не 401, щоб не розлогінювати).
 
 **Library.** Список проєктів: промпт, тип, статус, credits, дата. Відкрити в студії, **скопіювати бриф**, **видалити** (`DELETE /projects/:id` — файли й версії; кредити не повертаються, confirm у UI). Якщо термін вийшов — статус `expired` і підказка, що Create знову платний. Перед витісненням через ліміт плану — попередження, не тихе зникнення.
 
@@ -415,6 +418,7 @@ Text AI  Image AI   TTS
 | email | text unique | lowercase, trim |
 | password_hash | text | bcrypt |
 | name | text | |
+| token_version | integer, дефолт 0 | +1 при зміні пароля й «вийти скрізь»; JWT несе `tv`, `requireAuth` порівнює з БД — старі токени дають 401. Токени без `tv` = 0 |
 | created_at | datetime | |
 
 ### 6.2 `plans`
@@ -722,6 +726,10 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | POST | `/auth/signup` | ні | `{ name, email, password }` → `{ token, user }` |
 | POST | `/auth/login` | ні | `{ email, password }` → `{ token, user }` |
 | GET | `/auth/me` | так | `{ user, subscription, credits }` |
+| PATCH | `/auth/profile` | так | `{ name?, email?, currentPassword? }` → `{ token, user }`. Пошта міняється лише з правильним `currentPassword` (403), зайнята — 409 |
+| POST | `/auth/password` | так | `{ currentPassword, newPassword }` → `{ token }`; піднімає `token_version` |
+| POST | `/auth/logout-all` | так | піднімає `token_version`, усі токени недійсні |
+| GET | `/auth/export` | так | JSON даних користувача (без файлів), `Content-Disposition: attachment` |
 | GET | `/projects` | так | список + `fullVideoCost` + `fullImageCost` |
 | POST | `/projects` | так | `{ type, prompt, imageIntent?, useBrand?, pictureLanguage? }` → 201 `{ project }`; невалідний `imageIntent` / `pictureLanguage` → **400**. `pictureLanguage` лише invite/info/offer: `en` / `uk` / порожньо |
 | GET | `/projects/:id` | так | проєкт + таблиця costs |
@@ -736,7 +744,7 @@ MVP-вирівнювання: **не word-level**. Cues будуються зі 
 | GET | `/share/:token/file` | ні | mp4 прев’ю |
 | GET | `/share/:token/image/:sceneId` | ні | JPG прев’ю |
 | POST | `/projects/:id/versions/:step/:versionId/restore` | так | idea / script / **visuals** (`sceneId?`), 0 credits |
-| DELETE | `/auth/account` | так | спочатку Stripe `subscriptions.cancel`, потім дані |
+| DELETE | `/auth/account` | так | `{ password }` (403 якщо неправильний); спочатку Stripe `subscriptions.cancel`, потім дані. Профіль / пароль / export / delete: rate limit 10 / 15 хв / юзер (429) |
 | GET | `/projects/:id/file` | так | mp4 після Create |
 | GET | `/projects/:id/image/:sceneId` | так | JPG still після Pictures |
 | GET | `/projects/:id/image/:sceneId/versions/:versionId` | так | JPG попереднього take |
@@ -1145,7 +1153,7 @@ TTS, ffmpeg, TTL, регенерація, часткові Visuals, self-service
 3. Статус проєкту `draft | generating | ready | expired`; крок `running` у `ai_generations` — **є**.
 4. Render не скасовується закриттям вкладки; лог `queueWaitMs` / `encodeMs` — **є**.
 5. TTL-job проміжних 7д / mp4 90д — **є**.
-6. JWT expiry (14д) + 401 не з мережі — **є**.
+6. JWT expiry (14д) + 401 не з мережі; відкликання токенів через `token_version` (зміна пароля, «вийти скрізь») — **є**.
 7. Authorization на project/file/audio — **є**.
 8. Concurrent той самий крок — 409 — **є**.
 9. Stripe webhook idempotency — **до публічних підписок**, не блокер інвайт-бети без Stripe.

@@ -10,6 +10,12 @@ export const ERROR_UK: Record<string, string> = {
   "An account with this email already exists.": "Акаунт з цією поштою вже є.",
   "Could not create the account.": "Не вдалося створити акаунт.",
   "Could not delete the account.": "Не вдалося видалити акаунт.",
+  "Enter a name (up to 80 characters).": "Введіть ім’я (до 80 символів).",
+  "Enter a valid email address.": "Введіть коректну адресу пошти.",
+  "Current password is incorrect.": "Поточний пароль неправильний.",
+  "Password is incorrect.": "Пароль неправильний.",
+  "Choose a new password that is different from the current one.": "Оберіть новий пароль, відмінний від поточного.",
+  "Too many attempts. Wait a few minutes, then try again.": "Забагато спроб. Зачекайте кілька хвилин і спробуйте знову.",
   "Tell us what you want to create — a sentence is enough, more is fine.":
     "Скажіть, що хочете створити — речення досить, більше теж добре.",
   "That’s too long. Keep it under 2,000 characters.": "Задовго. До 2 000 символів.",

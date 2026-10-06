@@ -2,7 +2,7 @@ import { currentLocale, translateError } from "../i18n/locale";
 
 const TOKEN = "auteur.token";
 
-export type User = { id: string; email: string; name: string };
+export type User = { id: string; email: string; name: string; created_at?: string };
 export type Me = {
   user: User;
   credits: number;
@@ -201,7 +201,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify(sceneId ? { sceneId } : {}),
     }),
-  deleteAccount: () => request<{ ok: boolean }>("/auth/account", { method: "DELETE" }),
+  updateProfile: (body: { name?: string; email?: string; currentPassword?: string }) =>
+    request<{ token: string; user: User }>("/auth/profile", { method: "PATCH", body: JSON.stringify(body) }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ token: string }>("/auth/password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }),
+  logoutAll: () => request<{ ok: boolean }>("/auth/logout-all", { method: "POST" }),
+  deleteAccount: (password: string) =>
+    request<{ ok: boolean }>("/auth/account", { method: "DELETE", body: JSON.stringify({ password }) }),
   brand: () => request<{ brandKit: BrandKitRow | null }>("/brand"),
   saveBrand: (body: Record<string, string | boolean>) =>
     request<{ brandKit: BrandKitRow }>("/brand", { method: "PUT", body: JSON.stringify(body) }),
