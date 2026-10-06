@@ -10,6 +10,19 @@ const TONES = [
   { id: "calm", labelKey: "brand.toneCalm", text: "Calm and minimal. Unhurried. Quiet, not luxury-speak." },
 ];
 
+function toneOf(text: string) {
+  return TONES.find((item) => text === item.text || (text && text.startsWith(item.text.split(".")[0])));
+}
+
+const HEX = /^#[0-9A-Fa-f]{6}$/;
+
+function snapshot(form: typeof empty, logoOnPhotos: boolean) {
+  // Photos and logo save on their own, so they do not count as unsaved.
+  const { logo_url, ref_place_url, ref_people_url, ref_product_url, ...rest } = form;
+  void logo_url; void ref_place_url; void ref_people_url; void ref_product_url;
+  return JSON.stringify({ ...rest, logoOnPhotos });
+}
+
 const TYPES = [
   { id: "", labelKey: "brand.typeNone", hintKey: "brand.typeNoneHint" },
   { id: "salon", labelKey: "brand.typeSalon", hintKey: "brand.typeSalonHint" },
@@ -89,6 +102,7 @@ export default function Brand() {
   const { t, te } = useLocale();
   const [form, setForm] = useState(empty);
   const [saved, setSaved] = useState(false);
+  const [savedSnap, setSavedSnap] = useState("");
   const [error, setError] = useState("");
   const [learnedFrom, setLearnedFrom] = useState(0);
   const [learnedLines, setLearnedLines] = useState<string[]>([]);
@@ -102,14 +116,35 @@ export default function Brand() {
   const productSrc = useKitImage(form.ref_product_url);
   const refSrc = { place: placeSrc, people: peopleSrc, product: productSrc };
 
-  function apply(kit: BrandKitRow) {
-    setForm(applyKit(kit));
+  function side(kit: BrandKitRow) {
     setLearnedFrom(kit.learned_summary?.basedOnProjects || 0);
     setLearnedLines(kit.learned_lines || []);
     setReadyProjects(kit.ready_projects || 0);
     setHint(formatBrandHint(t, kit.completeness));
+  }
+
+  // Whole kit from the server: after load and after Save.
+  function apply(kit: BrandKitRow) {
+    const next = applyKit(kit);
+    const stamp = kit.logo_on_photos === true || kit.logo_on_photos === "1" || Number(kit.logo_on_photos) === 1;
+    setForm(next);
+    side(kit);
     setOwnNote(Boolean(kit.tone_note));
-    setLogoOnPhotos(kit.logo_on_photos === true || kit.logo_on_photos === "1" || Number(kit.logo_on_photos) === 1);
+    setLogoOnPhotos(stamp);
+    setSavedSnap(snapshot(next, stamp));
+  }
+
+  // Logo and photos save on their own. Do not overwrite what is still being typed.
+  function applyImages(kit: BrandKitRow) {
+    const next = applyKit(kit);
+    setForm((f) => ({
+      ...f,
+      logo_url: next.logo_url,
+      ref_place_url: next.ref_place_url,
+      ref_people_url: next.ref_people_url,
+      ref_product_url: next.ref_product_url,
+    }));
+    side(kit);
   }
 
   useEffect(() => {
@@ -119,9 +154,24 @@ export default function Brand() {
     });
   }, [t]);
 
+  const dirty = savedSnap !== "" && snapshot(form, logoOnPhotos) !== savedSnap;
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    if (!HEX.test(form.primary_color) || !HEX.test(form.secondary_color)) {
+      setError(t("brand.badColour"));
+      return;
+    }
     try {
       const instagram = form.instagram.trim().replace(/^@+/, "");
       const { brandKit } = await api.saveBrand({
@@ -164,7 +214,7 @@ export default function Brand() {
       file,
       async (image) => {
         const { brandKit } = await api.uploadLogo(image);
-        apply(brandKit);
+        applyImages(brandKit);
       },
       t("brand.fallbackLogo")
     );
@@ -174,7 +224,7 @@ export default function Brand() {
     setError("");
     try {
       const { brandKit } = await api.deleteLogo();
-      apply(brandKit);
+      applyImages(brandKit);
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("brand.fallbackRemoveLogo"));
     }
@@ -185,7 +235,7 @@ export default function Brand() {
       file,
       async (image) => {
         const { brandKit } = await api.uploadBrandRef(slot, image);
-        apply(brandKit);
+        applyImages(brandKit);
       },
       t("brand.fallbackRef")
     );
@@ -195,7 +245,7 @@ export default function Brand() {
     setError("");
     try {
       const { brandKit } = await api.deleteBrandRef(slot);
-      apply(brandKit);
+      applyImages(brandKit);
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("brand.fallbackRemoveRef"));
     }
@@ -205,7 +255,7 @@ export default function Brand() {
     if (!window.confirm(t("brand.resetConfirm"))) return;
     try {
       const { brandKit } = await api.resetLearning();
-      apply(brandKit);
+      applyImages(brandKit);
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("brand.fallbackReset"));
     }
@@ -215,7 +265,7 @@ export default function Brand() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  const tone = TONES.find((item) => item.text === form.tone_of_voice);
+  const tone = toneOf(form.tone_of_voice);
   const vertical = TYPES.find((item) => item.id === form.vertical);
   const verticalLabel = vertical
     ? form.vertical === "other" && form.vertical_note.trim()
@@ -265,15 +315,15 @@ export default function Brand() {
               <div>
                 <span className="hint">{t("brand.main")}</span>
                 <div className="color-row">
-                  <input type="color" value={form.primary_color} onChange={(e) => set("primary_color", e.target.value)} />
-                  <input value={form.primary_color} onChange={(e) => set("primary_color", e.target.value)} />
+                  <input type="color" value={HEX.test(form.primary_color) ? form.primary_color : "#C45C26"} onChange={(e) => set("primary_color", e.target.value)} />
+                  <input value={form.primary_color} aria-invalid={!HEX.test(form.primary_color)} className={HEX.test(form.primary_color) ? "" : "bad"} onChange={(e) => set("primary_color", e.target.value)} />
                 </div>
               </div>
               <div>
                 <span className="hint">{t("brand.soft")}</span>
                 <div className="color-row">
-                  <input type="color" value={form.secondary_color} onChange={(e) => set("secondary_color", e.target.value)} />
-                  <input value={form.secondary_color} onChange={(e) => set("secondary_color", e.target.value)} />
+                  <input type="color" value={HEX.test(form.secondary_color) ? form.secondary_color : "#F4EFE8"} onChange={(e) => set("secondary_color", e.target.value)} />
+                  <input value={form.secondary_color} aria-invalid={!HEX.test(form.secondary_color)} className={HEX.test(form.secondary_color) ? "" : "bad"} onChange={(e) => set("secondary_color", e.target.value)} />
                 </div>
               </div>
             </div>
@@ -295,7 +345,7 @@ export default function Brand() {
                 <button
                   key={item.id}
                   type="button"
-                  className={`choice ${form.tone_of_voice === item.text ? "on" : ""}`}
+                  className={`choice ${tone?.id === item.id ? "on" : ""}`}
                   onClick={() => set("tone_of_voice", item.text)}
                 >
                   <b>{t(item.labelKey)}</b>
@@ -438,9 +488,10 @@ export default function Brand() {
 
           <p className="hint">{t("brand.legal")}</p>
           {error && <p className="err">{error}</p>}
-          {saved && <p className="ok">{t("brand.saved")}</p>}
+          {saved && !dirty && <p className="ok">{t("brand.saved")}</p>}
+          {dirty && <p className="hint">{t("brand.unsaved")}</p>}
           <button className="btn" style={{ marginTop: 12 }}>
-            {t("brand.save")}
+            {dirty ? t("brand.saveDirty") : t("brand.save")}
           </button>
         </form>
 

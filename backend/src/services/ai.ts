@@ -208,18 +208,20 @@ function brandRefPrompt(brand?: BrandKit | null, mode: "designed" | "photo" = "d
       "They have a real logo on file. Do not invent a different mark and do not redraw it. We place the file ourselves if they asked."
     );
   }
+  // Designed flyers never get their photos: a disco poster must not turn into their café.
+  if (mode === "designed") return lines;
   if (brand.ref_place_url) {
     lines.push(
-      "A photo of their real place is attached. Match that room, furniture and light. Do not invent a different salon, café or studio."
+      "A photo of their real place is attached. Use it only if this scene is set in their own salon, café or studio — then match that room, furniture and light. If the scene is anywhere else, ignore it."
     );
   }
   if (brand.ref_people_url) {
     lines.push(
-      "A photo of a real person from this business is attached. Prefer that face and hair. Do not invent a different person."
+      "A photo of a real person from this business is attached. Use that face only if a person from the business belongs in this scene. Otherwise ignore it."
     );
   }
   if (brand.ref_product_url) {
-    lines.push("A photo of their real product is attached. If the scene needs the item, use that one.");
+    lines.push("A photo of their real product is attached. Use that item only if the scene needs it. Otherwise ignore it.");
   }
   if (lines.length) {
     lines.push(
@@ -261,9 +263,9 @@ function brandContext(brand?: BrandKit | null) {
       (wantsLogoStamp(brand)
         ? "They uploaded their real logo. We will stamp that file on photos after generation. Do not paint a logo."
         : "They uploaded their real logo so we know the mark. Do not paint it on photographs."),
-    brand.ref_place_url && `They uploaded a photo of their real place. Write visuals that can be shot in THAT room.`,
-    brand.ref_people_url && `They uploaded a photo of a real person who works there. Prefer that person.`,
-    brand.ref_product_url && `They uploaded a photo of their real product. Use that item when the story needs it.`,
+    brand.ref_place_url && `They uploaded a photo of their real place. Use that room only when the story is set in their own place; otherwise ignore it.`,
+    brand.ref_people_url && `They uploaded a photo of a real person who works there. Prefer that person only when someone from the business belongs in the scene.`,
+    brand.ref_product_url && `They uploaded a photo of their real product. Use that item only when the story needs it.`,
     brand.instagram && `Instagram: ${brand.instagram}`,
     brand.website && `Website: ${brand.website}`,
     niche,
@@ -998,7 +1000,7 @@ async function generateSceneFrame(
           kind === "poster" ? "designed" : "photo"
         );
 
-  const refs = keepStill ? [] : brand?.user_id ? listBrandRefFiles(brand.user_id) : [];
+  const refs = keepStill || kind === "poster" ? [] : brand?.user_id ? listBrandRefFiles(brand.user_id) : [];
   const keepKind = keepStill ? logoKindFromBytes(keepStill) : "";
   const keepType = keepKind === "png" ? "image/png" : "image/jpeg";
   const keepName = keepKind === "png" ? `keep-still-${scene.id}.png` : `keep-still-${scene.id}.jpg`;

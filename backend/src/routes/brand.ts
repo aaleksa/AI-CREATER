@@ -32,16 +32,19 @@ const AVOID_COPY: Record<string, string> = {
   boring_hook: "Avoids flat or boring hooks",
 };
 
+const KNOWN_TONES = ["Warm and friendly", "Professional and polished", "Fun and playful", "Calm and minimal"];
+
+// Only what changes the pictures and the voice counts. Website and Instagram never reach a picture.
 function completeness(row: Record<string, unknown>, userId: string) {
+  const primary = String(row.primary_color || "").toUpperCase();
+  const secondary = String(row.secondary_color || "").toUpperCase();
+  const tone = String(row.tone_of_voice || "");
   const checks = [
-    { key: "colours", ok: true, hint: "add your colours" },
-    { key: "font", ok: Boolean(String(row.font || "").trim()), hint: "choose a title type" },
-    { key: "tone", ok: Boolean(String(row.tone_of_voice || "").trim()), hint: "pick a tone" },
+    { key: "colours", ok: primary !== "#C45C26" || secondary !== "#F4EFE8", hint: "add your colours" },
+    { key: "tone", ok: KNOWN_TONES.some((item) => tone.startsWith(item)), hint: "pick a tone" },
     { key: "name", ok: Boolean(String(row.business_name || "").trim()), hint: "add your business name" },
-    { key: "logo", ok: hasBrandLogo(userId) || Boolean(String(row.logo_url || "").trim()), hint: "add your logo for consistent branding" },
     { key: "type", ok: Boolean(String(row.vertical || "").trim()), hint: "say what you run" },
-    { key: "website", ok: Boolean(String(row.website || "").trim()), hint: "add your website" },
-    { key: "instagram", ok: Boolean(String(row.instagram || "").trim()), hint: "add your Instagram" },
+    { key: "logo", ok: hasBrandLogo(userId) || Boolean(String(row.logo_url || "").trim()), hint: "add your logo for consistent branding" },
   ];
   const done = checks.filter((item) => item.ok).length;
   const percent = Math.round((done / checks.length) * 100);
