@@ -952,7 +952,22 @@ details.learned > summary { font-family: var(--serif); font-size: 20px; }
 /* Create: compact steps */
 .create-step { margin: 22px 0 6px; max-width: 760px; }
 .step-label { margin: 0 0 4px; font-weight: 600; }
-details.options { margin: 16px 0 4px; border-top: 1px solid var(--line); padding-top: 12px; }
-details.options > summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
-.options-now { color: var(--muted); font-size: 14px; }
+details.options { margin: 16px 0 4px; }
+.options-summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft);
+}
+.options-summary::-webkit-details-marker { display: none; }
+.options-summary:hover { border-color: var(--accent-2); }
+.options-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.options-text b { font-size: 16px; }
+.options-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.options-chip { font-size: 13px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink); background: var(--accent-soft); }
+.options-more { margin: 0; }
+details.options[open] .options-more { display: none; }
+.options-chevron { flex: none; width: 10px; height: 10px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); margin-right: 4px; transition: transform .15s ease; }
+details.options[open] .options-chevron { transform: rotate(-135deg); }
+details.options[open] .options-summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+details.options > :not(summary) { margin-left: 2px; }
+@media (prefers-reduced-motion: reduce) { .options-chevron { transition: none; } }
 details.options > .brand-toggle, details.options > .examples { margin-top: 14px; }

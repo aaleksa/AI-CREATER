@@ -122,8 +122,7 @@ export default function Home() {
     isPoster ? t(`home.picLang.${pictureLanguage || "brief"}`) : "",
     exampleFiles.length ? t("home.optionsExamples", { n: exampleFiles.length }) : "",
   ]
-    .filter(Boolean)
-    .join(" · ");
+    .filter(Boolean);
 
   return (
     <div className="hero-home">
@@ -220,9 +219,17 @@ export default function Home() {
           placeholder={isImage ? kindHint : t("home.placeholderReel")}
         />
         <details className="options">
-          <summary>
-            <b>{t("home.optionsTitle")}</b>
-            <span className="options-now">{optionsNow}</span>
+          <summary className="options-summary">
+            <span className="options-text">
+              <b>{t("home.optionsTitle")}</b>
+              <span className="options-chips">
+                {optionsNow.map((item) => (
+                  <span className="options-chip" key={item}>{item}</span>
+                ))}
+              </span>
+              <span className="hint options-more">{isPoster ? t("home.optionsHintPoster") : t("home.optionsHint")}</span>
+            </span>
+            <span className="options-chevron" aria-hidden />
           </summary>
 
           <BrandToggle
