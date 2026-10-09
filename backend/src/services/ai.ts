@@ -1118,15 +1118,16 @@ export async function generateOneVisual(
   return { data: frame.visual, provider: frame.provider, model: frame.model, cost: frame.cost };
 }
 
+/**
+ * One image model, no fallback: a failure shows the owner an error instead of silently paying for a
+ * pricier model (gpt-image-1 high is 3–5× the cost; dall-e-3 is gone from the API). See docs/COSTS.md.
+ */
 function imageModels() {
-  const preferred = config.openaiImageModel || "gpt-image-2.5-sunburst";
-  return [...new Set([preferred, "gpt-image-2.5-sunburst", "gpt-image-1", "dall-e-3"])];
+  return [config.openaiImageModel || "gpt-image-2.5-sunburst"];
 }
 
-function keepStillModels(format?: ImageFormat) {
-  const models = [...new Set(["gpt-image-1", ...imageModels().filter((name) => /^gpt-image/i.test(name))])];
-  // Models that can paint the exact shape go first, so the picture is never stretched or trimmed.
-  return format && format !== "square" ? [...models.filter(paintsExactSize), ...models.filter((m) => !paintsExactSize(m))] : models;
+function keepStillModels() {
+  return imageModels().filter((name) => /^gpt-image/i.test(name));
 }
 
 function imageSize(model: string, kind: "video" | "still" | "poster", format?: ImageFormat) {
@@ -1329,7 +1330,7 @@ async function generateSceneFrame(
   };
 
   if (keepRequested) {
-    for (const model of keepStillModels(opts?.format)) {
+    for (const model of keepStillModels()) {
       const edited = await tryModel(model, editOnce);
       if (edited) return edited;
     }
