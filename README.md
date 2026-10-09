@@ -88,12 +88,14 @@ Do not commit `.env`. Do not spend OpenAI credits unless you mean to.
 
 The API also serves the built web app, so there is one URL. From the repo root: `npm run build` (installs both parts and builds `frontend/dist`), then `npm start`. Needs Node 22.13+.
 
+A root `Dockerfile` is included (Node 22, DejaVu font, builds the web app, sets `DATA_DIR=/data`), so Railway builds with Docker instead of auto-detection. Mount a Volume at `/data`.
+
 Set in the host:
 
 - `JWT_SECRET` — required in production, the server refuses to start with the default
 - `OPENAI_API_KEY`, `APP_URL` (your public URL)
 - `DATA_DIR` — path of a **persistent volume** (for example `/data`). The SQLite file and every upload and generated picture live there; without a volume they are wiped on each deploy
-- the contact line on photos needs a system font (DejaVu or Liberation); check it after the first deploy
+- the contact line on photos needs a system font (DejaVu is installed by the `Dockerfile`); check it after the first deploy
 
 ## Intentionally not in v1
 
