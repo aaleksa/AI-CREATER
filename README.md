@@ -100,7 +100,7 @@ Set in the host:
 
 - `JWT_SECRET` — required in production, the server refuses to start with the default
 - `OPENAI_API_KEY`, `APP_URL` (your public URL)
-- `ADMIN_USER_IDS` — your account id (shown on the Account page; comma-separated for more). Turns on the read-only Database page at `/app/admin`; unset means nobody can open it. Ids, not emails, because anyone can sign up with an unused email
+- `ADMIN_USER_IDS` — your account id (comma-separated for more; ids are listed in the `users` table on the Database page, and an admin also sees their own on the Account page). Turns on the read-only Database page at `/app/admin`; unset means nobody can open it. Ids, not emails, because anyone can sign up with an unused email
 - `DATA_DIR` — path of a **persistent volume** (for example `/data`). The SQLite file and every upload and generated picture live there; without a volume they are wiped on each deploy
 - the contact line on photos needs a system font (DejaVu is installed by the `Dockerfile`); check it after the first deploy
 
