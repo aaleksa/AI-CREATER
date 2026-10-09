@@ -75,6 +75,8 @@ export const en = {
     name: "Name",
     email: "Email",
     password: "Password",
+    showPassword: "Show password",
+    hidePassword: "Hide password",
     createAccount: "Create account",
     signIn: "Sign in",
     working: "Working…",

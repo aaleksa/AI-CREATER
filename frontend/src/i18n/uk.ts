@@ -78,6 +78,8 @@ export const uk: Messages = {
     name: "Ім’я",
     email: "Електронна пошта",
     password: "Пароль",
+    showPassword: "Показати пароль",
+    hidePassword: "Сховати пароль",
     createAccount: "Створити акаунт",
     signIn: "Увійти",
     working: "Зачекайте…",

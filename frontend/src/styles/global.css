@@ -381,6 +381,15 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
   border-radius: 12px;
   padding: 12px 14px;
 }
+.pw-wrap { position: relative; display: block; }
+.pw-wrap input { width: 100%; padding-right: 46px; }
+.pw-eye {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+  width: 36px; height: 36px; display: grid; place-items: center;
+  background: none; border: 0; border-radius: 8px; color: var(--muted); cursor: pointer;
+}
+.pw-eye:hover, .pw-eye[aria-pressed="true"] { color: var(--text, inherit); }
+.pw-eye:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 .color-row { display: flex; gap: 10px; align-items: center; }
 .color-row input.bad { border-color: #b3261e; }
 .color-row input[type="color"] { width: 42px; height: 42px; border: 0; background: none; padding: 0; }

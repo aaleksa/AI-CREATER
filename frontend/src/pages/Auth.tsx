@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, saveSession } from "../lib/api";
 import LanguageSwitch from "../components/LanguageSwitch";
 import ThemeSwitch from "../components/ThemeSwitch";
+import PasswordInput from "../components/PasswordInput";
 import { useLocale } from "../i18n/locale";
 
 export default function Auth({ mode }: { mode: "login" | "signup" }) {
@@ -55,7 +56,13 @@ export default function Auth({ mode }: { mode: "login" | "signup" }) {
         </div>
         <div className="field">
           <label>{t("auth.password")}</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+          <PasswordInput
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={6}
+            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+          />
         </div>
         {error && <p className="err">{error}</p>}
         <button className="btn" disabled={busy}>

@@ -15,7 +15,7 @@ The first studio is **one short video** (30 seconds, Instagram or TikTok — sam
 | Screen | What it does |
 | --- | --- |
 | Landing | Promise, not a tool list. Language switch. |
-| Sign up / Sign in | Account + **400** free credits |
+| Sign up / Sign in | Account + **400** free credits. Every password field has an eye button to show / hide what you typed |
 | Create | Short video or Image. For Image: kind (photo / invite / info / offer) and **where you will post it** (Instagram or Facebook post square or portrait, Stories / Reels, Facebook wide). The brief is the main field. Under **More options**: brand on/off, words in EN or UK on designed stills, up to 3 **example pictures** sent with the request, saved briefs |
 | Studio | Reel: six steps. Image: Idea → Pictures. Brief, copy brief, example pictures (add or remove). The idea is written in the interface language. Click a take to select it (used for language, word edits and download). Brand on/off is read-only here |
 | Brand kit | One page in four sections (Business, Look, Logo & photos, Contacts) with a live preview, a setup checklist and a sticky Save bar. Logo and up to 3 optional photos (place / person / product), colours, font, tone, niche, Instagram. Photos go into photo posts and Reels only when the scene is about them — never onto designed flyers. Your business address is printed on invitations and offers when the brief names no place, so you stop repeating it. Instagram and website end every Reel with a real call to action (“find us on Instagram…”) and can print one line on photo posts. Completeness counts colours, tone, name, niche, logo. Unsaved edits are flagged; logo and photo uploads no longer overwrite them. |

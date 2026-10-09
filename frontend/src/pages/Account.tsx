@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, clearSession, fetchMedia, refreshMe, saveSession, type Me } from "../lib/api";
 import { useLocale } from "../i18n/locale";
+import PasswordInput from "../components/PasswordInput";
 
 type Note = { kind: "ok" | "err"; text: string } | null;
 
@@ -182,9 +183,8 @@ export default function Account() {
           <div className="field">
             <label htmlFor="acc-email-pass">{t("account.currentPassword")}</label>
             <p className="hint">{t("account.emailNeedsPassword")}</p>
-            <input
+            <PasswordInput
               id="acc-email-pass"
-              type="password"
               value={emailPassword}
               autoComplete="current-password"
               onChange={(e) => setEmailPassword(e.target.value)}
@@ -202,15 +202,15 @@ export default function Account() {
         <p className="hint">{t("account.passwordHint")}</p>
         <div className="field">
           <label htmlFor="acc-cur">{t("account.currentPassword")}</label>
-          <input id="acc-cur" type="password" value={current} autoComplete="current-password" onChange={(e) => setCurrent(e.target.value)} />
+          <PasswordInput id="acc-cur" value={current} autoComplete="current-password" onChange={(e) => setCurrent(e.target.value)} />
         </div>
         <div className="field">
           <label htmlFor="acc-new">{t("account.newPassword")}</label>
-          <input id="acc-new" type="password" value={next} minLength={6} autoComplete="new-password" onChange={(e) => setNext(e.target.value)} />
+          <PasswordInput id="acc-new" value={next} minLength={6} autoComplete="new-password" onChange={(e) => setNext(e.target.value)} />
         </div>
         <div className="field">
           <label htmlFor="acc-again">{t("account.repeatPassword")}</label>
-          <input id="acc-again" type="password" value={again} minLength={6} autoComplete="new-password" onChange={(e) => setAgain(e.target.value)} />
+          <PasswordInput id="acc-again" value={again} minLength={6} autoComplete="new-password" onChange={(e) => setAgain(e.target.value)} />
         </div>
         <NoteLine note={passwordNote} />
         <button className="btn" disabled={!current || !next || !again || busy === "password"}>
@@ -244,9 +244,8 @@ export default function Account() {
         <p className="hint">{t("account.deleteHint")}</p>
         <div className="field" style={{ marginTop: 12 }}>
           <label htmlFor="acc-del">{t("account.deletePassword")}</label>
-          <input
+          <PasswordInput
             id="acc-del"
-            type="password"
             value={deletePassword}
             autoComplete="current-password"
             onChange={(e) => setDeletePassword(e.target.value)}
