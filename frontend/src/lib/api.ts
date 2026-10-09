@@ -156,10 +156,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       headers: localeHeaders(init?.headers),
     });
   } catch {
-    throw new ApiError(translateError(locale, "Studio is offline. Start the API and try again."), 503);
+    throw new ApiError(translateError(locale, "We can’t reach the studio. Check your internet and try again."), 503);
   }
   const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
-  if (!res.ok) throw new ApiError(translateError(locale, data.error || "Request failed"), res.status, data.code);
+  if (!res.ok) {
+    throw new ApiError(translateError(locale, data.error || "Something went wrong. Try again in a minute."), res.status, data.code);
+  }
   return data as T;
 }
 
@@ -300,6 +302,6 @@ export async function fetchMedia(path: string) {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
-  if (!res.ok) throw new ApiError(translateError(locale, "File not ready"), res.status);
+  if (!res.ok) throw new ApiError(translateError(locale, "This file isn’t ready yet."), res.status);
   return res.blob();
 }

@@ -456,7 +456,7 @@ export async function renderReel(params: {
   primaryColor?: string;
 }) {
   if (!hasVoiceFile(params.projectId)) {
-    throw new Error("Generate the voice audio first.");
+    throw Object.assign(new Error("Record the voice first."), { status: 400 });
   }
   const queuedAt = Date.now();
   await acquireRenderSlot();

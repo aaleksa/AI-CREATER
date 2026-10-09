@@ -7,6 +7,7 @@ import { createPreviewLink, findPreview, serializePreview } from "../services/sh
 import { hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
 import { archiveState } from "../services/archive.js";
 import { rateLimit } from "../middleware/rateLimit.js";
+import { publicError, USER_ERRORS } from "../services/userErrors.js";
 import { addExampleRef, exampleRefFile, exampleRefList, readExampleUpload, removeExampleRef } from "../services/projectRefs.js";
 
 function readPrompt(value: unknown) {
@@ -40,7 +41,7 @@ projectsRouter.get("/", (req, res) => {
 projectsRouter.post("/", (req, res) => {
   const { type, prompt, imageIntent } = req.body ?? {};
   if (!FORMAT_TYPES.includes(type as (typeof FORMAT_TYPES)[number])) {
-    res.status(400).json({ error: "Unknown format." });
+    res.status(400).json({ error: USER_ERRORS.refresh });
     return;
   }
   const parsed = readPrompt(prompt);
@@ -114,8 +115,8 @@ projectsRouter.post("/:id/refs", rateLimit(30, 60_000), (req, res) => {
   try {
     addExampleRef(row.id, upload.buffer, upload.kind);
   } catch (error) {
-    const err = error as Error & { status?: number };
-    res.status(err.status || 500).json({ error: err.message });
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
     return;
   }
   res.json({ refs: exampleRefList(row.id) });
@@ -230,8 +231,8 @@ projectsRouter.patch("/:id/invite", async (req, res) => {
     const project = await updateInvite(req.user!.id, String(req.params.id), req.body?.invite ?? req.body);
     res.json({ project });
   } catch (error) {
-    const err = error as Error & { status?: number };
-    res.status(err.status || 500).json({ error: err.message || "Could not update the invitation." });
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
   }
 });
 
@@ -278,15 +279,15 @@ projectsRouter.post("/:id/share", (req, res) => {
     const link = createPreviewLink(req.user!.id, String(req.params.id));
     res.json(link);
   } catch (error) {
-    const err = error as Error & { status?: number };
-    res.status(err.status || 500).json({ error: err.message || "Could not create a preview link." });
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
   }
 });
 
 projectsRouter.post("/:id/versions/:step/:versionId/restore", (req, res) => {
   const step = String(req.params.step);
   if (step !== "idea" && step !== "script" && step !== "visuals") {
-    res.status(400).json({ error: "Only idea, script and picture versions can be restored." });
+    res.status(400).json({ error: USER_ERRORS.refresh });
     return;
   }
   const sceneRaw = req.body?.sceneId;
@@ -295,8 +296,8 @@ projectsRouter.post("/:id/versions/:step/:versionId/restore", (req, res) => {
     const project = restoreStepVersion(req.user!.id, String(req.params.id), step, String(req.params.versionId), sceneId);
     res.json({ project });
   } catch (error) {
-    const err = error as Error & { status?: number };
-    res.status(err.status || 500).json({ error: err.message || "Could not restore that version." });
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
   }
 });
 
@@ -310,8 +311,8 @@ projectsRouter.post("/:id/feedback", (req, res) => {
     );
     res.json({ project });
   } catch (error) {
-    const err = error as Error & { status?: number };
-    res.status(err.status || 500).json({ error: err.message || "Could not save feedback." });
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
   }
 });
 
@@ -323,15 +324,15 @@ projectsRouter.post("/:id/shot", rateLimit(30, 60_000), (req, res) => {
     });
     res.json({ project });
   } catch (error) {
-    const err = error as Error & { status?: number };
-    res.status(err.status || 500).json({ error: err.message || "Could not update the shot." });
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
   }
 });
 
 projectsRouter.post("/:id/steps/:step", rateLimit(20, 60_000), async (req, res) => {
   const step = String(req.params.step) as keyof typeof CREDIT_COSTS;
   if (!(step in CREDIT_COSTS)) {
-    res.status(400).json({ error: "Unknown step." });
+    res.status(400).json({ error: USER_ERRORS.refresh });
     return;
   }
   try {
@@ -350,7 +351,7 @@ projectsRouter.post("/:id/steps/:step", rateLimit(20, 60_000), async (req, res) 
     });
     res.json({ project, archive: archiveState(req.user!.id) });
   } catch (error) {
-    const err = error as Error & { status?: number; code?: string };
-    res.status(err.status || 500).json({ error: err.message || "Generation failed.", code: err.code });
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
   }
 });

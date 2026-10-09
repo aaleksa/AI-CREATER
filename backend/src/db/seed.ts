@@ -6,7 +6,7 @@ const plans = [
     name: "Free",
     price_gbp: 0,
     monthly_credits: 400,
-    description: "Enough for two finished Reels. Prices frozen until TTS and render cost is measured.",
+    description: "Enough for two finished Reels. Prices are fixed for the beta.",
   },
   {
     id: "creator",

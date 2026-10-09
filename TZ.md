@@ -2,7 +2,7 @@
 
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
-**Версія документа:** 1.40  
+**Версія документа:** 1.41  
 **Мова інтерфейсу:** English і українська (перемикач EN / УК, зберігається в браузері)  
 **Валюта:** GBP (£)
 
@@ -105,7 +105,7 @@ ElevenLabs як дефолт — **відхилено для MVP**. Перегл
 | Create: Short video / Image Post + промпт | так | так |
 | 6 кроків студії, credits, Brand Kit, Library | так | так |
 | `ai_generations` (собівартість) | так (API) | так у логах. UI на Credits **схований** |
-| Idea / Script / Visuals / Captions | так. Visuals **потребують** `OPENAI_API_KEY` (інакше 400). Captions = scene-level | так; word-level не вимагається в MVP |
+| Idea / Script / Visuals / Captions | так. Visuals **потребують** `OPENAI_API_KEY` (інакше 503 «We can’t make pictures right now…», причина в логу). Captions = scene-level | так; word-level не вимагається в MVP |
 | Voice | TTS → `voice.mp3` (`audio_url`); JSON = direction | так; без файлу крок не done |
 | Create | ffmpeg → `reel.mp4` 1080×1920, плеєр + Download | так |
 | Регенерація кроку / одного кадру | `regenerate` + `sceneId` (8 cr) | так — §7.2–7.3 |
@@ -318,11 +318,17 @@ Kling також уміє зробити відео одразу з тексту
 
 **Іконка вкладки.** Serif «A» кольору кремового паперу (`#f4efe8`) з мідною (`#e8a87c`) перекладиною на темному фоні бренду, тонка мідна рамка (`#c45c26`). Файли: `frontend/public/favicon.svg` (основна), `favicon-32.png`, `favicon.ico`, `apple-touch-icon.png` (180, без прозорості), `icon-192/512.png`. `theme-color` = `#0c0b0a`.
 
-**ComfyUI (необов’язково, лише локально).** Якщо задано `COMFYUI_URL`, фото та кадри Reels (kind `still`/`video`) малює локальний ComfyUI через його HTTP API (`/prompt`, `/history`, `/view`) за workflow у API-форматі (`backend/comfy/workflow.json`, інакше `workflow.example.json`) із плейсхолдерами `{{prompt}} {{negative}} {{checkpoint}} {{width}} {{height}} {{seed}} {{steps}} {{cfg}}`. Дизайнерські флаєри зі словами, картинки з прикладами/фото бренду та редагування існуючої картинки лишаються на OpenAI. Правило: `COMFYUI_URL` задано → малює ComfyUI; не задано → OpenAI. Якщо ComfyUI вимкнений, помилився або не вклався в 300 с (завдання скасовується), застосунок показує помилку і **не** йде до OpenAI (немає прихованих витрат); `COMFYUI_FALLBACK=openai` вмикає перехід на OpenAI. Кредити однакові. На хостингу змінна не задається, тож продакшн завжди на OpenAI. Не відкривати ComfyUI в інтернет: він без авторизації.
+**ComfyUI (необов’язково, лише локально).** Якщо задано `COMFYUI_URL`, фото та кадри Reels (kind `still`/`video`) малює локальний ComfyUI через його HTTP API (`/prompt`, `/history`, `/view`) за workflow у API-форматі (`backend/comfy/workflow.json`, інакше `workflow.example.json`) із плейсхолдерами `{{prompt}} {{negative}} {{checkpoint}} {{width}} {{height}} {{seed}} {{steps}} {{cfg}}`. Дизайнерські флаєри зі словами, картинки з прикладами/фото бренду та редагування існуючої картинки лишаються на OpenAI. Правило: `COMFYUI_URL` задано → малює ComfyUI; не задано → OpenAI. Якщо ComfyUI вимкнений, помилився або не вклався в 300 с (завдання скасовується), власник бачить «зараз не вдається зробити картинку» (без слова ComfyUI), причина — в логу; застосунок **не** йде до OpenAI (немає прихованих витрат); `COMFYUI_FALLBACK=openai` вмикає перехід на OpenAI. Кредити однакові. На хостингу змінна не задається, тож продакшн завжди на OpenAI. Не відкривати ComfyUI в інтернет: він без авторизації.
 
 **Прев’ю картинки.** У Studio для image_post (photo, invite, info, offer) поверх картинки нічого не накладається: службовий підпис сцени «Finished picture» більше не показується. Підписи на прев’ю лише для Reels.
 
-**Помилки картинок.** Якщо картинки не вийшли, текст помилки називає причину: невірний ключ API, організація без верифікації, білінг, сервіс зайнятий або недоступний, бриф заблоковано. Загальне «спробуйте простіший опис» лише коли причина невідома. Повна помилка OpenAI — у логу сервера (`Image frame failed …`).
+**Тексти помилок (для власника, не для розробника).** Користувач ніколи не бачить назв сервісів і налаштувань: ComfyUI, OpenAI, ключ API, `.env`, `COMFYUI_*`, ffmpeg, назви моделей, верифікація організації, «Unknown step/scene». Усі тексти, які бекенд може показати через збій, зібрано в `backend/src/services/userErrors.ts` (`USER_ERRORS`), кожен має український рядок у `frontend/src/i18n/errors.ts`. Технічна причина — лише в логу сервера (`Image frame failed …`, `ComfyUI failed: …`, `Step <step> (<id>) failed …`, `<METHOD> <path> failed …`).
+- Помилка з 4xx-статусом (кинута навмисно, напр. «Not enough credits…», «Check the shot first…») показується як є.
+- Будь-яка інша (5xx, без статусу, падіння провайдера чи ffmpeg) проходить через `forOwner` / `publicError`: пишемо в лог, власнику — простий текст кроку: картинка «We couldn’t make the picture. Try again — if it happens again, describe it a little differently.», кадри Reel, голос, субтитри, відео, текст ідеї/сценарію; поза кроками — «Something went wrong. Try again in a minute.».
+- Картинки: ключ / білінг / модель недоступна / організація не верифікована / ComfyUI не відповідає / немає `OPENAI_API_KEY` → «We can’t make pictures right now. Try again in a few minutes.» (503 для відсутнього ключа); фільтр безпеки → «We can’t make a picture from this description. Try saying it a little differently.»; 429 → «Lots of requests right now. Try again in a minute.».
+- Неможливі з UI запити (невідомий крок, формат, сцена, версія) → «Something went wrong. Refresh the page and try again.».
+- Фронт: немає з’єднання → «We can’t reach the studio. Check your internet and try again.»; відповідь без тексту → «Something went wrong. Try again in a minute.».
+- Те саме для підказок в інтерфейсі: без назв постачальників і налаштувань («З усього брифу робимо одну готову картинку», а не «бриф іде в OpenAI»; «Кредити нараховано» без згадки ключів Stripe; план Free — «На час бети ціни фіксовані», без TTS). Службовий журнал вартості AI (провайдер, модель, £) прихований прапорцем `SHOW_AI_COST_LOG = false`.
 
 **Auth.** Ім’я (тільки signup), email, пароль. Помилки зрозумілою мовою. Кожне поле пароля (Auth і Account) має кнопку «око» — показати / сховати введене (`PasswordInput`).
 
@@ -877,7 +883,7 @@ Image / Post: idea → visuals. Один JPG з OpenAI (§3.6). `PATCH /invite` 
 | Живих кадрів нижче порогу (ключ є) | `failed` | **зарезервовані 40 лишаються** (вендор уже виставлений) | *We couldn’t generate enough frames (k of n). Try a simpler description.* |
 | Живих ≥ порогу, частина placeholder | `succeeded` | **live × 8** (не 40) | Бейдж на кожному placeholder **до Voice** |
 | Усі n кадрів живі | `succeeded` | **n × 8** (5 сцен = 40) | Звичайний прев’ю |
-| Немає `OPENAI_API_KEY` | не стартує | 0 | **400** *Pictures need an OpenAI key.* Градієнт-прев’ю **не** пишеться |
+| Немає `OPENAI_API_KEY` | не стартує | 0 | **503** *We can’t make pictures right now. Try again in a few minutes.* (причина в логу). Градієнт-прев’ю **не** пишеться |
 
 5xx від OpenAI Images: **один автоматичний retry** на кадр, потім як відмова (placeholder / поріг). 4xx policy — без retry, одразу placeholder.
 
@@ -1030,7 +1036,7 @@ Brand Kit, коли `use_brand=1`: кольори / ніша / лого — у *
 6. Video / Ad / Social post не створюють проєкт. **Image / Post створює** (13 cr; `GET …/image/:sceneId` = `still-1.jpg` з OpenAI). Invite / info / offer: Same picture in EN/UK — 8 cr, той самий JPG-layout.
 7. Brand Kit зберігається і впливає на Idea; якщо `use_brand=1` — кольори/ніша в тексті, фото залу/людини/товару в `images.edit`, лого на кадр лише шаром якщо `logo_on_photos`. Лого і фото не обов’язкові.
 8. Credits: плани, пакети, таблиця 150/13, поточний план виділено. Лог generation у API є, у UI **схований**. Checkout без Stripe не відкривається.
-9. Idea / Script / Captions без ключа дають preview-JSON. **Visuals без `OPENAI_API_KEY` — 400.** Voice без ключа: `say` або тиша. **Бета і зовнішнє демо — ключ + TTS + ffmpeg**, не тихий wav.
+9. Idea / Script / Captions без ключа дають preview-JSON. **Visuals без `OPENAI_API_KEY` — 503 з людським текстом.** Voice без ключа: `say` або тиша. **Бета і зовнішнє демо — ключ + TTS + ffmpeg**, не тихий wav.
 10. `GET /health` = 200. `GET /projects/:id/file` віддає mp4, коли файл є.
 
 **Утримання (інакше «успіх MVP» суб’єктивний; фазу постів не починати):**

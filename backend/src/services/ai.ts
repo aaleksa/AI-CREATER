@@ -3,6 +3,7 @@ import OpenAI, { toFile } from "openai";
 import { config } from "../config.js";
 import { canvasLine, padToNative, paintsExactSize, sizeFor, type ImageFormat } from "./imageFormats.js";
 import { COMFY_FAILED_MESSAGE, comfyEnabled, comfyFallsBackToOpenAI, comfyHandles, comfyPaint } from "./comfy.js";
+import { USER_ERRORS } from "./userErrors.js";
 import { listBrandRefFiles, logoKindFromBytes, type BrandImageFile } from "./brandAssets.js";
 import { guessPoster, type InviteCard } from "./invite.js";
 
@@ -1085,7 +1086,7 @@ export async function generateVisuals(
   }
 
   if (openai && live === 0) {
-    throw Object.assign(new Error(lastError || "We couldn’t generate these frames. Try a simpler description."), {
+    throw Object.assign(new Error(lastError || (kind === "video" ? USER_ERRORS.framesFailed : USER_ERRORS.pictureFailed)), {
       status: 400,
     });
   }
@@ -1110,7 +1111,7 @@ export async function generateOneVisual(
   const openai = client();
   const frame = await generateSceneFrame(scene, brand, kind, opts);
   if (openai && frame.visual.placeholder) {
-    throw Object.assign(new Error(frame.error || "We couldn’t generate this frame. Try a simpler description."), {
+    throw Object.assign(new Error(frame.error || (kind === "video" ? USER_ERRORS.frameFailed : USER_ERRORS.pictureFailed)), {
       status: 400,
     });
   }
@@ -1134,31 +1135,25 @@ function imageSize(model: string, kind: "video" | "still" | "poster", format?: I
   return model === "dall-e-3" ? ("1024x1792" as const) : ("1024x1536" as const);
 }
 
-const GENERIC_IMAGE_ERROR = "We couldn’t generate these frames. Try a simpler description.";
+const GENERIC_IMAGE_ERROR = USER_ERRORS.pictureFailed;
 
-/** Says what actually went wrong, so a server problem is not mistaken for a bad brief. */
+/**
+ * Tells the owner whether to reword or just wait, without naming the provider or its settings.
+ * Server-side problems (model access, billing, key, organization) are logged with the provider's text by the caller.
+ */
 function humanImageError(message: string, status = 0) {
-  if (/does not exist/i.test(message)) {
-    return "This OpenAI project has no image model. Enable gpt-image-2.5-sunburst in the project, or set OPENAI_IMAGE_MODEL.";
+  if (
+    /does not exist|billing|quota|insufficient|incorrect api key|invalid api key|invalid_api_key|authentication|must be verified|organization.*verif|verify organization/i.test(
+      message
+    ) ||
+    status === 401 ||
+    status === 403
+  ) {
+    return USER_ERRORS.pictureUnavailable;
   }
-  if (/billing|quota|insufficient/i.test(message)) {
-    return "OpenAI image billing is not enabled on this key.";
-  }
-  if (status === 401 || /incorrect api key|invalid api key|invalid_api_key|authentication/i.test(message)) {
-    return "OpenAI rejected the API key on this server. Check OPENAI_API_KEY.";
-  }
-  if (/must be verified|organization.*verif|verify organization/i.test(message)) {
-    return "OpenAI needs this organization verified before it allows image models (platform.openai.com → Settings → Organization → Verify).";
-  }
-  if (/safety|moderation|content[_ ]policy|blocked/i.test(message)) {
-    return "The image check blocked this brief. Reword it more simply and try again.";
-  }
-  if (status === 429 || /rate limit/i.test(message)) {
-    return "The image service is busy. Try again in a minute.";
-  }
-  if (/connection error|timed? ?out|econn|enotfound|fetch failed/i.test(message)) {
-    return "We couldn’t reach the image service. Try again in a minute.";
-  }
+  if (/safety|moderation|content[_ ]policy|blocked/i.test(message)) return USER_ERRORS.pictureBlocked;
+  if (status === 429 || /rate limit/i.test(message)) return USER_ERRORS.pictureBusy;
+  if (/connection error|timed? ?out|econn|enotfound|fetch failed/i.test(message)) return USER_ERRORS.pictureUnavailable;
   return GENERIC_IMAGE_ERROR;
 }
 

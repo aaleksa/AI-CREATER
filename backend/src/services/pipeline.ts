@@ -38,6 +38,7 @@ import { inviteFrom, parseInvite, preferBriefInvite } from "./invite.js";
 import { parseStepFeedback, recordStepRejection } from "./feedback.js";
 import { maybeRefreshLearnedSummary } from "./learning.js";
 import { previewState } from "./share.js";
+import { forOwner, USER_ERRORS } from "./userErrors.js";
 
 export const FORMAT_TYPES = ["video", "instagram_reel", "tiktok", "image_post", "advertisement", "social_post"] as const;
 export type FormatType = (typeof FORMAT_TYPES)[number];
@@ -233,7 +234,7 @@ function brandFor(userId: string): BrandKit | null {
 function getProject(id: string, userId: string) {
   const project = db.prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?").get(id, userId) as Record<string, unknown> | undefined;
   if (!project) {
-    const err = new Error("Project not found") as Error & { status: number };
+    const err = new Error("Project not found.") as Error & { status: number };
     err.status = 404;
     throw err;
   }
@@ -551,7 +552,7 @@ export async function runStep(
   const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
   const sceneId = Number.isFinite(opts.sceneId) ? Number(opts.sceneId) : undefined;
   if (sceneId && step !== "visuals") {
-    throw Object.assign(new Error("Only visuals can regenerate a single frame."), { status: 400 });
+    throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   }
   const prompt = String(project.prompt);
   const type = String(project.type);
@@ -590,7 +591,7 @@ export async function runStep(
       .get(userId, idempotencyKey) as { status: string; project_id: string } | undefined;
     if (prior?.status === "succeeded") return serializeProject(getProject(projectId, userId));
     if (prior?.status === "running") {
-      throw Object.assign(new Error("This request is already running."), { status: 409 });
+      throw Object.assign(new Error("We’re already making this. Wait a moment."), { status: 409 });
     }
   }
   db.prepare(
@@ -602,7 +603,7 @@ export async function runStep(
     .prepare(`SELECT id FROM ai_generations WHERE project_id = ? AND type = ? AND status = 'running'`)
     .get(projectId, step);
   if (inflight) {
-    throw Object.assign(new Error("This step is already running. Wait for it to finish."), { status: 409 });
+    throw Object.assign(new Error("We’re already making this. Wait for it to finish."), { status: 409 });
   }
 
   const attemptsSoFar = stepAttemptCount(projectId, step);
@@ -630,7 +631,8 @@ export async function runStep(
     });
   }
   if (step === "visuals" && !config.openaiKey) {
-    throw Object.assign(new Error("Pictures need an OpenAI key. Add OPENAI_API_KEY and restart the API."), { status: 400 });
+    console.error("Pictures blocked: OPENAI_API_KEY is not set on the server.");
+    throw Object.assign(new Error(USER_ERRORS.pictureUnavailable), { status: 503 });
   }
   if (keepStill) {
     if (step !== "visuals" || !isImagePost(type)) {
@@ -682,10 +684,10 @@ export async function runStep(
   const imageScript =
     isImagePost(type) && idea ? imageCarousel(prompt, idea, imageIntent, feedback, brand, pictureLanguage) : script;
   if (step === "visuals" && sceneId && imageScript && !imageScript.scenes.find((item) => item.id === sceneId)) {
-    throw Object.assign(new Error("Unknown scene."), { status: 400 });
+    throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   }
   if (step === "render" && !hasVoiceFile(projectId)) {
-    throw Object.assign(new Error("Generate the voice audio first."), { status: 400 });
+    throw Object.assign(new Error("Record the voice first."), { status: 400 });
   }
   if (step === "render") {
     assertArchiveRoom(userId, projectId, Boolean(opts.evictOldest));
@@ -846,9 +848,7 @@ export async function runStep(
         const minLive = visualMinLive(imageScript.scenes.length);
         if (result.usedOpenAI && result.live < minLive) {
           throw Object.assign(
-            new Error(
-              `We couldn’t generate enough ${isImagePost(type) ? "pictures" : "frames"} (${result.live} of ${imageScript.scenes.length}). Try a simpler description.`
-            ),
+            new Error(isImagePost(type) ? USER_ERRORS.pictureFailed : USER_ERRORS.framesFailed),
             { status: 400 }
           );
         }
@@ -993,8 +993,16 @@ export async function runStep(
         `UPDATE projects SET credits_used = credits_used + ?, status = CASE WHEN status = 'generating' THEN 'draft' ELSE status END, updated_at = datetime('now') WHERE id = ?`
       ).run(reserved, projectId);
     }
-    throw error;
+    throw forOwner(error, `Step ${step} (${projectId})`, stepFailedText(step, type));
   }
+}
+
+function stepFailedText(step: keyof typeof CREDIT_COSTS, type: string) {
+  if (step === "visuals") return isImagePost(type) ? USER_ERRORS.pictureFailed : USER_ERRORS.framesFailed;
+  if (step === "voice") return USER_ERRORS.voiceFailed;
+  if (step === "captions") return USER_ERRORS.captionsFailed;
+  if (step === "render") return USER_ERRORS.videoFailed;
+  return USER_ERRORS.textFailed;
 }
 
 function downstreamWipe(step: keyof typeof CREDIT_COSTS, _singleFrame = false): Record<string, string | number | null> {

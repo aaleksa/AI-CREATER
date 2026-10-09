@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { USER_ERRORS } from "./userErrors.js";
 
 /**
  * Optional: paint pictures with a ComfyUI you run yourself (local use).
@@ -24,8 +25,7 @@ export function comfyFallsBackToOpenAI() {
   return /^(openai|1|true|yes)$/i.test((process.env.COMFYUI_FALLBACK || "").trim());
 }
 
-export const COMFY_FAILED_MESSAGE =
-  "ComfyUI did not make the picture. Start ComfyUI and try again, or remove COMFYUI_URL from backend/.env to use OpenAI.";
+export const COMFY_FAILED_MESSAGE = USER_ERRORS.pictureUnavailable;
 
 /** Which kinds of picture go to ComfyUI. Designed flyers with words stay on OpenAI: Stable Diffusion cannot spell. */
 export function comfyHandles(kind: "video" | "still" | "poster") {
