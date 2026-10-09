@@ -85,6 +85,10 @@ Optional in `backend/.env`:
 
 Do not commit `.env`. Do not spend OpenAI credits unless you mean to.
 
+## Icon
+
+Browser tab icon: a serif **A** in cream with a copper crossbar on the dark brand background (`frontend/public/favicon.svg`, plus PNG sizes for iOS and a `.ico`). Same palette as the app.
+
 ## Deploy (one server, e.g. Railway)
 
 The API also serves the built web app, so there is one URL. From the repo root: `npm run build` (installs both parts and builds `frontend/dist`), then `npm start`. Needs Node 22.13+.
