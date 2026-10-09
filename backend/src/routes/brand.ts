@@ -151,7 +151,7 @@ brandRouter.post("/logo", (req, res) => {
 brandRouter.get("/ref/:slot", (req, res) => {
   const slot = String(req.params.slot);
   if (!isBrandRefSlot(slot)) {
-    res.status(404).json({ error: "Unknown photo." });
+    res.status(404).json({ error: "That photo is gone." });
     return;
   }
   const ref = brandRefType(req.user!.id, slot);
@@ -167,7 +167,7 @@ brandRouter.get("/ref/:slot", (req, res) => {
 brandRouter.post("/ref/:slot", (req, res) => {
   const slot = String(req.params.slot);
   if (!isBrandRefSlot(slot)) {
-    res.status(404).json({ error: "Unknown photo." });
+    res.status(404).json({ error: "That photo is gone." });
     return;
   }
   const upload = readUpload(req.body?.image);
@@ -183,7 +183,7 @@ brandRouter.post("/ref/:slot", (req, res) => {
 brandRouter.delete("/ref/:slot", (req, res) => {
   const slot = String(req.params.slot);
   if (!isBrandRefSlot(slot)) {
-    res.status(404).json({ error: "Unknown photo." });
+    res.status(404).json({ error: "That photo is gone." });
     return;
   }
   removeBrandRef(req.user!.id, slot);

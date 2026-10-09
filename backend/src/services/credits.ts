@@ -39,7 +39,7 @@ export function spendCredits(
 ) {
   const current = getBalance(userId);
   if (current < amount) {
-    const err = new Error("Not enough credits") as Error & { status: number };
+    const err = new Error("Not enough credits. Buy a pack or upgrade your plan.") as Error & { status: number };
     err.status = 402;
     throw err;
   }

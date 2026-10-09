@@ -15,7 +15,7 @@ export function parseStepFeedback(step: string, reasonRaw: unknown, noteRaw: unk
   if (!reason) return { reason: "", note: "" };
   const allowed = STEP_REASONS[step];
   if (!allowed?.includes(reason)) {
-    throw Object.assign(new Error("Unknown reason for this step."), { status: 400 });
+    throw Object.assign(new Error("Something went wrong. Refresh the page and try again."), { status: 400 });
   }
   if (reason === "other" && note.length < 2) {
     throw Object.assign(new Error("Say what was wrong — a few words is enough."), { status: 400 });
