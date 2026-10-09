@@ -9,6 +9,7 @@ import { config } from "../config.js";
 import { contactStampText, wantsContactStamp, wantsLogoStamp, type BrandKit, type CaptionCue, type Script, type Visual } from "./ai.js";
 import { brandLogoPath } from "./brandAssets.js";
 import { cropToFormat, type ImageFormat } from "./imageFormats.js";
+import { dataDir } from "../dataDir.js";
 
 export {
   brandLogoDir,
@@ -24,7 +25,6 @@ export {
 const require = createRequire(import.meta.url);
 const ffmpegPath = (require("ffmpeg-static") as string | null) || "ffmpeg";
 
-const dataDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../data");
 
 export function projectMediaDir(projectId: string) {
   const dir = path.join(dataDir, "media", projectId);

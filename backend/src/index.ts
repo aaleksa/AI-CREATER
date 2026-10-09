@@ -1,4 +1,7 @@
 import "dotenv/config";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
 import { config } from "./config.js";
@@ -38,6 +41,19 @@ app.use("/share", shareRouter);
 app.use("/projects", projectsRouter);
 app.use("/brand", brandRouter);
 app.use("/billing", billingRouter);
+
+// In production one server serves the API and the built web app (frontend/dist), so there is one URL.
+const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../frontend/dist");
+if (fs.existsSync(path.join(webDir, "index.html"))) {
+  app.use(express.static(webDir, { index: false, maxAge: "1h" }));
+  app.get("*", (req, res, next) => {
+    if (!req.accepts("html")) {
+      next();
+      return;
+    }
+    res.sendFile(path.join(webDir, "index.html"));
+  });
+}
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

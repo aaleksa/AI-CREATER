@@ -12,6 +12,10 @@ export const config = {
   appUrl: process.env.APP_URL || "http://localhost:5173",
 };
 
+if (process.env.NODE_ENV === "production" && config.jwtSecret === "dev-secret-change-me") {
+  throw new Error("Set JWT_SECRET before running in production. Sign-in tokens are forgeable with the default.");
+}
+
 export const MIN_PROMPT_CHARS = 8;
 export const MAX_PROMPT_CHARS = 2000;
 export const FREE_CREDITS = 400;

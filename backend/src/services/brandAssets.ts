@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { dataDir } from "../dataDir.js";
 
-const dataDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../data");
 
 export const BRAND_REF_SLOTS = ["place", "people", "product"] as const;
 export type BrandRefSlot = (typeof BRAND_REF_SLOTS)[number];

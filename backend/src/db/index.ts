@@ -3,9 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { SCHEMA_SQL } from "./schema.js";
+import { dataDir } from "../dataDir.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = path.resolve(__dirname, "../../data");
 fs.mkdirSync(dataDir, { recursive: true });
 
 const sqlite = new DatabaseSync(path.join(dataDir, "auteur.db"));

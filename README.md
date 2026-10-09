@@ -84,6 +84,17 @@ Optional in `backend/.env`:
 
 Do not commit `.env`. Do not spend OpenAI credits unless you mean to.
 
+## Deploy (one server, e.g. Railway)
+
+The API also serves the built web app, so there is one URL. From the repo root: `npm run build` (installs both parts and builds `frontend/dist`), then `npm start`. Needs Node 22.13+.
+
+Set in the host:
+
+- `JWT_SECRET` — required in production, the server refuses to start with the default
+- `OPENAI_API_KEY`, `APP_URL` (your public URL)
+- `DATA_DIR` — path of a **persistent volume** (for example `/data`). The SQLite file and every upload and generated picture live there; without a volume they are wiped on each deploy
+- the contact line on photos needs a system font (DejaVu or Liberation); check it after the first deploy
+
 ## Intentionally not in v1
 
 No CapCut-level editor, no 100 models, no mobile + web + desktop at once, no template marketplace, no social scheduler, no custom model, no crypto.
