@@ -38,6 +38,7 @@ Plans (provisional until real unit cost is measured):
 - One finished OpenAI picture per Image / Post (photo, invite, info, offer). We do not compose a text layer. Invite / info / offer: the model paints the words on the image.
 - Model: `OPENAI_IMAGE_MODEL` (default **gpt-image-2.5-sunburst**, same family as the OpenAI Images playground).
 - **Format = where you post it.** Square 1:1 (Instagram / Facebook feed), portrait 4:5, Stories and Reels 9:16, Facebook wide 1.91:1. Default: photo square, flyers portrait 4:5. Older projects keep their shape (photo 1:1, flyer 2:3).
+- **Errors say what happened.** If pictures fail, the message names the cause (bad API key, organization not verified, billing, busy / unreachable service, blocked brief) instead of a generic “simpler description”. The full OpenAI error is in the server log (`Image frame failed …`).
 - **No cropping.** The image model paints the exact shape: `gpt-image-2.x` takes any size (multiple of 16, up to 3:1): 1024×1024, 1024×1280, 864×1536, 1536×800. Only if an account falls back to `gpt-image-1` / `dall-e-3` (square, 2:3, 3:2 only) do we paint the closest shape and trim it.
 - **Example pictures.** Up to 3 per brief (PNG / JPG, 2 MB), independent of the Brand Kit. They go to `images.edit` with the request: take subject, style and mood, never copy letters or logos. Word edits and Same-picture do not resend them.
 - The idea text follows the interface language (UK or EN), whatever language the brief is in.

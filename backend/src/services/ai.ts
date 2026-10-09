@@ -1011,14 +1011,32 @@ function imageSize(model: string, kind: "video" | "still" | "poster", format?: I
   return model === "dall-e-3" ? ("1024x1792" as const) : ("1024x1536" as const);
 }
 
-function humanImageError(message: string) {
+const GENERIC_IMAGE_ERROR = "We couldn’t generate these frames. Try a simpler description.";
+
+/** Says what actually went wrong, so a server problem is not mistaken for a bad brief. */
+function humanImageError(message: string, status = 0) {
   if (/does not exist/i.test(message)) {
     return "This OpenAI project has no image model. Enable gpt-image-2.5-sunburst in the project, or set OPENAI_IMAGE_MODEL.";
   }
   if (/billing|quota|insufficient/i.test(message)) {
     return "OpenAI image billing is not enabled on this key.";
   }
-  return "We couldn’t generate these frames. Try a simpler description.";
+  if (status === 401 || /incorrect api key|invalid api key|invalid_api_key|authentication/i.test(message)) {
+    return "OpenAI rejected the API key on this server. Check OPENAI_API_KEY.";
+  }
+  if (/must be verified|organization.*verif|verify organization/i.test(message)) {
+    return "OpenAI needs this organization verified before it allows image models (platform.openai.com → Settings → Organization → Verify).";
+  }
+  if (/safety|moderation|content[_ ]policy|blocked/i.test(message)) {
+    return "The image check blocked this brief. Reword it more simply and try again.";
+  }
+  if (status === 429 || /rate limit/i.test(message)) {
+    return "The image service is busy. Try again in a minute.";
+  }
+  if (/connection error|timed? ?out|econn|enotfound|fetch failed/i.test(message)) {
+    return "We couldn’t reach the image service. Try again in a minute.";
+  }
+  return GENERIC_IMAGE_ERROR;
 }
 
 type FrameResult = {
@@ -1153,16 +1171,20 @@ async function generateSceneFrame(
       return await run(model);
     } catch (error) {
       const message = error instanceof Error ? error.message : "image failed";
-      lastError = humanImageError(message);
-      console.error("Image frame failed", scene.id, model, message);
-      const status = Number((error as { status?: number }).status);
+      const status = Number((error as { status?: number }).status) || 0;
+      const human = humanImageError(message, status);
+      // Keep the most useful reason: a later vague failure must not hide an earlier clear one.
+      if (human !== GENERIC_IMAGE_ERROR || !lastError) lastError = human;
+      console.error("Image frame failed", scene.id, model, status || "", message);
       if (/does not exist/i.test(message)) return null;
       if (status >= 500 && status < 600) {
         try {
           return await run(model);
         } catch (retryError) {
-          lastError = humanImageError(retryError instanceof Error ? retryError.message : "image failed");
-          console.error("Image retry failed", scene.id, model, lastError);
+          const retryMessage = retryError instanceof Error ? retryError.message : "image failed";
+          const retryHuman = humanImageError(retryMessage, Number((retryError as { status?: number }).status) || 0);
+          if (retryHuman !== GENERIC_IMAGE_ERROR || !lastError) lastError = retryHuman;
+          console.error("Image retry failed", scene.id, model, retryMessage);
         }
       }
       return null;

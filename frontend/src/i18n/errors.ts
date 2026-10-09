@@ -81,6 +81,16 @@ export const ERROR_UK: Record<string, string> = {
   "Choose a plan or a credit pack.": "Оберіть план або пакет кредитів.",
   "Checkout is closed for the closed beta. Stay on Free — we add credits by hand if you need them.":
     "Оплата закрита на беті. Лишайтесь на Free — якщо треба, кредити додамо вручну.",
+  "OpenAI rejected the API key on this server. Check OPENAI_API_KEY.":
+    "OpenAI відхилив ключ API на цьому сервері. Перевірте OPENAI_API_KEY.",
+  "OpenAI needs this organization verified before it allows image models (platform.openai.com → Settings → Organization → Verify).":
+    "OpenAI вимагає верифікувати організацію, щоб дозволити моделі зображень (platform.openai.com → Settings → Organization → Verify).",
+  "The image check blocked this brief. Reword it more simply and try again.":
+    "Перевірка зображень заблокувала цей опис. Перефразуйте простіше й спробуйте ще раз.",
+  "The image service is busy. Try again in a minute.":
+    "Сервіс зображень зайнятий. Спробуйте за хвилину.",
+  "We couldn’t reach the image service. Try again in a minute.":
+    "Не вдалося зв’язатися з сервісом зображень. Спробуйте за хвилину.",
   "We couldn’t generate these frames. Try a simpler description.":
     "Не вдалося згенерувати кадри. Спробуйте простіший опис.",
   "We couldn’t generate this frame. Try a simpler description.":
