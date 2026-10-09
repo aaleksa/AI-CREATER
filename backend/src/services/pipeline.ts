@@ -780,8 +780,8 @@ export async function runStep(
       let translatedBrief = "";
       if (keepStill && requestedLang) {
         const fromStill = await readPaintedCopy(keepStillPath);
-        translatedBrief = await translateBrief(prompt, requestedLang);
-        paintedCopy = (await translatePictureCopy(fromStill, requestedLang, prompt)) || translatedBrief;
+        translatedBrief = await translateBrief(prompt, requestedLang, brand?.business_name || "");
+        paintedCopy = (await translatePictureCopy(fromStill, requestedLang, prompt, brand?.business_name || "")) || translatedBrief;
       }
       const frameOpts = {
         keepStill,
@@ -797,7 +797,7 @@ export async function runStep(
         const rewrite = rewriteStillCopyPrompt(copyEdit);
         for (const scene of imageScript.scenes) scene.visualPrompt = rewrite;
       } else if (keepStill && imageScript && requestedLang) {
-        const rewrite = rewriteStillLanguagePrompt(translatedBrief || prompt, requestedLang, paintedCopy);
+        const rewrite = rewriteStillLanguagePrompt(translatedBrief || prompt, requestedLang, paintedCopy, brand?.business_name || "");
         for (const scene of imageScript.scenes) scene.visualPrompt = rewrite;
       }
       if (requestedLang && isTextPoster(type, imageIntent)) {

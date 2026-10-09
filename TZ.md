@@ -2,7 +2,7 @@
 
 **Продукт:** AI Content Creator  
 **Репозиторій:** [github.com/aaleksa/AI-CREATER](https://github.com/aaleksa/AI-CREATER)  
-**Версія документа:** 1.43  
+**Версія документа:** 1.44  
 **Мова інтерфейсу:** English і українська (перемикач EN / УК, зберігається в браузері)  
 **Валюта:** GBP (£)
 
@@ -914,7 +914,7 @@ Image / Post: idea → visuals. Один JPG з OpenAI (§3.6). `PATCH /invite` 
 | --- | --- | --- | --- |
 | Єдиний кадр упав після авто-retry | `failed` | резерв **8 лишається** (вендор виставлений) | Немає JPG. Повідомлення «picture», не «frames» |
 | Є `still-1.jpg` | `succeeded` | **8** | Фінал: JPG з OpenAI (+ лого-шар, якщо `logo_on_photos`) |
-| Same picture in EN/UK (`keepStill`) | `succeeded` | **8** (як звичайний retry Pictures) | `images.edit` **вибраного take**; слова з картинки (OCR) перекладені рядок у рядок, бриф як глосарій. Без generate fallback. Без другого overlay лого. Попередній take в versions |
+| Same picture in EN/UK (`keepStill`) | `succeeded` | **8** (як звичайний retry Pictures) | `images.edit` **вибраного take**; слова з картинки (OCR) перекладені рядок у рядок, бриф як глосарій. **Назва бізнесу (з Brand Kit), лого, слоган у лого, імена DJ, сайти, @нікнейми, email і поштові індекси не перекладаються й не транслітеруються** — лишаються буква в букву; звичайні слова — природно, не дослівно. Без generate fallback. Без другого overlay лого. Попередній take в versions |
 | Edit words on this picture (`keepStill` + `copyEdit`) | `succeeded` | **8** | `images.edit` take на екрані: додати або прибрати слова. Без нової сцени |
 | Немає ключа | не стартує | 0 | той самий **400**, що й для Reel Visuals |
 
