@@ -681,12 +681,23 @@ Return JSON: { prompt } — the image prompt only.`,
 
 export type PictureLanguage = "en" | "uk" | "";
 
-export function pictureLanguageLine(lang: PictureLanguage) {
+function keepNamesRule(brandName = "") {
+  const name = brandName.replace(/\s+/g, " ").trim().slice(0, 80);
+  return [
+    name ? `The business is called «${name}» — write it exactly like that, same letters and alphabet.` : "",
+    "Never translate or transliterate business and brand names, logo text, slogans inside a logo, DJ or artist names, web addresses, @handles, emails or postcodes — copy them letter for letter.",
+    "Translate only the ordinary words, with natural wording a native speaker would put on a poster — not word for word (Friends welcome! → Друзі, ласкаво просимо! not Друзі вітаються!; Colour Workshop → Майстер-клас із фарбування).",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+export function pictureLanguageLine(lang: PictureLanguage, brandName = "") {
   if (lang === "uk") {
-    return "Translate the whole brief into Ukrainian first, then paint that Ukrainian translation on the picture. Translate names, dates, times, prices and addresses too — write dates the way a Ukrainian speaker would. Do not leave English (or any other language) on the picture. Proofread. Normal spaces between words.";
+    return `Translate the whole brief into Ukrainian first, then paint that Ukrainian translation on the picture. Translate dates, times and prices too — write dates the way a Ukrainian speaker would. ${keepNamesRule(brandName)} No other English on the picture. Proofread. Normal spaces between words.`;
   }
   if (lang === "en") {
-    return "Translate the whole brief into English first, then paint that English translation on the picture. Translate names, dates, times, prices and addresses too — write dates the way an English speaker would (e.g. 23 жовтня → 23 October). Do not leave Ukrainian (or any other language) on the picture. Proofread. Normal spaces between words.";
+    return `Translate the whole brief into English first, then paint that English translation on the picture. Translate dates, times and prices too — write dates the way an English speaker would (e.g. 23 жовтня → 23 October). ${keepNamesRule(brandName)} No other Ukrainian on the picture. Proofread. Normal spaces between words.`;
   }
   return "Same language as the request. Proofread.";
 }
@@ -702,7 +713,7 @@ function stripBrief(brief: string) {
     .slice(0, 2000);
 }
 
-export function rewriteStillLanguagePrompt(brief: string, lang: PictureLanguage, paintedCopy = "") {
+export function rewriteStillLanguagePrompt(brief: string, lang: PictureLanguage, paintedCopy = "", brandName = "") {
   const target = lang === "uk" ? "Ukrainian" : lang === "en" ? "English" : "";
   const copy = paintedCopy.trim() || stripBrief(brief);
   return [
@@ -716,6 +727,8 @@ export function rewriteStillLanguagePrompt(brief: string, lang: PictureLanguage,
       ? `Replace only the letterforms with this exact ${target} wording, same places, same number of lines:`
       : "Replace only the letterforms with this exact wording, same places, same number of lines:",
     copy,
+    "The logo and the business name stay exactly as they are now — do not repaint or translate them.",
+    target ? keepNamesRule(brandName) : "",
     "Only the letters change.",
   ]
     .filter(Boolean)
@@ -775,7 +788,7 @@ function tidyPaintedLines(text: string) {
     .slice(0, 1800);
 }
 
-export async function translateBrief(brief: string, lang: PictureLanguage) {
+export async function translateBrief(brief: string, lang: PictureLanguage, brandName = "") {
   const asked = stripBrief(brief);
   if (!asked || (lang !== "en" && lang !== "uk")) return asked;
   const openai = client();
@@ -789,7 +802,7 @@ export async function translateBrief(brief: string, lang: PictureLanguage) {
         {
           role: "system",
           content: clipInput(
-            `Translate this owner's brief into ${target}. It is the same request — do not add, remove or rewrite facts. Translate names, dates, times, prices and addresses. Write dates the way a ${target} speaker would (Ukrainian «23 жовтня» → English «23 October»). Reply with the translated brief only.`
+            `Translate this owner's brief into ${target}. It is the same request — do not add, remove or rewrite facts. Translate dates, times and prices. Write dates the way a ${target} speaker would (Ukrainian «23 жовтня» → English «23 October»). ${keepNamesRule(brandName)} Reply with the translated brief only.`
           ),
         },
         { role: "user", content: clipInput(asked) },
@@ -806,7 +819,7 @@ export async function translateBrief(brief: string, lang: PictureLanguage) {
   }
 }
 
-export async function translatePictureCopy(painted: string, lang: PictureLanguage, brief = "") {
+export async function translatePictureCopy(painted: string, lang: PictureLanguage, brief = "", brandName = "") {
   const asked = tidyPaintedLines(painted);
   if (!asked) return "";
   if (lang !== "en" && lang !== "uk") return asked;
@@ -827,8 +840,8 @@ export async function translatePictureCopy(painted: string, lang: PictureLanguag
               ? `You are a translator. Translate each painted poster line into ${target}. Reply with the ${target} lines only — no JSON, no quotes around the whole text, no commentary.
 The owner's brief is the same request. Use it only as a glossary for names, dates, times, prices and addresses.
 Keep the same number of lines in the same order. Do not drop a line — including DJ credits, vinyl-badge text, price and charity — even if that line is not in the brief. Do not merge lines. Do not add a line.
-Proofread: no doubled letters (not 90sS); keep postcodes (EC1V not ECVT); write «from 19.00 to 23.00» not «t 23.00»; auction not auctidn. Write dates the way a ${target} speaker would (Ukrainian «23 жовтня» → English «23 October»). Keep DJ / brand names. Transliterate personal names if needed.`
-              : `Translate each painted line into ${target}. Same number of lines, same order. Do not drop a line, even a short DJ credit. Reply with the lines only.`
+Proofread: no doubled letters (not 90sS); keep postcodes (EC1V not ECVT); write «from 19.00 to 23.00» not «t 23.00»; auction not auctidn. Write dates the way a ${target} speaker would (Ukrainian «23 жовтня» → English «23 October»). ${keepNamesRule(brandName)} A line that is only a name or logo text stays unchanged. Transliterate a person's name only if it is in the other alphabet.`
+              : `Translate each painted line into ${target}. Same number of lines, same order. Do not drop a line, even a short DJ credit. ${keepNamesRule(brandName)} Reply with the lines only.`
           ),
         },
         {
@@ -899,7 +912,7 @@ export function stillPicturePrompt(
     withCopy ? brandLook(brand, "designed") : brandLook(brand, "photo"),
     withCopy && addressLine(brand),
     withCopy &&
-      `Fill the whole canvas edge to edge. Keep a clear empty margin at the bottom so the last line is fully visible. If a line does not fit, wrap it or move it — never clip, crop or run words off the edge. ${pictureLanguageLine(pictureLanguage)} No app UI, no watermark.`,
+      `Fill the whole canvas edge to edge. Keep a clear empty margin at the bottom so the last line is fully visible. If a line does not fit, wrap it or move it — never clip, crop or run words off the edge. ${pictureLanguageLine(pictureLanguage, brand?.business_name || "")} No app UI, no watermark.`,
     !withCopy &&
       (shot.words && !/^none$/i.test(shot.words)
         ? `If words appear, only: ${shot.words}. No other letters.`
