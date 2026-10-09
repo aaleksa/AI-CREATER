@@ -8,6 +8,15 @@ import { ensureCreditAccount, grantCredits } from "../services/credits.js";
 import { deleteAccount } from "../services/account.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 import { isAdminUser } from "./admin.js";
+import {
+  confirmEmail,
+  FREE_CREDITS_NOTE,
+  langOf,
+  needsVerification,
+  resendVerificationLink,
+  sendVerificationLink,
+  verificationRequired,
+} from "../services/emailVerification.js";
 
 export const authRouter = Router();
 
@@ -18,7 +27,7 @@ function ensureBrandKit(userId: string, name: string) {
   }
 }
 
-authRouter.post("/signup", (req, res) => {
+authRouter.post("/signup", rateLimit(5, 60 * 60_000, "Too many attempts. Wait a few minutes, then try again.", "signup"), async (req, res) => {
   const { email, password, name } = req.body ?? {};
   if (!email || !password || !name) {
     res.status(400).json({ error: "Name, email and password are required." });
@@ -36,6 +45,7 @@ authRouter.post("/signup", (req, res) => {
   }
   try {
     const id = uuid();
+    const mustConfirm = verificationRequired();
     db.transaction(() => {
       db.prepare("INSERT INTO users (id, email, password_hash, name) VALUES (?, ?, ?, ?)").run(
         id,
@@ -44,9 +54,12 @@ authRouter.post("/signup", (req, res) => {
         String(name)
       );
       db.prepare("INSERT INTO subscriptions (id, user_id, plan_id, status) VALUES (?, ?, 'free', 'active')").run(uuid(), id);
-      grantCredits(id, FREE_CREDITS, "grant", "Free plan credits");
+      // Credits wait for the confirmed address only while letters can actually reach people.
+      if (mustConfirm) db.prepare("INSERT INTO credit_balances (user_id, credits) VALUES (?, 0)").run(id);
+      else grantCredits(id, FREE_CREDITS, "grant", FREE_CREDITS_NOTE);
       db.prepare(`INSERT INTO brand_kits (id, user_id, business_name) VALUES (?, ?, ?)`).run(uuid(), id, String(name));
     })();
+    if (mustConfirm) await sendVerificationLink(id, langOf(req.get("Accept-Language")));
     const user = { id, email: normalised, name: String(name) };
     res.json({ token: signToken(user, 0), user });
   } catch (error) {
@@ -64,7 +77,7 @@ authRouter.post("/login", (req, res) => {
     res.status(401).json({ error: "Email or password is incorrect." });
     return;
   }
-  ensureCreditAccount(row.id, FREE_CREDITS, "Free plan credits");
+  if (!needsVerification(row.id)) ensureCreditAccount(row.id, FREE_CREDITS, FREE_CREDITS_NOTE);
   ensureBrandKit(row.id, row.name);
   const user = { id: row.id, email: row.email, name: row.name };
   res.json({ token: signToken(user, Number(row.token_version || 0)), user });
@@ -78,7 +91,8 @@ authRouter.get("/me", requireAuth, (req, res) => {
     res.status(401).json({ error: "Session expired. Please sign in again." });
     return;
   }
-  ensureCreditAccount(user.id, FREE_CREDITS, "Free plan credits");
+  const emailVerified = !needsVerification(user.id);
+  if (emailVerified) ensureCreditAccount(user.id, FREE_CREDITS, FREE_CREDITS_NOTE);
   ensureBrandKit(user.id, user.name);
   const sub = db.prepare(
     `SELECT s.status, p.id as plan_id, p.name as plan_name, p.monthly_credits
@@ -94,8 +108,33 @@ authRouter.get("/me", requireAuth, (req, res) => {
     subscription: sub ?? null,
     credits: Number(credits?.credits ?? 0),
     isAdmin: isAdminUser(user.id),
+    emailVerified,
   });
 });
+
+authRouter.post("/verify-email", rateLimit(20, 15 * 60_000, "Too many attempts. Wait a few minutes, then try again.", "verify"), (req, res) => {
+  try {
+    confirmEmail(String(req.body?.token || ""));
+    res.json({ ok: true });
+  } catch (error) {
+    const err = error as Error & { status?: number };
+    res.status(err.status || 500).json({ error: err.status ? err.message : "Something went wrong. Try again in a minute." });
+  }
+});
+
+authRouter.post(
+  "/verify-email/resend",
+  requireAuth,
+  rateLimit(5, 60 * 60_000, "Too many attempts. Wait a few minutes, then try again.", "verify-resend"),
+  async (req, res) => {
+    try {
+      res.json(await resendVerificationLink(req.user!.id, langOf(req.get("Accept-Language"))));
+    } catch (error) {
+      const err = error as Error & { status?: number };
+      res.status(err.status || 500).json({ error: err.status ? err.message : "Something went wrong. Try again in a minute." });
+    }
+  }
+);
 
 const sensitive = rateLimit(10, 15 * 60_000, "Too many attempts. Wait a few minutes, then try again.", "account");
 
@@ -109,7 +148,7 @@ function passwordOk(row: UserRow, password: unknown) {
   return bcrypt.compareSync(String(password || ""), row.password_hash);
 }
 
-authRouter.patch("/profile", requireAuth, sensitive, (req, res) => {
+authRouter.patch("/profile", requireAuth, sensitive, async (req, res) => {
   const row = userRow(req.user!.id);
   if (!row) {
     res.status(401).json({ error: "Session expired. Please sign in again." });
@@ -138,6 +177,11 @@ authRouter.patch("/profile", requireAuth, sensitive, (req, res) => {
     }
   }
   db.prepare("UPDATE users SET name = ?, email = ? WHERE id = ?").run(name, email, row.id);
+  if (email !== row.email) {
+    // A new address must be confirmed again; credits already given are not given twice.
+    db.prepare("UPDATE users SET email_verified_at = NULL WHERE id = ?").run(row.id);
+    if (verificationRequired()) await sendVerificationLink(row.id, langOf(req.get("Accept-Language")));
+  }
   const user = { id: row.id, email, name };
   res.json({ token: signToken(user, Number(row.token_version || 0)), user });
 });

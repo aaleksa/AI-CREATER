@@ -16,6 +16,8 @@ import { shareRouter } from "./routes/share.js";
 import { findPreview, serializePreview } from "./services/share.js";
 
 const app = express();
+// Behind one host proxy (Railway): per-IP limits such as signup must see the visitor, not the proxy.
+app.set("trust proxy", 1);
 app.use(
   cors({
     origin: [config.appUrl, "http://localhost:5173", "http://127.0.0.1:5173"],

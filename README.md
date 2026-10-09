@@ -6,7 +6,7 @@ Auteur is not a Canva clone. It is a simple AI content studio: the user never ch
 
 UI: **English and Ukrainian** (EN / УК, stored in the browser). The brief stays in the language they wrote. **Light and dark theme** (☀ / ☾, follows the device until you choose) and a phone layout with a bottom tab bar.
 
-Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.42). AI cost per picture and per 400 credits: [docs/COSTS.md](docs/COSTS.md).
+Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.43). AI cost per picture and per 400 credits: [docs/COSTS.md](docs/COSTS.md).
 
 The first studio is **one short video** (30 seconds, Instagram or TikTok — same file) and still **Image / Posts**. A Reel is 150 credits; a still post is 13 (idea + one picture). **Video** and **Advertisement** stay as two separate Create stubs (TZ §2.3). Social post is a third stub.
 
@@ -68,7 +68,7 @@ SQLite  →  users, plans, credit_balances, credit_transactions,
            ai_generations, subscriptions, brand_kits, projects
 ```
 
-Stripe Checkout exists, but **without `STRIPE_SECRET_KEY` it is closed** (Choose/Buy hidden, `POST /billing/checkout` returns 403). Closed beta stays on Free 400; we add credits by hand. There is no studio grant that changes the plan.
+Stripe Checkout exists, but **without `STRIPE_SECRET_KEY` it is closed** (Choose/Buy hidden, `POST /billing/checkout` returns 403). Closed beta stays on Free 400; we add credits by hand. **When real mail is set up, the 400 arrive only after the owner confirms their email** (link in a letter, valid 48 h; “Send again” banner in the app). “Set up” means `RESEND_API_KEY` plus a `MAIL_FROM` on your own verified domain — Resend’s test sender `onboarding@resend.dev` only reaches you, so with it (or with no key) sign-up works as before: 400 credits at once. `EMAIL_VERIFICATION=on|off` overrides this (`on` without a key prints the link in the API log). Until they confirm they can look around and write briefs, but every generation step answers 403 `email_unverified` — one person can’t farm credits with many accounts. Accounts made before this count as confirmed. There is no studio grant that changes the plan.
 
 `ai_generations` still stores every AI call. The Credits screen does **not** list it (`SHOW_AI_COST_LOG=false`).
 
@@ -86,6 +86,7 @@ Optional in `backend/.env`:
 - `OPENAI_API_KEY` — live copy, **required for Pictures / Reel frames**, and TTS
 - `OPENAI_IMAGE_MODEL` — playground model id (`gpt-image-2.5-sunburst` or `gpt-image-2.5-flare`)
 - `STRIPE_SECRET_KEY` — opens Checkout; without it, buy buttons stay hidden
+- `RESEND_API_KEY`, `MAIL_FROM` — send the “confirm your email” letter through [Resend](https://resend.com) (`MAIL_FROM` must use a domain verified there). Confirmation turns on by itself once both are set; see `EMAIL_VERIFICATION` in `.env.example`
 
 Do not commit `.env`. Do not spend OpenAI credits unless you mean to.
 
@@ -113,7 +114,7 @@ Set in the host:
 
 - `JWT_SECRET` — required in production, the server refuses to start with the default
 - `OPENAI_API_KEY`, `APP_URL` (your public URL)
-- `ADMIN_EMAILS` — your email (comma-separated for more). Turns on the read-only Database page at `/app/admin`; unset means nobody can open it. **Register your own account first, then add its email**: sign-up does not verify email, so an unused address here could be claimed by anyone. Stricter option: `ADMIN_USER_IDS` (account ids; open `/app/account?id` on the server to see yours)
+- `ADMIN_EMAILS` — your email (comma-separated for more). Turns on the read-only Database page at `/app/admin`; unset means nobody can open it. It only works once that address is confirmed, so nobody can claim it by signing up with it. Stricter option: `ADMIN_USER_IDS` (account ids; open `/app/account?id` on the server to see yours)
 - `DATA_DIR` — path of a **persistent volume** (for example `/data`). The SQLite file and every upload and generated picture live there; without a volume they are wiped on each deploy
 - the contact line on photos needs a system font (DejaVu is installed by the `Dockerfile`); check it after the first deploy
 

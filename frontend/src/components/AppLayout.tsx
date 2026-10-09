@@ -5,6 +5,39 @@ import LanguageSwitch from "./LanguageSwitch";
 import ThemeSwitch from "./ThemeSwitch";
 import { useLocale } from "../i18n/locale";
 
+function VerifyBanner({ email }: { email: string }) {
+  const { t, te } = useLocale();
+  const [status, setStatus] = useState<"idle" | "sending" | "sent">("idle");
+  const [error, setError] = useState("");
+
+  async function resend() {
+    setStatus("sending");
+    setError("");
+    try {
+      const { verified } = await api.resendVerification();
+      if (verified) window.dispatchEvent(new Event("auteur:refresh"));
+      setStatus("sent");
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("auth.fallback"));
+      setStatus("idle");
+    }
+  }
+
+  return (
+    <div className="verify-banner" role="status">
+      <span>{t("verify.banner", { email })}</span>
+      {status === "sent" ? (
+        <span className="hint">{t("verify.sent")}</span>
+      ) : (
+        <button type="button" className="btn ghost" onClick={resend} disabled={status === "sending"}>
+          {status === "sending" ? t("verify.sending") : t("verify.resend")}
+        </button>
+      )}
+      {error && <span className="err">{error}</span>}
+    </div>
+  );
+}
+
 export default function AppLayout() {
   const nav = useNavigate();
   const location = useLocation();
@@ -81,6 +114,7 @@ export default function AppLayout() {
         </div>
       </aside>
       <main className="main">
+        {me && me.emailVerified === false && <VerifyBanner email={me.user.email} />}
         <Outlet context={{ me, setMe }} />
       </main>
       <nav className="tabbar" aria-label={t("nav.menu")}>

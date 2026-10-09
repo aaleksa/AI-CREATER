@@ -22,13 +22,15 @@ export function isAdminUser(userId: string | undefined) {
   if (list("ADMIN_USER_IDS").includes(userId)) return true;
   const emails = list("ADMIN_EMAILS", true);
   if (!emails.length) return false;
-  // Current email from the database, not from the sign-in token.
-  const row = db.prepare("SELECT email FROM users WHERE id = ?").get(userId) as { email: string } | undefined;
-  return !!row && emails.includes(String(row.email).toLowerCase());
+  // Current email from the database, not from the sign-in token; only a confirmed address counts.
+  const row = db.prepare("SELECT email, email_verified_at FROM users WHERE id = ?").get(userId) as
+    | { email: string; email_verified_at: string | null }
+    | undefined;
+  return !!row?.email_verified_at && emails.includes(String(row.email).toLowerCase());
 }
 
 /** Never leave the server, even to an admin. */
-const HIDDEN_COLUMNS = new Set(["password_hash", "preview_token", "token_version"]);
+const HIDDEN_COLUMNS = new Set(["password_hash", "preview_token", "token_version", "verify_token_hash"]);
 const MAX_CELL = 400;
 const MAX_ROWS = 200;
 

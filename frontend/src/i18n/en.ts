@@ -86,6 +86,18 @@ export const en = {
     createLink: "Create an account",
     fallback: "Could not continue.",
   },
+  verify: {
+    banner: "Confirm your email to get 400 free credits. We sent a link to {email}.",
+    resend: "Send again",
+    sending: "Sending…",
+    sent: "Sent. Check your inbox and spam.",
+    checking: "Confirming your email…",
+    doneTitle: "Email confirmed",
+    done: "400 free credits are in your account.",
+    failTitle: "We couldn’t confirm your email",
+    openStudio: "Open the studio",
+    signIn: "Sign in",
+  },
   briefImages: {
     title: "Example pictures — optional",
     hint: "Attach up to 3 pictures that show what you want. We send them with your request. Works with or without the Brand Kit.",
