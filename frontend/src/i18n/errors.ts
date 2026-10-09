@@ -91,6 +91,8 @@ export const ERROR_UK: Record<string, string> = {
     "Сервіс зображень зайнятий. Спробуйте за хвилину.",
   "We couldn’t reach the image service. Try again in a minute.":
     "Не вдалося зв’язатися з сервісом зображень. Спробуйте за хвилину.",
+  "ComfyUI did not make the picture. Start ComfyUI and try again, or remove COMFYUI_URL from backend/.env to use OpenAI.":
+    "ComfyUI не створив картинку. Запустіть ComfyUI і спробуйте ще раз або приберіть COMFYUI_URL з backend/.env, щоб малював OpenAI.",
   "We couldn’t generate these frames. Try a simpler description.":
     "Не вдалося згенерувати кадри. Спробуйте простіший опис.",
   "We couldn’t generate this frame. Try a simpler description.":

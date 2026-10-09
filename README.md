@@ -91,6 +91,16 @@ Do not commit `.env`. Do not spend OpenAI credits unless you mean to.
 
 Browser tab icon: a serif **A** in cream with a copper crossbar on the dark brand background (`frontend/public/favicon.svg`, plus PNG sizes for iOS and a `.ico`). Same palette as the app.
 
+## ComfyUI (optional, local only)
+
+If you run [ComfyUI](https://github.com/comfyanonymous/ComfyUI) on your own machine, photos and Reel frames can be painted by it instead of OpenAI. Nothing changes for other users: it is off unless `COMFYUI_URL` is set, so a hosted server (Railway) keeps using OpenAI. **`COMFYUI_URL` set → ComfyUI paints; not set → OpenAI.**
+
+1. Start ComfyUI (default `http://127.0.0.1:8188`) and note the checkpoint file name.
+2. In `backend/.env` set `COMFYUI_URL=http://127.0.0.1:8188` and `COMFYUI_CHECKPOINT=<file name>`. Restart the API.
+3. The default graph is `backend/comfy/workflow.example.json` (text → picture). To use your own, export it with **Save (API Format)**, put `{{prompt}}`, `{{negative}}`, `{{checkpoint}}`, `{{width}}`, `{{height}}`, `{{seed}}` where they belong, save it as `backend/comfy/workflow.json` (or point `COMFYUI_WORKFLOW` at it).
+
+Rules: only plain text-to-picture goes to ComfyUI. Designed flyers with words, pictures that use your example or brand photos, and “change the words” edits stay on OpenAI. If ComfyUI is closed, slow (5 min limit; the job is then cancelled) or errors, the app shows an error and nothing is sent to OpenAI (so tests never cost money by surprise). Set `COMFYUI_FALLBACK=openai` if you prefer OpenAI to take over. Credits are the same either way. The sizes follow the post format; set `COMFYUI_MAX_SIDE` (768 is about twice as fast as 1024) and `COMFYUI_STEPS` / `COMFYUI_CFG` to trade quality for speed. Add `{{steps}}` and `{{cfg}}` to a custom workflow to use them.
+
 ## Deploy (one server, e.g. Railway)
 
 The API also serves the built web app, so there is one URL. From the repo root: `npm run build` (installs both parts and builds `frontend/dist`), then `npm start`. Needs Node 22.13+.

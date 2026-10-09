@@ -2,6 +2,7 @@ import fs from "node:fs";
 import OpenAI, { toFile } from "openai";
 import { config } from "../config.js";
 import { canvasLine, padToNative, paintsExactSize, sizeFor, type ImageFormat } from "./imageFormats.js";
+import { COMFY_FAILED_MESSAGE, comfyEnabled, comfyFallsBackToOpenAI, comfyHandles, comfyPaint } from "./comfy.js";
 import { listBrandRefFiles, logoKindFromBytes, type BrandImageFile } from "./brandAssets.js";
 import { guessPoster, type InviteCard } from "./invite.js";
 
@@ -1102,6 +1103,25 @@ async function generateSceneFrame(
   const brandRefs = keepStill || kind === "poster" ? [] : brand?.user_id ? listBrandRefFiles(brand.user_id) : [];
   const refs = [...examples, ...brandRefs];
   const prompt = !keepStill && examples.length ? `${basePrompt}\n${exampleRefLine(examples.length, kind)}` : basePrompt;
+  // Local ComfyUI (only when COMFYUI_URL is set): plain text-to-picture. Pictures ComfyUI cannot make (designed flyers with
+  // words, the user's example or brand photos, edits of an existing picture) always stay on OpenAI.
+  if (!keepRequested && !refs.length && comfyEnabled() && comfyHandles(kind)) {
+    const size =
+      opts?.format && kind !== "video" ? sizeFor(opts.format, "gpt-image-2.5-sunburst") : kind === "still" ? "1024x1024" : "1024x1536";
+    const [width, height] = String(size).split("x").map(Number);
+    const painted = await comfyPaint({ prompt: scene.visualPrompt, width, height });
+    if (painted) {
+      return {
+        visual: { sceneId: scene.id, imageUrl: painted, prompt: scene.visualPrompt },
+        provider: "comfyui",
+        model: "comfyui",
+        cost: 0,
+        error: "",
+      };
+    }
+    // COMFYUI_URL is set, so ComfyUI is the painter. Do not spend OpenAI money unless asked to.
+    if (!comfyFallsBackToOpenAI()) return { ...placeholder, error: COMFY_FAILED_MESSAGE };
+  }
   const keepKind = keepStill ? logoKindFromBytes(keepStill) : "";
   const keepType = keepKind === "png" ? "image/png" : "image/jpeg";
   const keepName = keepKind === "png" ? `keep-still-${scene.id}.png` : `keep-still-${scene.id}.jpg`;
