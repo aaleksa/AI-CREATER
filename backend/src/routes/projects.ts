@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_INVITE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, restoreStepVersion, runStep, saveFeedback, serializeProject, updateInvite } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, restoreStepVersion, runStep, saveFeedback, serializeProject, updateInvite, updateShot } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
 import { hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
 import { archiveState } from "../services/archive.js";
@@ -312,6 +312,19 @@ projectsRouter.post("/:id/feedback", (req, res) => {
   } catch (error) {
     const err = error as Error & { status?: number };
     res.status(err.status || 500).json({ error: err.message || "Could not save feedback." });
+  }
+});
+
+projectsRouter.post("/:id/shot", rateLimit(30, 60_000), (req, res) => {
+  try {
+    const project = updateShot(req.user!.id, String(req.params.id), {
+      confirm: req.body?.confirm,
+      shot: req.body?.shot,
+    });
+    res.json({ project });
+  } catch (error) {
+    const err = error as Error & { status?: number };
+    res.status(err.status || 500).json({ error: err.message || "Could not update the shot." });
   }
 });
 

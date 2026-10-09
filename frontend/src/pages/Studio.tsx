@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type Project } from "../lib/api";
+import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type Project, type Shot } from "../lib/api";
 import { copyText } from "../lib/copy";
 import BrandToggle from "../components/BrandToggle";
 import ExampleImages, { useProjectImageSrcs } from "../components/ExampleImages";
@@ -232,6 +232,8 @@ export default function Studio() {
   const [kit, setKit] = useState<BrandKitRow | null>(null);
   const [inviteDraft, setInviteDraft] = useState<InviteCard>(EMPTY_INVITE);
   const [inviteSaved, setInviteSaved] = useState(false);
+  const [shotEditOpen, setShotEditOpen] = useState(false);
+  const [shotDraft, setShotDraft] = useState<Shot | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -592,6 +594,57 @@ export default function Studio() {
     }
   }
 
+  function openShotEdit() {
+    const shot = project?.idea?.shot;
+    setShotDraft({
+      summary: shot?.summary || "",
+      subject: shot?.subject || "",
+      place: shot?.place || "",
+      angle: shot?.angle || "",
+      people: shot?.people || "",
+      mood: shot?.mood || "",
+      words: shot?.words || "",
+    });
+    setError("");
+    setShotEditOpen(true);
+  }
+
+  async function changeShot() {
+    if (!id || !shotDraft) return;
+    if (!shotDraft.subject.trim() && !shotDraft.summary.trim()) {
+      setError(t("studio.shotEmpty"));
+      return;
+    }
+    setBusy("shot");
+    setError("");
+    try {
+      const { project: nextProject } = await api.updateShot(id, { shot: shotDraft });
+      setProject(nextProject);
+      setShotDraft(null);
+      setShotEditOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function shootThis() {
+    if (!id || !project) return;
+    setBusy("shot");
+    setError("");
+    try {
+      const { project: nextProject } = await api.updateShot(id, { confirm: true });
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+      setBusy(null);
+      return;
+    }
+    setBusy(null);
+    await run("visuals");
+  }
+
   async function sharePreview() {
     if (!id) return;
     setError("");
@@ -822,7 +875,80 @@ export default function Studio() {
             <>
               <p><b>{asText(project.idea.title)}</b></p>
               <p className="lede">{asText(project.idea.concept)}</p>
-              <p className="hint">{asText(project.idea.visualDirection)}</p>
+              {project.idea.shot?.summary ? (
+                <div className="shot-card">
+                  <p className="hint" style={{ margin: 0 }}>{t("studio.shotTitle")}</p>
+                  <p className="shot-summary">{asText(project.idea.shot.summary)}</p>
+                  <dl className="shot-list">
+                    {(
+                      [
+                        ["subject", "studio.shotSubject"],
+                        ["place", "studio.shotPlace"],
+                        ["angle", "studio.shotAngle"],
+                        ["people", "studio.shotPeople"],
+                        ["mood", "studio.shotMood"],
+                        ["words", "studio.shotWords"],
+                      ] as const
+                    )
+                      .filter(([key]) => asText(project.idea?.shot?.[key]))
+                      .map(([key, label]) => (
+                        <div key={key}>
+                          <dt>{t(label)}</dt>
+                          <dd>{asText(project.idea?.shot?.[key])}</dd>
+                        </div>
+                      ))}
+                  </dl>
+                  <p className="hint" style={{ margin: 0 }}>{t("studio.shotHint")}</p>
+                  {shotEditOpen && shotDraft ? (
+                    <div className="shot-edit">
+                      <p className="hint" style={{ margin: 0 }}>{t("studio.shotEditHint")}</p>
+                      {(
+                        [
+                          ["summary", "studio.shotSummary", 280],
+                          ["subject", "studio.shotSubject", 240],
+                          ["place", "studio.shotPlace", 160],
+                          ["angle", "studio.shotAngle", 160],
+                          ["people", "studio.shotPeople", 160],
+                          ["mood", "studio.shotMood", 160],
+                          ["words", "studio.shotWords", 200],
+                        ] as const
+                      ).map(([key, label, max]) => (
+                        <label key={key} className="shot-field">
+                          <span>{t(label)}</span>
+                          <textarea
+                            value={shotDraft[key]}
+                            onChange={(e) => setShotDraft((d) => (d ? { ...d, [key]: e.target.value } : d))}
+                            maxLength={max}
+                            rows={key === "summary" || key === "subject" ? 2 : 1}
+                            placeholder={key === "words" ? t("studio.shotWordsPlaceholder") : key === "people" ? t("studio.shotPeoplePlaceholder") : ""}
+                          />
+                        </label>
+                      ))}
+                      <div className="action-row">
+                        <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => { setShotEditOpen(false); setShotDraft(null); }}>
+                          {t("studio.editPictureClose")}
+                        </button>
+                        <button type="button" className="btn" disabled={Boolean(busy)} onClick={changeShot}>
+                          {busy === "shot" ? t("studio.shotChanging") : t("studio.shotSave")}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="action-row">
+                      <button type="button" className="btn accent" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={shootThis}>
+                        {busy === "shot" || busy === "visuals"
+                          ? makingLabel
+                          : t("studio.shotYes", { credits: extraPrice("visuals").credits })}
+                      </button>
+                      <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={openShotEdit}>
+                        {t("studio.shotChange")}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="hint">{asText(project.idea.visualDirection)}</p>
+              )}
               <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} t={t} />
             </>
           )}
@@ -1123,7 +1249,7 @@ export default function Studio() {
             </>
           )}
 
-          {next && (
+          {next && !(isImage && next.id === "visuals" && project.idea?.shot?.summary) && (
             <button className="btn accent" style={{ marginTop: 18 }} disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => run(next.id)}>
               {busy && busy === next.id
                 ? makingLabel
