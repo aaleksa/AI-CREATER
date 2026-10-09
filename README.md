@@ -19,7 +19,7 @@ The first studio is **one short video** (30 seconds, Instagram or TikTok — sam
 | Create | Short video or Image. For Image: kind (photo / invite / info / offer) and **where you will post it** (Instagram or Facebook post square or portrait, Stories / Reels, Facebook wide). The brief is the main field. Under **More options**: brand on/off, words in EN or UK on designed stills, up to 3 **example pictures** sent with the request, saved briefs |
 | Studio | Reel: six steps. Image: Idea → Pictures. Brief, copy brief, example pictures (add or remove). The idea is written in the interface language. Click a take to select it (used for language, word edits and download). Brand on/off is read-only here |
 | Brand kit | One page in four sections (Business, Look, Logo & photos, Contacts) with a live preview, a setup checklist and a sticky Save bar. Logo and up to 3 optional photos (place / person / product), colours, font, tone, niche, Instagram. Photos go into photo posts and Reels only when the scene is about them — never onto designed flyers. Your business address is printed on invitations and offers when the brief names no place, so you stop repeating it. Instagram and website end every Reel with a real call to action (“find us on Instagram…”) and can print one line on photo posts. Completeness counts colours, tone, name, niche, logo. Unsaved edits are flagged; logo and photo uploads no longer overwrite them. |
-| Database (owner only) | `/app/admin`: live read-only view of every table, newest first. Visible only to account ids in `ADMIN_USER_IDS`; password hashes and share tokens are never sent |
+| Database (owner only) | `/app/admin`: live read-only view of every table, newest first. Visible only to emails in `ADMIN_EMAILS` (or ids in `ADMIN_USER_IDS`); password hashes and share tokens are never sent |
 | Account | Name, email (needs password), change password, **download my data** (JSON), sign out on all devices, delete account (needs password) |
 | Credits | Plans (current one highlighted), pack prices. Checkout hidden until Stripe. AI cost log hidden |
 | Library | Every project — open, copy the brief, or **delete** |
@@ -100,7 +100,7 @@ Set in the host:
 
 - `JWT_SECRET` — required in production, the server refuses to start with the default
 - `OPENAI_API_KEY`, `APP_URL` (your public URL)
-- `ADMIN_USER_IDS` — your account id (comma-separated for more; ids are listed in the `users` table on the Database page, and an admin also sees their own on the Account page). Turns on the read-only Database page at `/app/admin`; unset means nobody can open it. Ids, not emails, because anyone can sign up with an unused email
+- `ADMIN_EMAILS` — your email (comma-separated for more). Turns on the read-only Database page at `/app/admin`; unset means nobody can open it. **Register your own account first, then add its email**: sign-up does not verify email, so an unused address here could be claimed by anyone. Stricter option: `ADMIN_USER_IDS` (account ids; open `/app/account?id` on the server to see yours)
 - `DATA_DIR` — path of a **persistent volume** (for example `/data`). The SQLite file and every upload and generated picture live there; without a volume they are wiped on each deploy
 - the contact line on photos needs a system font (DejaVu is installed by the `Dockerfile`); check it after the first deploy
 

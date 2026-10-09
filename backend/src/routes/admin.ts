@@ -4,19 +4,27 @@ import { requireAuth } from "../middleware/auth.js";
 
 /**
  * Read-only look at the live database for the owner(s).
- * Off by default: set ADMIN_USER_IDS=<account id>[,<account id>] on the server.
- * Ids, not emails: anyone can sign up with an unused email, nobody can sign up with someone's id.
- * The id is shown on the Account page.
+ * Off by default. Who may open it, either or both:
+ *  - ADMIN_EMAILS=you@example.com[,other@example.com]  (compared with the email stored for the account)
+ *  - ADMIN_USER_IDS=<account id>[,<account id>]        (stricter: ids cannot be registered by someone else)
+ * Register your own account first, then add its email: sign-up does not verify email addresses,
+ * so an unused address in ADMIN_EMAILS could be claimed by anyone.
  */
-function adminIds() {
-  return (process.env.ADMIN_USER_IDS || "")
+function list(name: string, lower = false) {
+  return (process.env[name] || "")
     .split(",")
-    .map((s) => s.trim())
+    .map((s) => (lower ? s.trim().toLowerCase() : s.trim()))
     .filter(Boolean);
 }
 
-export function isAdminId(id: string | undefined) {
-  return !!id && adminIds().includes(id);
+export function isAdminUser(userId: string | undefined) {
+  if (!userId) return false;
+  if (list("ADMIN_USER_IDS").includes(userId)) return true;
+  const emails = list("ADMIN_EMAILS", true);
+  if (!emails.length) return false;
+  // Current email from the database, not from the sign-in token.
+  const row = db.prepare("SELECT email FROM users WHERE id = ?").get(userId) as { email: string } | undefined;
+  return !!row && emails.includes(String(row.email).toLowerCase());
 }
 
 /** Never leave the server, even to an admin. */
@@ -36,7 +44,7 @@ export const adminRouter = Router();
 
 adminRouter.use(requireAuth, (req, res, next) => {
   // Same answer as an unknown route, so the page is not advertised to everyone else.
-  if (!isAdminId(req.user?.id)) {
+  if (!isAdminUser(req.user?.id)) {
     res.status(404).json({ error: "Not found." });
     return;
   }

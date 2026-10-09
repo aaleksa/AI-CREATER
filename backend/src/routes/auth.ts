@@ -7,7 +7,7 @@ import { requireAuth, signToken } from "../middleware/auth.js";
 import { ensureCreditAccount, grantCredits } from "../services/credits.js";
 import { deleteAccount } from "../services/account.js";
 import { rateLimit } from "../middleware/rateLimit.js";
-import { isAdminId } from "./admin.js";
+import { isAdminUser } from "./admin.js";
 
 export const authRouter = Router();
 
@@ -93,7 +93,7 @@ authRouter.get("/me", requireAuth, (req, res) => {
     user,
     subscription: sub ?? null,
     credits: Number(credits?.credits ?? 0),
-    isAdmin: isAdminId(user.id),
+    isAdmin: isAdminUser(user.id),
   });
 });
 

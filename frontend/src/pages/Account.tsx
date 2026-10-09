@@ -166,7 +166,7 @@ export default function Account() {
           <b>{t("nav.plan", { name: me?.subscription?.plan_name || "Free" })}</b> · {me?.credits ?? "—"} {t("account.credits")}
         </p>
         {since && <p className="hint">{t("account.since", { date: since })}</p>}
-        {me?.isAdmin && <p className="hint">{t("account.idLabel")}: <code>{me.user.id}</code></p>}
+        {(me?.isAdmin || new URLSearchParams(window.location.search).has("id")) && <p className="hint">{t("account.idLabel")}: <code>{me.user.id}</code></p>}
         <Link className="btn ghost" style={{ marginTop: 12 }} to="/app/billing">{t("account.openBilling")}</Link>
       </section>
 
