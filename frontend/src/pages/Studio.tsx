@@ -763,7 +763,7 @@ export default function Studio() {
                     {t("studio.placeholderFail")}
                   </div>
                 )}
-                {!isInvite && <div className="caption">{caption}</div>}
+                {!isImage && <div className="caption">{caption}</div>}
               </>
             )}
           </div>
