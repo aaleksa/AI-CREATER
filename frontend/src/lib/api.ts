@@ -39,12 +39,23 @@ export type BrandKitRow = Record<string, string> & {
   vertical_note?: string;
   logo_on_photos?: boolean;
 };
+export type Shot = {
+  subject: string;
+  place: string;
+  angle: string;
+  people: string;
+  mood: string;
+  words: string;
+  summary: string;
+};
 export type Idea = {
   title: string;
   hook: string;
   concept: string;
   audience: string;
   visualDirection: string;
+  shot?: Shot;
+  shotConfirmed?: boolean;
 };
 export type InviteItem = {
   time: string;
@@ -205,6 +216,8 @@ export const api = {
       }),
     });
   },
+  updateShot: (id: string, body: { confirm?: boolean; shot?: Shot }) =>
+    request<{ project: Project }>(`/projects/${id}/shot`, { method: "POST", body: JSON.stringify(body) }),
   saveFeedback: (id: string, publishable: string, reasons: string[]) =>
     request<{ project: Project }>(`/projects/${id}/feedback`, {
       method: "POST",

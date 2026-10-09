@@ -79,13 +79,75 @@ function contactCtaLine(brand?: BrandKit | null) {
   ].join(" ");
 }
 
+export type Shot = {
+  subject: string;
+  place: string;
+  angle: string;
+  people: string;
+  mood: string;
+  words: string;
+  summary: string;
+};
+
 export type Idea = {
   title: string;
   hook: string;
   concept: string;
   audience: string;
   visualDirection: string;
+  shot: Shot;
+  shotConfirmed: boolean;
 };
+
+function clipField(value: string, max: number) {
+  return value.slice(0, max);
+}
+
+export function emptyShot(): Shot {
+  return { subject: "", place: "", angle: "", people: "", mood: "", words: "", summary: "" };
+}
+
+export function tidyShot(data: unknown): Shot | null {
+  if (!data || typeof data !== "object") return null;
+  const row = data as Partial<Shot>;
+  const shot: Shot = {
+    subject: clipField(plainText(row.subject), 240),
+    place: clipField(plainText(row.place), 160),
+    angle: clipField(plainText(row.angle), 160),
+    people: clipField(plainText(row.people), 160),
+    mood: clipField(plainText(row.mood), 160),
+    words: clipField(plainText(row.words), 200),
+    summary: clipField(plainText(row.summary), 280),
+  };
+  if (!shot.summary && !shot.subject && !shot.place) return null;
+  return shot;
+}
+
+export function fallbackShot(idea: Pick<Idea, "visualDirection" | "concept" | "title">, prompt = ""): Shot {
+  const summary = clipField(plainText(idea.visualDirection) || plainText(idea.concept) || plainText(prompt), 280);
+  return {
+    subject: summary,
+    place: "",
+    angle: "",
+    people: "",
+    mood: "",
+    words: "none",
+    summary: summary || clipField(plainText(idea.title), 280),
+  };
+}
+
+export function shotLines(shot?: Shot | null) {
+  if (!shot) return [];
+  return [
+    shot.summary && `Shot: ${shot.summary}`,
+    shot.subject && `In the frame: ${shot.subject}`,
+    shot.place && `Place: ${shot.place}`,
+    shot.angle && `Camera: ${shot.angle}`,
+    shot.people && `People: ${shot.people}`,
+    shot.mood && `Light and mood: ${shot.mood}`,
+    shot.words && `Words in the photograph: ${shot.words}`,
+  ].filter(Boolean) as string[];
+}
 
 export type ScriptScene = {
   id: number;
@@ -133,13 +195,20 @@ export function plainText(value: unknown): string {
 
 export function tidyIdea(data: unknown): Idea | null {
   if (!data || typeof data !== "object") return null;
-  const row = data as Partial<Idea>;
+  const row = data as Partial<Idea> & { shotConfirmed?: unknown };
+  const title = plainText(row.title);
+  const hook = plainText(row.hook);
+  const concept = plainText(row.concept);
+  const audience = plainText(row.audience);
+  const visualDirection = plainText(row.visualDirection);
+  if (!title && !hook && !concept && !visualDirection && !tidyShot(row.shot)) return null;
+  const base = { title, hook, concept, audience, visualDirection };
+  const shot = tidyShot(row.shot) || fallbackShot(base);
   return {
-    title: plainText(row.title),
-    hook: plainText(row.hook),
-    concept: plainText(row.concept),
-    audience: plainText(row.audience),
-    visualDirection: plainText(row.visualDirection),
+    ...base,
+    visualDirection: visualDirection || shot.summary,
+    shot: shot.summary ? shot : { ...shot, summary: visualDirection },
+    shotConfirmed: row.shotConfirmed === true,
   };
 }
 
@@ -341,7 +410,12 @@ function clipInput(text: string) {
   return text.length > max ? text.slice(0, max) : text;
 }
 
-async function jsonCompletion<T>(system: string, user: string, fallback: T): Promise<{ data: T; provider: string; model: string; cost: number }> {
+async function jsonCompletion<T>(
+  system: string,
+  user: string,
+  fallback: T,
+  opts?: { temperature?: number }
+): Promise<{ data: T; provider: string; model: string; cost: number }> {
   const openai = client();
   const model = config.openaiModel || "gpt-4o-mini";
   if (!openai) {
@@ -349,7 +423,7 @@ async function jsonCompletion<T>(system: string, user: string, fallback: T): Pro
   }
   const response = await openai.chat.completions.create({
     model,
-    temperature: 0.8,
+    temperature: opts?.temperature ?? 0.8,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: clipInput(system + "\nAlways reply with valid JSON.") },
@@ -370,7 +444,7 @@ async function jsonCompletion<T>(system: string, user: string, fallback: T): Pro
 }
 
 const IMAGE_KIND_GUIDE: Record<string, string> = {
-  photo: "Still photo post: the facts they wrote, plus something interesting to look at. Four specific photographs from their words — not a beige empty room.",
+  photo: "Still photo post: one concrete photograph from their words — not a beige empty room, not a landscape or mountain they did not ask for.",
   invite: "Finished invitation flyer: photography and words are one designed page (title, programme, date), like ChatGPT would design — not a stock photo with a caption.",
   info: "Information post: a designed page from their fact — photography plus short readable type, one layout.",
   offer: "Offer post: a designed page from their offer — photography plus short readable type, not a price sticker on a stock photo.",
@@ -399,10 +473,22 @@ function mockIdea(prompt: string, type: string, brand?: BrandKit | null, imageIn
       ? "People scrolling the feed who will stop for a strong photo."
       : "People scrolling fast who will stop for a strong first frame and a human voice.",
     visualDirection: still
-      ? `Four concrete shots from “${prompt.slice(0, 120)}”: a close still life, the activity itself, a named object, and leftover light. No empty showroom.`
+      ? `One concrete photograph from “${prompt.slice(0, 120)}”. Real place they named — not a stock landscape.`
       : brand?.primary_color
         ? `Warm practical light, ${brand.primary_color} accents, generous negative space, ${brand.font} titles.`
         : "Warm practical light, terracotta accents, generous negative space, serif titles over handheld texture.",
+    shot: still
+      ? {
+          subject: prompt.slice(0, 160),
+          place: "the place they named in the request",
+          angle: "natural eye-level, close enough to feel the room",
+          people: "only people they mentioned",
+          mood: "warm practical light from their words",
+          words: "none",
+          summary: `Photograph: ${prompt.slice(0, 180)}`,
+        }
+      : emptyShot(),
+    shotConfirmed: false,
   };
 }
 
@@ -799,15 +885,24 @@ export function stillPicturePrompt(
     .trim()
     .slice(0, 1800);
   const withCopy = kind === "invite" || kind === "info" || kind === "offer";
+  const shot = idea.shot?.summary ? idea.shot : fallbackShot(idea, asked);
+  const confirmed = shotLines(shot);
   return [
     withCopy
       ? "Create one finished designed picture from this request. Do what they asked — layout, words and photograph together."
-      : "Create one finished photograph from this request.",
-    asked,
-    brandLook(brand),
+      : "Create one finished photograph of this exact scene. Do not invent a different place, landscape, mountain, forest road or story.",
+    confirmed.length
+      ? ["The owner approved this shot. Follow it exactly:", ...confirmed].join("\n")
+      : idea.visualDirection && `Photograph this: ${idea.visualDirection}`,
+    `Facts from their request (do not add a different scene):\n${asked}`,
+    withCopy ? brandLook(brand, "designed") : brandLook(brand, "photo"),
     withCopy && addressLine(brand),
     withCopy &&
       `Fill the whole canvas edge to edge. Keep a clear empty margin at the bottom so the last line is fully visible. If a line does not fit, wrap it or move it — never clip, crop or run words off the edge. ${pictureLanguageLine(pictureLanguage)} No app UI, no watermark.`,
+    !withCopy &&
+      (shot.words && !/^none$/i.test(shot.words)
+        ? `If words appear, only: ${shot.words}. No other letters.`
+        : "Photograph only. No letters, no numbers, no title, no caption painted in the photo."),
     regenInstruction(feedback),
   ]
     .filter(Boolean)
@@ -827,16 +922,22 @@ export async function generateIdea(
     ...(imageIntent === "invite" ? { invite: guessPoster(prompt, "invite") } : {}),
   };
   const kindGuide = type === "image_post" ? IMAGE_KIND_GUIDE[imageIntent] || IMAGE_KIND_GUIDE.photo : "";
+  const still = type === "image_post";
+  const shotKey = still ? ", shot { subject, place, angle, people, mood, words, summary }" : "";
   const keys =
     imageIntent === "invite"
-      ? "title, hook, concept, audience, visualDirection, invite { name, date, time, place, address, intro, closing, lines: string[], program: [{ time, title, detail }] }"
-      : "title, hook, concept, audience, visualDirection";
+      ? `title, hook, concept, audience, visualDirection${shotKey}, invite { name, date, time, place, address, intro, closing, lines: string[], program: [{ time, title, detail }] }`
+      : `title, hook, concept, audience, visualDirection${shotKey}`;
+  const fieldsWord = still ? "title, hook, concept, audience, visualDirection and every shot field" : "title, hook, concept, audience and visualDirection";
   const ideaLanguage =
     uiLanguage === "uk"
-      ? "\nLanguage: write title, hook, concept, audience and visualDirection in Ukrainian, whatever language the request is in. Natural, simple Ukrainian."
+      ? `\nLanguage: write ${fieldsWord} in Ukrainian, whatever language the request is in. Natural, simple Ukrainian.`
       : uiLanguage === "en"
-        ? "\nLanguage: write title, hook, concept, audience and visualDirection in English, whatever language the request is in."
-        : "\nLanguage: write title, hook, concept, audience and visualDirection in the language of the user request.";
+        ? `\nLanguage: write ${fieldsWord} in English, whatever language the request is in.`
+        : `\nLanguage: write ${fieldsWord} in the language of the user request.`;
+  const shotGuide = still
+    ? ` shot is what the camera will see — the owner reads it and says "yes, shoot this" before we pay for the picture. Plain words, one short line per field. Every detail the owner wrote about the scene (objects, flowers, light, furniture, place) must appear in subject, place or mood — never drop one. subject = everything in the frame they described. place = where exactly (their business if they said so; never a landscape they did not mention). angle = camera distance and direction. people = "nobody" unless the request clearly asks for a person; in Ukrainian "пара" next to coffee, tea or a cup means steam, not a couple. mood = light and feeling. words = "none" unless the request explicitly asks for text, a caption, a sign or quoted words on the picture; a description of the scene is never words on the picture. For invitations, information and offers, words = the short lines they want printed. summary = one full sentence of the whole shot the owner can check in two seconds. Only facts from the request; if the request does not say, choose the simplest honest option, do not invent a new story.`
+    : "";
   return jsonCompletion<IdeaResult>(
     `You are the creative director of Auteur, an AI content studio. The user never chooses models or prompts. You decide the concept. ${
       type === "image_post"
@@ -855,9 +956,30 @@ export async function generateIdea(
         : imageIntent === "info" || imageIntent === "offer"
           ? " visualDirection = a designed post: photography plus type as one layout, not a stock photo with a paragraph on top. Proofread. Do not invent a different story."
           : " visualDirection = one concrete photograph from their words, not a generic mood. Do not invent a different story."
-    }`,
-    fallback
+    }${shotGuide}`,
+    fallback,
+    still ? { temperature: 0.4 } : undefined
   );
+}
+
+/** Rewrites only the shot from one sentence of owner feedback. Cheap text call; nothing is painted. */
+const ASKS_FOR_TEXT = /["«»“”„]|напис|надпис|підпис|caption|lettering|sign saying|words on the picture:/i;
+const SAYS_NO_TEXT = /без (напису|надпису|підпису|слів)|не (напис|слова)|no (words|text|caption|lettering)|not (words|text)/gi;
+
+function asksForText(text: string) {
+  return ASKS_FOR_TEXT.test(text.replace(SAYS_NO_TEXT, " "));
+}
+
+/** A photo gets painted words only when the owner clearly asked for text; otherwise the line describes the scene. */
+export function keepWordsHonest(shot: Shot, asked: string[], imageIntent = "") {
+  const designed = imageIntent === "invite" || imageIntent === "info" || imageIntent === "offer";
+  const words = shot.words.trim();
+  if (designed || !words || /^(none|немає|нема|без (слів|напису)|—|-)$/i.test(words)) {
+    return /^(none|немає|нема|без (слів|напису)|—|-)$/i.test(words) ? { ...shot, words: "" } : shot;
+  }
+  if (asked.some(asksForText)) return shot;
+  const subject = shot.subject.toLowerCase().includes(words.toLowerCase()) ? shot.subject : [shot.subject, words].filter(Boolean).join("; ");
+  return { ...shot, subject: subject.slice(0, 240), words: "" };
 }
 
 function spacedWords(text: string) {

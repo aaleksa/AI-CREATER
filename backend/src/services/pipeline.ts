@@ -15,6 +15,8 @@ import {
   generateOneVisual,
   regenInstruction,
   stillPicturePrompt,
+  emptyShot,
+  keepWordsHonest,
   rewriteStillLanguagePrompt,
   rewriteStillCopyPrompt,
   readPaintedCopy,
@@ -26,6 +28,7 @@ import {
   type CaptionCue,
   type Idea,
   type PictureLanguage,
+  type Shot,
   type Script,
   type Visual,
 } from "./ai.js";
@@ -433,14 +436,52 @@ export function restoreStepVersion(
 
 function pickIdea(data: Idea & { invite?: unknown }): Idea {
   return (
-    tidyIdea(data) || {
+    tidyIdea({ ...data, shotConfirmed: false }) || {
       title: "",
       hook: "",
       concept: "",
       audience: "",
       visualDirection: "",
+      shot: emptyShot(),
+      shotConfirmed: false,
     }
   );
+}
+
+/** Owner approves the planned shot, or rewrites its fields by hand first. No AI call, no credits. */
+export function updateShot(userId: string, projectId: string, body: { confirm?: unknown; shot?: unknown }) {
+  const project = getProject(projectId, userId);
+  const type = String(project.type);
+  if (!isImagePost(type)) {
+    throw Object.assign(new Error("Only still pictures have a shot to confirm."), { status: 400 });
+  }
+  const idea = tidyIdea(parse(project.idea_json));
+  if (!idea) throw Object.assign(new Error("Generate the idea first."), { status: 400 });
+  let next: Idea = idea;
+  if (body.shot && typeof body.shot === "object") {
+    const raw = body.shot as Record<string, unknown>;
+    const field = (key: keyof Shot, max: number) => String(raw[key] ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+    const typed: Shot = {
+      subject: field("subject", 240),
+      place: field("place", 160),
+      angle: field("angle", 160),
+      people: field("people", 160),
+      mood: field("mood", 160),
+      words: field("words", 200),
+      summary: field("summary", 280),
+    };
+    if (!typed.subject && !typed.summary) {
+      throw Object.assign(new Error("Describe the shot — at least what is in the frame."), { status: 400 });
+    }
+    const summary = typed.summary || [typed.subject, typed.place].filter(Boolean).join(", ");
+    next = { ...next, shot: { ...typed, summary }, visualDirection: summary, shotConfirmed: false };
+  }
+  if (body.confirm === true) next = { ...next, shotConfirmed: true };
+  db.prepare("UPDATE projects SET idea_json = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(next), projectId);
+  db.prepare(
+    "UPDATE project_step_versions SET payload_json = ? WHERE project_id = ? AND step = 'idea' AND accepted = 1"
+  ).run(JSON.stringify(next), projectId);
+  return serializeProject(getProject(projectId, userId));
 }
 
 export async function updateInvite(userId: string, projectId: string, raw: unknown) {
@@ -582,6 +623,12 @@ export async function runStep(
   if (step === "visuals" && isImagePost(type) && !idea) {
     throw Object.assign(new Error("Generate the idea first."), { status: 400 });
   }
+  if (step === "visuals" && isImagePost(type) && !project.visuals_json && !tidyIdea(idea)?.shotConfirmed) {
+    throw Object.assign(new Error("Check the shot first — say yes, or fix it."), {
+      status: 400,
+      code: "shot_unconfirmed",
+    });
+  }
   if (step === "visuals" && !config.openaiKey) {
     throw Object.assign(new Error("Pictures need an OpenAI key. Add OPENAI_API_KEY and restart the API."), { status: 400 });
   }
@@ -699,7 +746,10 @@ export async function runStep(
     if (step === "idea") {
       providerTouched = true;
       const result = await generateIdea(prompt, type, brand, imageIntent, feedback, opts.uiLanguage === "uk" ? "uk" : opts.uiLanguage === "en" ? "en" : "");
-      updates.idea_json = JSON.stringify(pickIdea(result.data));
+      const picked = pickIdea(result.data);
+      updates.idea_json = JSON.stringify(
+        isImagePost(type) ? { ...picked, shot: keepWordsHonest(picked.shot, [prompt], imageIntent) } : picked
+      );
       if (isInvitePoster(type, imageIntent)) {
         updates.invite_json = JSON.stringify(preferBriefInvite(result.data.invite, prompt, "invite"));
       }

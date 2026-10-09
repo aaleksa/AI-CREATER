@@ -6,7 +6,7 @@ Auteur is not a Canva clone. It is a simple AI content studio: the user never ch
 
 UI: **English and Ukrainian** (EN / УК, stored in the browser). The brief stays in the language they wrote. **Light and dark theme** (☀ / ☾, follows the device until you choose) and a phone layout with a bottom tab bar.
 
-Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.39).
+Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.40).
 
 The first studio is **one short video** (30 seconds, Instagram or TikTok — same file) and still **Image / Posts**. A Reel is 150 credits; a still post is 13 (idea + one picture). **Video** and **Advertisement** stay as two separate Create stubs (TZ §2.3). Social post is a third stub.
 
@@ -43,6 +43,7 @@ Plans (provisional until real unit cost is measured):
 - **No cropping.** The image model paints the exact shape: `gpt-image-2.x` takes any size (multiple of 16, up to 3:1): 1024×1024, 1024×1280, 864×1536, 1536×800. Only if an account falls back to `gpt-image-1` / `dall-e-3` (square, 2:3, 3:2 only) do we paint the closest shape and trim it.
 - **Example pictures.** Up to 3 per brief (PNG / JPG, 2 MB), independent of the Brand Kit. They go to `images.edit` with the request: take subject, style and mood, never copy letters or logos. Word edits and Same-picture do not resend them.
 - The idea text follows the interface language (UK or EN), whatever language the brief is in.
+- **Check the shot before you pay for the picture.** The idea now ends with “We’ll shoot this”: one sentence plus what is in the frame, where, camera, people, light and the words on the picture. **Yes, shoot this · 8 credits** approves it and makes the picture in one click. **Change the shot · free** opens every field; **Save the shot** keeps exactly what you typed — no AI call, no credits. AI only gets your corrected shot when you press **Yes, shoot this**. A photo gets painted words only when the brief clearly asks for them or you type them yourself. Pictures will not start until the shot is approved, and the picture prompt is built from that approved shot, with the brief as facts — so fewer paid retakes of the same picture.
 - On Create, choose whether painted words follow the brief, or are English / Ukrainian. After the picture, **Same picture in EN/UK** is 8 credits: we read the words already painted on the selected take, translate them line by line (your brief is the glossary; names, dates and addresses too; no line is dropped) and return the picture on screen in that language. You can also **edit the words** on that picture (add or remove a line) for 8 credits.
 - If **Use brand kit** is on (chosen on Create only), the picture prompt gets name, colours, font, tone, niche. Owner photos are sent to the model for photo posts and Reels, not for invite / info / offer flyers. Logo is optional — no nag in Studio.
 - Previous takes stay in the project; restore is free.

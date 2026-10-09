@@ -645,6 +645,40 @@ textarea.brief-box::placeholder {
   -webkit-text-fill-color: var(--muted);
   opacity: 1;
 }
+.shot-card {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--accent-2);
+  border-radius: 16px;
+  background: var(--surface-soft);
+}
+.shot-summary { margin: 0; font-family: var(--serif); font-size: 18px; line-height: 1.35; }
+.shot-list { display: grid; gap: 6px; margin: 0; }
+.shot-list div { display: grid; grid-template-columns: 120px 1fr; gap: 10px; }
+.shot-list dt { color: var(--muted); font-size: 13px; }
+.shot-list dd { margin: 0; font-size: 14px; }
+.shot-edit { display: grid; gap: 10px; }
+.shot-field { display: grid; gap: 4px; }
+.shot-field span { color: var(--muted); font-size: 13px; }
+.shot-field textarea {
+  width: 100%;
+  min-height: 0;
+  resize: vertical;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.shot-field textarea:focus { outline: none; border-color: var(--accent-2); }
+@media (max-width: 560px) {
+  .shot-list div { grid-template-columns: 1fr; gap: 2px; }
+}
 .edit-picture-panel {
   margin-top: 4px;
   padding: 14px;

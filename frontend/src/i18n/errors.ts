@@ -64,6 +64,10 @@ export const ERROR_UK: Record<string, string> = {
   "This plan is full. Confirm to take the oldest Reel off disk (download it first if you still need it), or delete one from the Library.":
     "План заповнений. Підтвердіть, щоб зняти найстаріший Reel з диска (спочатку завантажте, якщо ще потрібен), або видаліть один у бібліотеці.",
   "Generate the idea first.": "Спочатку зробіть ідею.",
+  "Check the shot first — say yes, or fix it.": "Спочатку перевірте кадр — підтвердіть або виправте.",
+  "Only still pictures have a shot to confirm.": "Кадр підтверджують лише для картинок.",
+  "Could not update the shot.": "Не вдалося змінити кадр.",
+  "Describe the shot — at least what is in the frame.": "Опишіть кадр — хоча б що в кадрі.",
   "Generate the script first.": "Спочатку зробіть сценарій.",
   "Generate the voice audio first.": "Спочатку запишіть голос.",
   "Pictures need an OpenAI key. Add OPENAI_API_KEY and restart the API.":
