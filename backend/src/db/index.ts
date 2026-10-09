@@ -42,6 +42,15 @@ addColumn("ALTER TABLE brand_kits ADD COLUMN contact_on_photos INTEGER NOT NULL 
 addColumn("ALTER TABLE brand_kits ADD COLUMN address TEXT NOT NULL DEFAULT ''");
 addColumn("ALTER TABLE projects ADD COLUMN image_format TEXT NOT NULL DEFAULT ''");
 
+// Accounts made before email confirmation existed count as confirmed (they already have their credits).
+const userColumns = sqlite.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+if (!userColumns.some((column) => column.name === "email_verified_at")) {
+  sqlite.exec("ALTER TABLE users ADD COLUMN email_verified_at TEXT");
+  sqlite.exec("UPDATE users SET email_verified_at = datetime('now')");
+}
+addColumn("ALTER TABLE users ADD COLUMN verify_token_hash TEXT");
+addColumn("ALTER TABLE users ADD COLUMN verify_sent_at TEXT");
+
 try {
   sqlite.exec(`
 CREATE TABLE IF NOT EXISTS project_step_versions (

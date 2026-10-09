@@ -11,6 +11,7 @@ import Account from "./pages/Account";
 import Library from "./pages/Library";
 import Preview from "./pages/Preview";
 import Admin from "./pages/Admin";
+import VerifyEmail from "./pages/VerifyEmail";
 import { hasSession } from "./lib/api";
 
 function Private({ children }: { children: ReactNode }) {
@@ -27,6 +28,7 @@ export default function App() {
         <Route path="/login" element={<Auth mode="login" />} />
         <Route path="/signup" element={<Auth mode="signup" />} />
         <Route path="/preview/:token" element={<Preview />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route
           path="/app"
           element={

@@ -10,6 +10,10 @@ export const config = {
   stripeSecret: process.env.STRIPE_SECRET_KEY || "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
   appUrl: process.env.APP_URL || "http://localhost:5173",
+  resendKey: process.env.RESEND_API_KEY || "",
+  mailFrom: process.env.MAIL_FROM || "Auteur <onboarding@resend.dev>",
+  /** auto (default) = on only when real mail is set up; on = always (link in the log without a key); off = never. */
+  emailVerification: (process.env.EMAIL_VERIFICATION || "auto").toLowerCase(),
 };
 
 if (process.env.NODE_ENV === "production" && config.jwtSecret === "dev-secret-change-me") {

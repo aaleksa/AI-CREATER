@@ -78,6 +78,14 @@ export const ERROR_UK: Record<string, string> = {
   "Something went wrong. Try again in a minute.": "Щось пішло не так. Спробуйте за хвилину.",
   "Something went wrong. Refresh the page and try again.": "Щось пішло не так. Оновіть сторінку й спробуйте ще раз.",
   "This file isn’t ready yet.": "Файл ще не готовий.",
+  "Confirm your email first — we sent you a link. Your 400 free credits arrive right after.":
+    "Спочатку підтвердіть пошту — ми надіслали посилання. Одразу після цього отримаєте 400 безкоштовних кредитів.",
+  "We just sent a link. Check your inbox and spam, or try again in a minute.":
+    "Ми щойно надіслали посилання. Перевірте вхідні та спам або спробуйте за хвилину.",
+  "This link no longer works. If your email is already confirmed, just sign in.":
+    "Це посилання вже не діє. Якщо пошту вже підтверджено, просто увійдіть.",
+  "This link has expired. Sign in and press “Send again”.":
+    "Термін дії посилання минув. Увійдіть і натисніть «Надіслати ще раз».",
   "Choose where the picture will be posted.": "Оберіть, де буде опублікована картинка.",
   "No picture.": "Картинки немає.",
   "We’re already making this. Wait a moment.": "Вже робимо. Зачекайте трохи.",

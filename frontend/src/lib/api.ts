@@ -8,6 +8,7 @@ export type Me = {
   credits: number;
   subscription: { plan_id: string; plan_name: string; monthly_credits: number; status: string } | null;
   isAdmin?: boolean;
+  emailVerified?: boolean;
 };
 export type AdminTable = { name: string; total: number; limit: number; offset: number; columns: string[]; rows: Record<string, unknown>[] };
 
@@ -171,6 +172,9 @@ export const api = {
   login: (body: { email: string; password: string }) =>
     request<{ token: string; user: User }>("/auth/login", { method: "POST", body: JSON.stringify(body) }),
   me: () => request<Me>("/auth/me"),
+  verifyEmail: (token: string) =>
+    request<{ ok: true }>("/auth/verify-email", { method: "POST", body: JSON.stringify({ token }) }),
+  resendVerification: () => request<{ verified: boolean }>("/auth/verify-email/resend", { method: "POST" }),
   adminTables: () => request<{ tables: { name: string; rows: number }[] }>("/admin/tables"),
   adminTable: (name: string, offset = 0, limit = 50) =>
     request<AdminTable>(`/admin/tables/${encodeURIComponent(name)}?offset=${offset}&limit=${limit}`),

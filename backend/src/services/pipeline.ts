@@ -39,6 +39,7 @@ import { parseStepFeedback, recordStepRejection } from "./feedback.js";
 import { maybeRefreshLearnedSummary } from "./learning.js";
 import { previewState } from "./share.js";
 import { forOwner, USER_ERRORS } from "./userErrors.js";
+import { emailUnverifiedError, needsVerification } from "./emailVerification.js";
 
 export const FORMAT_TYPES = ["video", "instagram_reel", "tiktok", "image_post", "advertisement", "social_post"] as const;
 export type FormatType = (typeof FORMAT_TYPES)[number];
@@ -549,6 +550,7 @@ export async function runStep(
   } = {}
 ) {
   const project = getProject(projectId, userId);
+  if (needsVerification(userId)) throw emailUnverifiedError();
   const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
   const sceneId = Number.isFinite(opts.sceneId) ? Number(opts.sceneId) : undefined;
   if (sceneId && step !== "visuals") {
