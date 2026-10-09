@@ -4,17 +4,19 @@ import { requireAuth } from "../middleware/auth.js";
 
 /**
  * Read-only look at the live database for the owner(s).
- * Off by default: set ADMIN_EMAILS=you@example.com (comma-separated) on the server.
+ * Off by default: set ADMIN_USER_IDS=<account id>[,<account id>] on the server.
+ * Ids, not emails: anyone can sign up with an unused email, nobody can sign up with someone's id.
+ * The id is shown on the Account page.
  */
-export function adminEmails() {
-  return (process.env.ADMIN_EMAILS || "")
+function adminIds() {
+  return (process.env.ADMIN_USER_IDS || "")
     .split(",")
-    .map((s) => s.trim().toLowerCase())
+    .map((s) => s.trim())
     .filter(Boolean);
 }
 
-export function isAdminEmail(email: string | undefined) {
-  return !!email && adminEmails().includes(email.toLowerCase());
+export function isAdminId(id: string | undefined) {
+  return !!id && adminIds().includes(id);
 }
 
 /** Never leave the server, even to an admin. */
@@ -34,7 +36,7 @@ export const adminRouter = Router();
 
 adminRouter.use(requireAuth, (req, res, next) => {
   // Same answer as an unknown route, so the page is not advertised to everyone else.
-  if (!isAdminEmail(req.user?.email)) {
+  if (!isAdminId(req.user?.id)) {
     res.status(404).json({ error: "Not found." });
     return;
   }

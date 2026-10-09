@@ -31,6 +31,7 @@ export const uk: Messages = {
     plan: "План і кредити",
     credits: "кредитів",
     since: "З нами з {date}",
+    idLabel: "ID акаунта",
     openBilling: "Плани й кредити",
     profile: "Профіль",
     name: "Ім’я",

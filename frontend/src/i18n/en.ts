@@ -29,6 +29,7 @@ export const en = {
     plan: "Plan and credits",
     credits: "credits",
     since: "Member since {date}",
+    idLabel: "Account ID",
     openBilling: "Plans and credits",
     profile: "Profile",
     name: "Name",
