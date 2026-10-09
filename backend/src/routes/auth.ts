@@ -7,6 +7,7 @@ import { requireAuth, signToken } from "../middleware/auth.js";
 import { ensureCreditAccount, grantCredits } from "../services/credits.js";
 import { deleteAccount } from "../services/account.js";
 import { rateLimit } from "../middleware/rateLimit.js";
+import { isAdminEmail } from "./admin.js";
 
 export const authRouter = Router();
 
@@ -88,7 +89,12 @@ authRouter.get("/me", requireAuth, (req, res) => {
   const credits = db.prepare("SELECT credits FROM credit_balances WHERE user_id = ?").get(req.user!.id) as
     | { credits: number }
     | undefined;
-  res.json({ user, subscription: sub ?? null, credits: Number(credits?.credits ?? 0) });
+  res.json({
+    user,
+    subscription: sub ?? null,
+    credits: Number(credits?.credits ?? 0),
+    isAdmin: isAdminEmail(user.email),
+  });
 });
 
 const sensitive = rateLimit(10, 15 * 60_000, "Too many attempts. Wait a few minutes, then try again.", "account");

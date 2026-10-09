@@ -7,7 +7,9 @@ export type Me = {
   user: User;
   credits: number;
   subscription: { plan_id: string; plan_name: string; monthly_credits: number; status: string } | null;
+  isAdmin?: boolean;
 };
+export type AdminTable = { name: string; total: number; limit: number; offset: number; columns: string[]; rows: Record<string, unknown>[] };
 
 export class ApiError extends Error {
   status: number;
@@ -156,6 +158,9 @@ export const api = {
   login: (body: { email: string; password: string }) =>
     request<{ token: string; user: User }>("/auth/login", { method: "POST", body: JSON.stringify(body) }),
   me: () => request<Me>("/auth/me"),
+  adminTables: () => request<{ tables: { name: string; rows: number }[] }>("/admin/tables"),
+  adminTable: (name: string, offset = 0, limit = 50) =>
+    request<AdminTable>(`/admin/tables/${encodeURIComponent(name)}?offset=${offset}&limit=${limit}`),
   projects: () => request<{ projects: Project[]; archive?: ArchiveState; fullVideoCost: number }>("/projects"),
   project: (id: string) =>
     request<{ project: Project; archive?: ArchiveState; costs: Record<string, number>; fullVideoCost: number }>(

@@ -52,6 +52,7 @@ export default function AppLayout() {
           <NavLink to="/app/library">{t("nav.library")}</NavLink>
           <NavLink to="/app/brand">{t("nav.brand")}</NavLink>
           <NavLink to="/app/billing">{t("nav.credits")}</NavLink>
+          {me?.isAdmin && <NavLink to="/app/admin">Database</NavLink>}
         </nav>
         <div className="side-foot">
           <NavLink to="/app/billing" className="credits-pill">

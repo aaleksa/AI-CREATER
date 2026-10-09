@@ -10,6 +10,7 @@ import { authRouter } from "./routes/auth.js";
 import { projectsRouter } from "./routes/projects.js";
 import { brandRouter } from "./routes/brand.js";
 import { billingRouter } from "./routes/billing.js";
+import { adminRouter } from "./routes/admin.js";
 import { runMaintenance } from "./services/jobs.js";
 import { shareRouter } from "./routes/share.js";
 import { findPreview, serializePreview } from "./services/share.js";
@@ -41,6 +42,7 @@ app.use("/share", shareRouter);
 app.use("/projects", projectsRouter);
 app.use("/brand", brandRouter);
 app.use("/billing", billingRouter);
+app.use("/admin", adminRouter);
 
 // In production one server serves the API and the built web app (frontend/dist), so there is one URL.
 const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../frontend/dist");

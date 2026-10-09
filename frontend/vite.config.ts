@@ -12,6 +12,7 @@ export default defineConfig({
       "/billing": "http://localhost:4000",
       "/health": "http://localhost:4000",
       "/share": "http://localhost:4000",
+      "/admin": "http://localhost:4000",
     },
   },
 });

@@ -10,6 +10,7 @@ import Billing from "./pages/Billing";
 import Account from "./pages/Account";
 import Library from "./pages/Library";
 import Preview from "./pages/Preview";
+import Admin from "./pages/Admin";
 import { hasSession } from "./lib/api";
 
 function Private({ children }: { children: ReactNode }) {
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="billing" element={<Billing />} />
           <Route path="account" element={<Account />} />
           <Route path="library" element={<Library />} />
+          <Route path="admin" element={<Admin />} />
         </Route>
       </Routes>
     </>

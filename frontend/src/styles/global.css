@@ -381,6 +381,13 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
   border-radius: 12px;
   padding: 12px 14px;
 }
+.admin-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 16px 0; }
+.admin-bar select { background: var(--surface-field); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; color: inherit; }
+.admin-scroll { overflow: auto; max-width: 100%; border: 1px solid var(--line); border-radius: 12px; }
+.admin-table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.admin-table th, .admin-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; max-width: 360px; overflow-wrap: anywhere; }
+.admin-table th { position: sticky; top: 0; background: var(--surface-field); font-weight: 600; white-space: nowrap; }
+.admin-table i { opacity: .5; }
 .pw-wrap { position: relative; display: block; }
 .pw-wrap input { width: 100%; padding-right: 46px; }
 .pw-eye {
