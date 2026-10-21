@@ -1172,9 +1172,11 @@ function reelLogoSpotLine(spot: ReelLogoSpot, brand?: BrandKit | null) {
   const look = brand?.user_id ? logoLook(brand.user_id) : null;
   const mark = look ? `a ${look.shape} logo${look.colors.length ? ` in ${look.colors.join(", ")}` : ""}` : "their logo";
   return [
-    `Leave a calm, plain patch for their logo in the ${edge} ${side} — we add the exact file there afterwards.`,
-    `That patch starts about ${fromSide}% in from the ${side} side and about ${fromEdge}% from the ${edge}, and is about ${w}% of the picture's width and ${h}% of its height.`,
-    `Keep it free of faces, words and busy texture, in an even tone that ${mark} stands out on. Do not paint any logo or mark yourself.`,
+    `Composition rule (must follow): keep an empty patch in the ${edge} ${side} for their logo, which we place there afterwards.`,
+    `The patch starts about ${fromSide}% in from the ${side} side and about ${fromEdge}% from the ${edge}; it is about ${w}% of the picture's width and ${h}% of its height.`,
+    `Inside it there is only plain background — a smooth wall, sky, soft out-of-focus light or an even surface — in one calm tone that ${mark} stands out on.`,
+    "Nothing else may sit in that patch: no flowers, pictures, frames, flags, bunting, shelves, windows with detail, people, food or objects, and no words.",
+    "Frame the scene so its subject sits away from that corner. Do not paint any logo or mark yourself.",
   ].join(" ");
 }
 
@@ -1196,9 +1198,11 @@ export function videoFramePrompt(scene: ScriptScene, brand?: BrandKit | null, re
     "One vertical 9:16 photograph for a short film. Real place, real light, cinematic. Fill the frame.",
     beat,
     frameWishLine(scene.frameWish),
+    // The logo patch goes right after the scene, where the model weighs it most — not at the end of the brand notes.
+    reelLogo ? reelLogoSpotLine(reelLogo, brand) : "",
     "Photograph only. No letters, no numbers, no words, no title card, no script, no timestamps, no captions, no UI, no logo, no watermark, no document, no storyboard.",
     reelLogo === undefined ? "" : REEL_CROP_LINE,
-    brandLook(brand, "photo", reelLogo === undefined ? undefined : reelLogo ? reelLogoSpotLine(reelLogo, brand) : ""),
+    brandLook(brand, "photo", reelLogo === undefined ? undefined : ""),
   ]
     .filter(Boolean)
     .join("\n\n");
