@@ -381,6 +381,15 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
 .scenes { display: grid; gap: 10px; margin-top: 16px; }
 .reel-stage { display: grid; grid-template-columns: minmax(220px, 340px) minmax(0, 1fr); gap: 24px; align-items: start; }
 .reel-stage .phone { max-width: 340px; }
+/* The Reel stays in view while the scenes and the step panel scroll — only where nothing scrolls underneath it. */
+@media (min-width: 1181px) and (min-height: 680px) {
+  .studio > .reel-stage { align-self: stretch; }
+  .reel-stage .phone { position: sticky; top: 16px; align-self: start; }
+}
+@media (min-width: 901px) and (min-height: 680px) {
+  .studio.reviewing > .reel-stage { align-self: stretch; }
+  .studio.reviewing .reel-stage .phone { position: sticky; top: 16px; align-self: start; }
+}
 .reel-stage .scenes-wrap { margin: 0; }
 .reel-stage .scenes { margin-top: 10px; gap: 0; }
 .reel-stage .scene { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 0; }
@@ -405,6 +414,23 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
 .sound-card .voice-off-note { margin-top: 10px; }
 .sound-card .music-block { margin-top: 10px; }
 .redo-card .btn { padding: 6px 12px; font-size: 13px; }
+@font-face { font-family: "Montserrat Caption"; src: url("/fonts/Montserrat-ExtraBold.ttf") format("truetype"); font-weight: 800; font-display: swap; }
+@font-face { font-family: "Montserrat Caption"; src: url("/fonts/Montserrat-Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+.reel-stage .phone { container-type: inline-size; }
+.caption.cap-clean, .caption.cap-box, .caption.cap-brand { left: 8%; right: 8%; bottom: 24%; text-align: center; font-family: "Montserrat Caption", var(--sans, sans-serif); line-height: 1.22; text-shadow: none; }
+.caption.cap-clean { font-weight: 800; font-size: 7.4cqw; color: #fff; text-shadow: 0 0 3px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.45); }
+.caption.cap-box, .caption.cap-brand { font-weight: 700; font-size: 6.4cqw; }
+.caption.cap-box span, .caption.cap-brand span { padding: .12em .35em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.caption.cap-box span { background: rgba(12, 11, 10, .62); color: #fff; }
+.caption.cap-brand span { background: var(--cap-brand, #1a1612); color: var(--cap-ink, #fff); }
+.reel-logo-preview { position: absolute; box-sizing: border-box; border-radius: 14px; z-index: 2; pointer-events: none; animation: reel-logo-in .6s ease .3s both; }
+.reel-logo-preview img { display: block; object-fit: contain; }
+.reel-logo-preview.plate-light { background: rgba(255, 255, 255, .82); }
+.reel-logo-preview.plate-dark { background: rgba(18, 16, 16, .5); }
+@keyframes reel-logo-in { from { opacity: 0; } to { opacity: 1; } }
+.check-row { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.pill-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pill-row .btn.on { border-color: var(--accent-2); color: var(--accent-2); background: var(--accent-soft); }
 .studio.reviewing { grid-template-columns: minmax(220px, 340px) minmax(0, 1fr); }
 .studio.reviewing .reel-stage { grid-template-columns: 1fr; }
 @media (max-width: 900px) {

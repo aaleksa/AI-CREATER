@@ -40,6 +40,7 @@ export type BrandKitRow = Record<string, string> & {
   vertical_note?: string;
   logo_on_photos?: boolean;
 };
+export type ReelLogo = { show: boolean; corner: "top-left" | "top-right" | "bottom-left" | "bottom-right"; size: "s" | "m" | "l"; endCard: boolean };
 /** Our logo placed by hand: left, top and width as fractions of the picture. */
 export type LogoBox = { x: number; y: number; w: number };
 export type Shot = {
@@ -128,6 +129,10 @@ export type Project = {
   music?: { name: string; durationSec: number; volume: number; start: number } | null;
   /** Changes when the video file is replaced, so the player loads it again. */
   videoStamp?: number;
+  /** Logo over the Reel and the end card; null until the owner changes it (the Brand Kit decides). */
+  reelLogo?: Partial<ReelLogo> | null;
+  /** How burned-in captions look on the Reel. */
+  captionStyle?: "clean" | "box" | "brand";
   hasImages: boolean;
   creditsUsed: number;
   stepAttempts: Record<string, number>;
@@ -274,6 +279,10 @@ export const api = {
   },
   updateMusic: (id: string, body: { volume?: number; start?: number }) =>
     request<{ project: Project }>(`/projects/${id}/music`, { method: "PATCH", body: JSON.stringify(body) }),
+  updateCaptionStyle: (id: string, style: "clean" | "box" | "brand") =>
+    request<{ project: Project }>(`/projects/${id}/captions-style`, { method: "PATCH", body: JSON.stringify({ style }) }),
+  updateReelLogo: (id: string, body: Partial<ReelLogo>) =>
+    request<{ project: Project }>(`/projects/${id}/reel-logo`, { method: "PATCH", body: JSON.stringify(body) }),
   removeMusic: (id: string) => request<{ project: Project }>(`/projects/${id}/music`, { method: "DELETE" }),
   translateScript: (id: string, lang: "en" | "uk") =>
     request<{ project: Project }>(`/projects/${id}/script/translate`, { method: "POST", body: JSON.stringify({ lang }) }),

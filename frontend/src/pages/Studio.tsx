@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
-import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type LogoBox, type Project, type Shot } from "../lib/api";
+import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type LogoBox, type Project, type ReelLogo, type Shot } from "../lib/api";
 import { copyText } from "../lib/copy";
 import { downloadName, shapeLabel } from "../lib/fileName";
 import { prepareImage } from "../lib/imageUpload";
@@ -189,6 +189,68 @@ function PictureCompare({
   );
 }
 
+/** Light colour: dark words go on it (same split as the renderer). */
+function hexLight(hex: string) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return false;
+  const v = parseInt(m[1], 16);
+  return (0.2126 * ((v >> 16) & 255) + 0.7152 * ((v >> 8) & 255) + 0.0722 * (v & 255)) / 255 > 0.6;
+}
+
+const REEL_CORNERS = ["top-left", "top-right", "bottom-left", "bottom-right"] as const;
+/** Same boxes the renderer uses on a 1080×1920 Reel. */
+const REEL_LOGO_BOX = { s: [170, 110], m: [230, 150], l: [300, 200] } as const;
+
+/** A white or very light logo gets a dark plate, everything else a light one — the same test the renderer runs. */
+function markIsLight(img: HTMLImageElement) {
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 48;
+    canvas.height = 48;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+    ctx.drawImage(img, 0, 0, 48, 48);
+    const data = ctx.getImageData(0, 0, 48, 48).data;
+    let sum = 0;
+    let count = 0;
+    for (let i = 0; i + 3 < data.length; i += 4) {
+      if (data[i + 3] < 128) continue;
+      sum += (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
+      count += 1;
+    }
+    return count > 0 && sum / count > 0.62;
+  } catch {
+    return false;
+  }
+}
+
+/** Where the logo will sit on the finished Reel, drawn over the phone while there is no video yet. */
+function ReelLogoPreview({ mark, logo, plate }: { mark: { src: string; w: number; h: number; dark: boolean }; logo: ReelLogo; plate: boolean }) {
+  const [boxW, boxH] = REEL_LOGO_BOX[logo.size];
+  const scale = Math.min(boxW / mark.w, boxH / mark.h);
+  const w = mark.w * scale;
+  const h = mark.h * scale;
+  const pad = plate ? Math.max(14, Math.min(w, h) * 0.16) : 0;
+  const pct = (px: number) => `${(px / 1080) * 100}%`;
+  const side = pct(48);
+  return (
+    <div
+      className={`reel-logo-preview${plate ? (mark.dark ? " plate-dark" : " plate-light") : ""}`}
+      style={{
+        width: pct(w + pad * 2),
+        padding: pct(pad),
+        left: logo.corner.endsWith("left") ? side : undefined,
+        right: logo.corner.endsWith("right") ? side : undefined,
+        top: logo.corner.startsWith("top") ? "12%" : undefined,
+        bottom: logo.corner.startsWith("bottom") ? "22%" : undefined,
+      }}
+      aria-hidden
+    >
+      <img src={mark.src} alt="" style={{ width: "100%", aspectRatio: `${w} / ${h}` }} />
+    </div>
+  );
+}
+
 function VersionCompare({
   step,
   versions,
@@ -251,6 +313,7 @@ export default function Studio() {
   const [musicSrc, setMusicSrc] = useState<string | null>(null);
   const [musicDraft, setMusicDraft] = useState<{ volume: number; start: number } | null>(null);
   const [briefOpen, setBriefOpen] = useState(false);
+  const [reelMark, setReelMark] = useState<{ src: string; w: number; h: number; dark: boolean } | null>(null);
   const [scenesOpen, setScenesOpen] = useState<boolean | null>(null);
   const [brief, setBrief] = useState("");
   const refSrcs = useProjectImageSrcs(project?.refs);
@@ -338,6 +401,34 @@ export default function Studio() {
       if (url) URL.revokeObjectURL(url);
     };
   }, [id, project?.hasVideo, project?.videoStamp]);
+
+  const markKey = project && project.type !== "image_post" && project.useBrand !== false && (kit?.logo_url || kit?.business_name) ? `${kit?.logo_url || ""}|${kit?.business_name || ""}|${kit?.font || ""}` : "";
+  useEffect(() => {
+    if (!id || !markKey) {
+      setReelMark(null);
+      return;
+    }
+    let cancelled = false;
+    let url = "";
+    fetchMedia(`/projects/${id}/logo/mark`)
+      .then((blob) => {
+        if (cancelled) return;
+        url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+          if (cancelled) return;
+          setReelMark({ src: url, w: img.naturalWidth, h: img.naturalHeight, dark: markIsLight(img) });
+        };
+        img.src = url;
+      })
+      .catch(() => {
+        if (!cancelled) setReelMark(null);
+      });
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [id, markKey]);
 
   const musicKey = project?.music ? `${project.music.name}|${project.music.durationSec}` : "";
   useEffect(() => {
@@ -502,6 +593,13 @@ export default function Studio() {
   }, [project?.script]);
   const shownTake = (project?.versions?.visuals || []).findIndex((version) => version.id === (previewVersionId || acceptedVersionId));
   const autoLogo = Boolean((project?.useBrand ?? true) && hasBrandMark && kit?.logo_on_photos);
+  const reelLogo: ReelLogo = {
+    show: project?.reelLogo?.show ?? Boolean(kit?.logo_on_photos),
+    corner: project?.reelLogo?.corner || ((REEL_CORNERS as readonly string[]).includes(String(kit?.logo_position)) ? (kit?.logo_position as ReelLogo["corner"]) : "bottom-right"),
+    size: project?.reelLogo?.size || "m",
+    endCard: project?.reelLogo?.endCard ?? true,
+  };
+  const reelHasMark = !isImage && project?.useBrand !== false && Boolean(kit?.logo_url || kit?.business_name);
   const caption = readableLine(
     project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title || ""
   );
@@ -734,6 +832,34 @@ export default function Studio() {
     setError("");
     try {
       const { project: nextProject } = await api.removeMusic(id);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveCaptionStyle(style: "clean" | "box" | "brand") {
+    if (!id || !project || (project.captionStyle || "clean") === style) return;
+    setBusy("caption-style");
+    setError("");
+    try {
+      const { project: nextProject } = await api.updateCaptionStyle(id, style);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveReelLogo(change: Partial<ReelLogo>) {
+    if (!id || !project) return;
+    setBusy("reel-logo");
+    setError("");
+    try {
+      const { project: nextProject } = await api.updateReelLogo(id, { ...reelLogo, ...change });
       setProject(nextProject);
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
@@ -1318,7 +1444,15 @@ export default function Studio() {
                     {t("studio.placeholderFail")}
                   </div>
                 )}
-                {!isImage && <div className="caption">{caption}</div>}
+                {!isImage && (
+                  <div
+                    className={`caption${project.captionsOff ? "" : ` cap-${project.captionStyle || "clean"}`}`}
+                    style={project.captionStyle === "brand" && kit?.primary_color ? ({ "--cap-brand": kit.primary_color, "--cap-ink": hexLight(kit.primary_color) ? "#1a1612" : "#ffffff" } as CSSProperties) : undefined}
+                  >
+                    <span>{caption}</span>
+                  </div>
+                )}
+                {!isImage && reelMark && reelHasMark && reelLogo.show && !project.visuals?.some((v) => v.logoCorner) && <ReelLogoPreview mark={reelMark} logo={reelLogo} plate={Boolean(kit?.logo_url)} />}
               </>
             )}
           </div>
@@ -2245,10 +2379,13 @@ export default function Studio() {
                 <h3>{t("studio.soundTitle")}</h3>
                 <p className="hint">
                   {[
+                    reelHasMark ? t(reelLogo.show ? "studio.soundLogoOn" : "studio.soundLogoOff") : "",
                     t(project.voiceOff ? "studio.soundVoiceOff" : project.audioUrl ? "studio.soundVoiceOn" : "studio.soundVoiceNot"),
                     t(project.captionsOff ? "studio.soundCapsOff" : project.captions ? "studio.soundCapsOn" : "studio.soundCapsNot"),
                     project.music ? t("studio.soundMusicOn", { name: project.music.name }) : t("studio.soundMusicNot"),
-                  ].join(" · ")}
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </p>
               </summary>
               {project.voiceOff && (
@@ -2267,6 +2404,84 @@ export default function Studio() {
                   </button>
                 </div>
               )}
+            {!project.captionsOff && (
+              <div className="music-block">
+                <p className="music-title">{t("studio.capStyleTitle")}</p>
+                <div className="pill-row" role="group" aria-label={t("studio.capStyleTitle")}>
+                  {(["clean", "box", ...(reelHasMark || kit?.primary_color ? ["brand"] : [])] as ("clean" | "box" | "brand")[]).map((style) => (
+                    <button
+                      key={style}
+                      type="button"
+                      className={`btn ghost tiny${(project.captionStyle || "clean") === style ? " on" : ""}`}
+                      aria-pressed={(project.captionStyle || "clean") === style}
+                      disabled={Boolean(busy)}
+                      onClick={() => saveCaptionStyle(style)}
+                    >
+                      {t(`studio.capStyle_${style}`)}
+                    </button>
+                  ))}
+                </div>
+                <p className="hint" style={{ margin: 0 }}>
+                  {busy === "caption-style" ? t("studio.reelLogoSaving") : t(project.hasVideo ? "studio.capStyleFreeNow" : "studio.capStyleLater")}
+                </p>
+              </div>
+            )}
+            <div className="music-block">
+              <p className="music-title">{t("studio.reelLogoTitle")}</p>
+              {!reelHasMark ? (
+                <p className="hint" style={{ margin: 0 }}>
+                  {t("studio.reelLogoNeedKit")} <Link to="/app/brand">{t("nav.brand")}</Link>
+                </p>
+              ) : (
+                <>
+                  <label className="check-row">
+                    <input type="checkbox" checked={reelLogo.show} disabled={Boolean(busy)} onChange={(e) => saveReelLogo({ show: e.target.checked })} />
+                    <span>{t("studio.reelLogoShow")}</span>
+                  </label>
+                  {reelLogo.show && (
+                    <>
+                      <div className="pill-row" role="group" aria-label={t("studio.reelLogoWhere")}>
+                        <span className="hint">{t("studio.reelLogoWhere")}</span>
+                        {REEL_CORNERS.map((corner) => (
+                          <button
+                            key={corner}
+                            type="button"
+                            className={`btn ghost tiny${reelLogo.corner === corner ? " on" : ""}`}
+                            aria-pressed={reelLogo.corner === corner}
+                            disabled={Boolean(busy)}
+                            onClick={() => saveReelLogo({ corner })}
+                          >
+                            {t(`studio.reelCorner_${corner.replace("-", "_")}`)}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="pill-row" role="group" aria-label={t("studio.reelLogoSize")}>
+                        <span className="hint">{t("studio.reelLogoSize")}</span>
+                        {(["s", "m", "l"] as const).map((size) => (
+                          <button
+                            key={size}
+                            type="button"
+                            className={`btn ghost tiny${reelLogo.size === size ? " on" : ""}`}
+                            aria-pressed={reelLogo.size === size}
+                            disabled={Boolean(busy)}
+                            onClick={() => saveReelLogo({ size })}
+                          >
+                            {t(`studio.reelLogoSize_${size}`)}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  <label className="check-row">
+                    <input type="checkbox" checked={reelLogo.endCard} disabled={Boolean(busy)} onChange={(e) => saveReelLogo({ endCard: e.target.checked })} />
+                    <span>{t("studio.reelEndCard")}</span>
+                  </label>
+                  <p className="hint" style={{ margin: 0 }}>
+                    {busy === "reel-logo" ? t("studio.reelLogoSaving") : t(project.hasVideo ? "studio.reelLogoFreeNow" : "studio.reelLogoLater")}
+                  </p>
+                </>
+              )}
+            </div>
             <div className="music-block">
               <p className="music-title">{t("studio.musicTitle")}</p>
               {!project.music ? (

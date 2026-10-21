@@ -17,6 +17,12 @@ export function builtinFontFile(name = "") {
   return file && fs.existsSync(file) ? file : "";
 }
 
+/** Heavy weights for burned-in Reel captions (OFL, Latin and Cyrillic). */
+export function captionFontFile(weight: "bold" | "extrabold") {
+  const file = path.join(builtinDir, weight === "bold" ? "Montserrat-Bold.ttf" : "Montserrat-ExtraBold.ttf");
+  return fs.existsSync(file) ? file : "";
+}
+
 export function hasTitleFont(userId: string, fontName = "") {
   return hasBrandFont(userId) || Boolean(builtinFontFile(fontName));
 }
@@ -65,7 +71,7 @@ function render(svg: string, fontFile: string, family: string) {
   return new Resvg(svg, { font: { loadSystemFonts: false, fontFiles: [fontFile], defaultFontFamily: family } });
 }
 
-function brandFont(userId: string, fontName = "") {
+export function brandFont(userId: string, fontName = "") {
   const file = hasBrandFont(userId) ? brandFontPath(userId) : builtinFontFile(fontName);
   if (!file) return null;
   const family = fontFamilyName(fs.readFileSync(file));
