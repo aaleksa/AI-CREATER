@@ -6,7 +6,7 @@ Auteur is not a Canva clone. It is a simple AI content studio: the user never ch
 
 UI: **English and Ukrainian** (EN / УК, stored in the browser). The brief stays in the language they wrote. **Light and dark theme** (☀ / ☾, follows the device until you choose) and a phone layout with a bottom tab bar.
 
-Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.50). AI cost per picture and per 400 credits: [docs/COSTS.md](docs/COSTS.md).
+Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.51). AI cost per picture and per 400 credits: [docs/COSTS.md](docs/COSTS.md).
 
 The first studio is **one short video** (30 seconds, Instagram or TikTok — same file) and still **Image / Posts**. A Reel is 150 credits; a still post is 13 (idea + one picture). **Video** and **Advertisement** stay as two separate Create stubs (TZ §2.3). Social post is a third stub.
 
@@ -40,7 +40,7 @@ Plans (provisional until real unit cost is measured):
 - **Format = where you post it.** Square 1:1 (Instagram / Facebook feed), portrait 4:5, Stories and Reels 9:16, Facebook wide 1.91:1. Default: photo square, flyers portrait 4:5. Older projects keep their shape (photo 1:1, flyer 2:3).
 - **Nothing is written over your picture.** The Studio preview of a still shows only the picture. The old grey placeholder caption (“Finished picture”) is gone; captions on the preview are for Reels only.
 - **Errors are written for the owner.** Users never see service names or settings (ComfyUI, OpenAI, API keys, `.env`, ffmpeg). They get a plain text that says whether to wait or reword (“We can’t make pictures right now. Try again in a few minutes.”, “We can’t make a picture from this description…”). The technical reason goes to the server log (`Image frame failed …`, `ComfyUI failed: …`, `Step … failed`). All such texts live in `backend/src/services/userErrors.ts`; each needs a Ukrainian line in `frontend/src/i18n/errors.ts`. UI hints follow the same rule: no provider names or settings.
-- **No cropping.** The image model paints the exact shape: `gpt-image-2.x` takes any size (multiple of 16, up to 3:1): 1024×1024, 1024×1280, 864×1536, 1536×800. Only if `OPENAI_IMAGE_MODEL` is set by hand to an older model like `gpt-image-1` (square, 2:3, 3:2 only) do we paint the closest shape and trim it.
+- **No cropping.** The image model paints the exact shape: `gpt-image-2.x` takes any size (multiple of 16, up to 3:1): 1024×1024, 1024×1280, 1152×1536 (3:4), 864×1536, 1536×800. Only if `OPENAI_IMAGE_MODEL` is set by hand to an older model like `gpt-image-1` (square, 2:3, 3:2 only) do we paint the closest shape and trim it.
 - **One image model, no fallback.** Pictures and word edits use only `OPENAI_IMAGE_MODEL` (default `gpt-image-2.5-sunburst`). If it fails, the owner sees an error — we never silently switch to `gpt-image-1`, which costs 3–5× more. See [docs/COSTS.md](docs/COSTS.md).
 - **Download names say what the file is**: type, topic, language of the words and shape — e.g. `invitation_free-yoga-classes_UA_story-9x16.jpg` (in the interface language).
 - **Example pictures.** Up to 3 per brief, independent of the Brand Kit. Any picture the browser opens works (big phone photos, WebP, HEIC in Safari): it is shrunk and turned into a JPG under 2 MB before upload — the server still only takes PNG / JPG up to 2 MB. Brand Kit photos work the same way; the logo stays PNG to keep transparency. They go to `images.edit` with the request: take subject, style and mood, never copy letters or logos. Word edits and Same-picture do not resend them.

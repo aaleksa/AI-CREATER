@@ -5,6 +5,7 @@ type T = (path: string, vars?: Record<string, string | number>) => string;
 const SHAPE: Record<string, string> = {
   square: "1x1",
   portrait: "4x5",
+  portrait34: "3x4",
   story: "9x16",
   wide: "1.91x1",
   tall: "2x3",

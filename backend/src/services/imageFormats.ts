@@ -11,7 +11,7 @@ const ffmpegPath = (require("ffmpeg-static") as string | null) || "ffmpeg";
  * exact shape and nothing is cut. Older image models only paint square, 2:3 and 3:2:
  * for those (a fallback) we paint the closest shape and trim the edges.
  */
-export const IMAGE_FORMATS = ["square", "portrait", "story", "wide"] as const;
+export const IMAGE_FORMATS = ["square", "portrait", "portrait34", "story", "wide"] as const;
 export type ImageFormat = (typeof IMAGE_FORMATS)[number] | "tall";
 
 type Spec = {
@@ -27,6 +27,7 @@ type Spec = {
 const SPECS: Record<ImageFormat, Spec> = {
   square: { exact: { w: 1024, h: 1024 }, native: { w: 1024, h: 1024 }, ratio: { w: 1, h: 1 }, label: "square 1:1 (Instagram or Facebook feed post)" },
   portrait: { exact: { w: 1024, h: 1280 }, native: { w: 1024, h: 1536 }, ratio: { w: 4, h: 5 }, label: "portrait 4:5 (Instagram or Facebook feed post, tall)" },
+  portrait34: { exact: { w: 1152, h: 1536 }, native: { w: 1024, h: 1536 }, ratio: { w: 3, h: 4 }, label: "portrait 3:4 (Instagram feed post, classic photo shape)" },
   story: { exact: { w: 864, h: 1536 }, native: { w: 1024, h: 1536 }, ratio: { w: 9, h: 16 }, label: "vertical 9:16 (Story, Reel cover, TikTok)" },
   wide: { exact: { w: 1536, h: 800 }, native: { w: 1536, h: 1024 }, ratio: { w: 191, h: 100 }, label: "wide 1.91:1 (Facebook post or link picture)" },
   // Older flyers, before people could choose.

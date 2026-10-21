@@ -17,14 +17,14 @@ const EMOJI: Record<string, string> = {
 const KIND_IDS = ["photo", "invite", "info", "offer"] as const;
 const PIC_LANGS = ["", "en", "uk"] as const;
 
-const SHAPES = ["square", "portrait", "story", "wide"] as const;
+const SHAPES = ["square", "portrait", "portrait34", "story", "wide"] as const;
 
 export default function Home() {
   const nav = useNavigate();
   const { t, te, locale } = useLocale();
   const [type, setType] = useState("instagram_reel");
   const [imageIntent, setImageIntent] = useState("photo");
-  const [imageFormat, setImageFormat] = useState<"square" | "portrait" | "story" | "wide">("square");
+  const [imageFormat, setImageFormat] = useState<(typeof SHAPES)[number]>("square");
   const [shapeTouched, setShapeTouched] = useState(false);
   const [pictureLanguage, setPictureLanguage] = useState<"" | "en" | "uk">("");
   const [prompt, setPrompt] = useState(() => translate(detectLocale(), "examples.instagram_reel"));

@@ -92,6 +92,7 @@ export type ArchiveState = {
 export const SHAPE_RATIO: Record<string, string> = {
   square: "1 / 1",
   portrait: "4 / 5",
+  portrait34: "3 / 4",
   story: "9 / 16",
   wide: "191 / 100",
   tall: "2 / 3",
@@ -104,7 +105,7 @@ export type Project = {
   imageIntent?: string;
   pictureLanguage?: "en" | "uk" | "";
   useBrand?: boolean;
-  imageFormat?: "square" | "portrait" | "story" | "wide" | "tall" | "";
+  imageFormat?: "square" | "portrait" | "portrait34" | "story" | "wide" | "tall" | "";
   refs?: { id: string; url: string }[];
   invite?: InviteCard | null;
   status: string;
