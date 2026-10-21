@@ -6,6 +6,7 @@ import { COMFY_FAILED_MESSAGE, comfyEnabled, comfyFallsBackToOpenAI, comfyHandle
 import { USER_ERRORS } from "./userErrors.js";
 import { listBrandRefFiles, logoKindFromBytes, type BrandImageFile } from "./brandAssets.js";
 import { fontSampleFile, hasTitleFont } from "./brandFont.js";
+import { logoLook } from "./logoLook.js";
 import { guessPoster, type InviteCard } from "./invite.js";
 
 export type LearnedSummary = {
@@ -303,6 +304,7 @@ export function brandLook(brand?: BrandKit | null, mode: "designed" | "photo" = 
       brand.tone_note && `Owner note on tone: ${brand.tone_note}`,
       niche,
       ...brandRefPrompt(brand, "photo"),
+      logoSpotLine(brand),
     ]
       .filter(Boolean)
       .join("\n");
@@ -318,6 +320,7 @@ export function brandLook(brand?: BrandKit | null, mode: "designed" | "photo" = 
     brand.tone_note && `Owner note on tone: ${brand.tone_note}`,
     niche,
     ...brandRefPrompt(brand, "designed"),
+    logoSpotLine(brand),
   ]
     .filter(Boolean)
     .join("\n");
@@ -325,6 +328,29 @@ export function brandLook(brand?: BrandKit | null, mode: "designed" | "photo" = 
 
 function brandHasLogo(brand?: BrandKit | null) {
   return Boolean(brand?.logo_url);
+}
+
+/**
+ * When we will stamp their logo, the picture should be ready for it: a calm spot in that corner, in tones the logo
+ * reads well on, and its colours echoed in the picture. The model never gets the file and never paints the mark.
+ */
+function logoSpotLine(brand?: BrandKit | null) {
+  if (!brand?.user_id || !wantsLogoStamp(brand)) return "";
+  const corner = logoPositionOf(brand).replace("-", " ");
+  const look = logoLook(brand.user_id);
+  const named = !look && hasTitleFont(brand.user_id, brand.font) && brand.business_name;
+  if (!look && !named) return "";
+  const mark = look
+    ? `a ${look.shape} logo${look.colors.length ? ` in ${look.colors.join(", ")}` : ""}`
+    : `their business name set in ${brand.primary_color || "their brand colour"}`;
+  return [
+    `Leave the ${corner} corner for their logo — we add the exact file there afterwards.`,
+    `Keep a calm, uncluttered spot there, about a sixth of the picture's width: no words, faces or busy texture, with a background that lets ${mark} stand out clearly.`,
+    look?.colors.length ? `Let ${look.colors.join(", ")} echo gently elsewhere in the picture so the logo feels at home.` : "",
+    "Do not paint any logo or mark yourself, and keep the business name out of that corner.",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function brandRefPrompt(brand?: BrandKit | null, mode: "designed" | "photo" = "designed") {

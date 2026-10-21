@@ -491,7 +491,7 @@ export const en = {
     whereTitle: "Where it appears on pictures",
     logoSwitch: "Logo in the corner of photos",
     logoSwitchHint: "We place your file ourselves after the picture is made. The AI never draws it. Off? You can still add it to a finished picture in Studio.",
-    cornerHint: "This corner is used for every new picture. In Studio you can add the logo to a finished picture and pick another corner there.",
+    cornerHint: "This corner is used for every new picture with the brand kit: the AI leaves a calm spot there in tones that suit the logo, and we place your file. On a picture made without the brand kit you can add the logo in Studio.",
     needLogo: "Add a logo first — or your own font and business name.",
     nameSwitch: "Business name in the corner of photos",
     nameSwitchHint: "No logo yet, so we print your business name in your font after the picture is made. The AI never draws it.",
