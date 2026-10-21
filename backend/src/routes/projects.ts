@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_INVITE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, logoBaseFile, logoLayout, logoMarkFile, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, stampLogoOnPicture, updateInvite, updateShot } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, logoBaseFile, logoLayout, logoMarkFile, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, editCaptions, editScript, setCaptionsOff, setVoiceOff, stampLogoOnPicture, updateInvite, updateShot } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
 import { hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
 import { archiveState } from "../services/archive.js";
@@ -379,6 +379,42 @@ projectsRouter.delete("/:id/versions/visuals/:versionId", rateLimit(30, 60_000),
 projectsRouter.post("/:id/versions/visuals/keep-current", rateLimit(10, 60_000), (req, res) => {
   try {
     res.json({ project: keepOnlyCurrentPicture(req.user!.id, String(req.params.id)) });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.patch("/:id/script", (req, res) => {
+  try {
+    res.json({ project: editScript(req.user!.id, String(req.params.id), req.body) });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.patch("/:id/captions", (req, res) => {
+  try {
+    res.json({ project: editCaptions(req.user!.id, String(req.params.id), req.body) });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.post("/:id/captions-off", (req, res) => {
+  try {
+    res.json({ project: setCaptionsOff(req.user!.id, String(req.params.id), req.body?.off !== false) });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.post("/:id/voice-off", (req, res) => {
+  try {
+    res.json({ project: setVoiceOff(req.user!.id, String(req.params.id), req.body?.off !== false) });
   } catch (error) {
     const { status, body } = publicError(error, `${req.method} ${req.path}`);
     res.status(status).json(body);

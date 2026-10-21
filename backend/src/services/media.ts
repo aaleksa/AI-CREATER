@@ -138,8 +138,24 @@ const CORNER: Record<LogoPosition, string> = {
   "bottom-right": `W-w-${LOGO_MARGIN}:H-h-${LOGO_MARGIN}`,
 };
 
-function overlayLogoFile(stillPath: string, logoPath: string, height = 120, position: LogoPosition = "bottom-right") {
-  return overlayLogo(stillPath, logoPath, `[1:v]scale=-1:${height}[lg];[0:v][lg]overlay=${CORNER[position]}`);
+function overlayLogoFile(stillPath: string, logoPath: string, height = 120, position: LogoPosition = "bottom-right", reel = false) {
+  return overlayLogo(stillPath, logoPath, `[1:v]scale=-1:${height}[lg];[0:v][lg]overlay=${reel ? reelCorner(stillPath, position) : CORNER[position]}`);
+}
+
+/**
+ * A Reel frame is 2:3, the mp4 is 9:16: the sides get cut. Instagram also draws its bar at the top and the caption,
+ * reply box and buttons at the bottom. The logo goes inside what stays visible and clear.
+ */
+function reelCorner(stillPath: string, position: LogoPosition) {
+  const size = imageDimensions(stillPath);
+  if (!size) return CORNER[position];
+  const cut = Math.max(0, Math.round((size.w - Math.min(size.w, (size.h * 9) / 16)) / 2));
+  const side = cut + LOGO_MARGIN;
+  const top = Math.round(size.h * 0.12);
+  const bottom = Math.round(size.h * 0.22);
+  const x = position.endsWith("left") ? `${side}` : `W-w-${side}`;
+  const y = position.startsWith("top") ? `${top}` : `H-h-${bottom}`;
+  return `${x}:${y}`;
 }
 
 /** The logo exactly where the owner dragged it, at the width they chose. */
@@ -292,6 +308,24 @@ export function brandMarkBox(brand: BrandKit, stillPath: string, corner: LogoPos
   };
 }
 
+/**
+ * Reel frames stamped before the logo knew about the 9:16 crop: put it back from the clean copy, inside the part of the
+ * frame the mp4 keeps. Frames without our logo are left alone.
+ */
+export async function restampReelFrames(projectId: string, visuals: Visual[], brand: BrandKit) {
+  const mark = brandMarkFile(brand);
+  if (!mark.file) return;
+  for (const visual of visuals) {
+    if (visual.placeholder || !visual.clean || !visual.logoCorner) continue;
+    const clean = cleanStillFile(projectId, visual.clean);
+    if (!fs.existsSync(clean) || !hasStillFile(projectId, visual.sceneId)) continue;
+    const still = stillFile(projectId, visual.sceneId);
+    const before = fs.readFileSync(still);
+    fs.copyFileSync(clean, still);
+    if (!(await overlayLogoFile(still, mark.file, mark.height, visual.logoCorner, true))) fs.writeFileSync(still, before);
+  }
+}
+
 export async function stampBrandMark(stillPath: string, brand: BrandKit, position: LogoPosition, box?: LogoBox) {
   const mark = brandMarkFile(brand);
   if (!mark.file) return false;
@@ -365,7 +399,7 @@ export async function persistStills(
       if (visual.placeholder || visual.clean || !hasStillFile(projectId, visual.sceneId)) continue;
       const clean = keepCleanStill(projectId, visual.sceneId);
       const corner = logoPositionOf(brand);
-      if (await overlayLogoFile(stillFile(projectId, visual.sceneId), logo, mark.height, corner)) {
+      if (await overlayLogoFile(stillFile(projectId, visual.sceneId), logo, mark.height, corner, !format)) {
         next[i] = { ...visual, clean, logoCorner: corner };
       }
     }
@@ -572,8 +606,10 @@ export async function renderReel(params: {
   visuals: Visual[] | null;
   captions: { cues: CaptionCue[] } | null;
   primaryColor?: string;
+  /** No voice: a quiet audio track instead, so Instagram and phones play it as a normal video. */
+  silent?: boolean;
 }) {
-  if (!hasVoiceFile(params.projectId)) {
+  if (!params.silent && !hasVoiceFile(params.projectId)) {
     throw Object.assign(new Error("Record the voice first."), { status: 400 });
   }
   const queuedAt = Date.now();
@@ -594,6 +630,7 @@ async function encodeReel(params: {
   visuals: Visual[] | null;
   captions: { cues: CaptionCue[] } | null;
   primaryColor?: string;
+  silent?: boolean;
 }) {
   const dir = projectMediaDir(params.projectId);
   const scenes = params.script.scenes.length ? params.script.scenes : [{ id: 1, time: "0–30s", onScreen: "", voiceover: "", visualPrompt: "" }];
@@ -611,7 +648,8 @@ async function encodeReel(params: {
       inputs.push("-f", "lavfi", "-i", `color=c=0x${color}:s=1080x1920:d=${duration}`);
     }
   }
-  inputs.push("-i", voiceFile(params.projectId));
+  if (params.silent) inputs.push("-f", "lavfi", "-t", String(params.script.durationSec || 30), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100");
+  else inputs.push("-i", voiceFile(params.projectId));
 
   const n = scenes.length;
   const concat = scenes.map((_, i) => `[v${i}]`).join("");

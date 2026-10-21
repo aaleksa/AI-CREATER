@@ -1099,3 +1099,10 @@ details.options > .brand-toggle, details.options > .examples { margin-top: 14px;
 .logo-place-panel { margin-top: 10px; display: grid; gap: 8px; }
 .logo-place-size { display: flex; align-items: center; gap: 10px; }
 .logo-place-size input { flex: 1; max-width: 260px; }
+.voice-off-note { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 12px; }
+.draft-editor { display: grid; gap: 10px; margin: 8px 0 14px; }
+.draft-scene { border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px 10px; margin: 0; display: grid; gap: 6px; }
+.draft-scene legend { padding: 0 4px; }
+.draft-cue { display: grid; grid-template-columns: 72px 72px 1fr auto; gap: 6px; align-items: center; }
+.draft-cue input { min-width: 0; }
+@media (max-width: 560px) { .draft-cue { grid-template-columns: 64px 64px 1fr auto; } }

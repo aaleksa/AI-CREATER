@@ -6,7 +6,7 @@ Auteur is not a Canva clone. It is a simple AI content studio: the user never ch
 
 UI: **English and Ukrainian** (EN / УК, stored in the browser). The brief stays in the language they wrote. **Light and dark theme** (☀ / ☾, follows the device until you choose) and a phone layout with a bottom tab bar.
 
-Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.56). AI cost per picture and per 400 credits: [docs/COSTS.md](docs/COSTS.md).
+Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.58). AI cost per picture and per 400 credits: [docs/COSTS.md](docs/COSTS.md).
 
 The first studio is **one short video** (30 seconds, Instagram or TikTok — same file) and still **Image / Posts**. A Reel is 150 credits; a still post is 13 (idea + one picture). **Video** and **Advertisement** stay as two separate Create stubs (TZ §2.3). Social post is a third stub.
 
@@ -43,6 +43,7 @@ Plans (provisional until real unit cost is measured):
 - **No cropping.** The image model paints the exact shape: `gpt-image-2.x` takes any size (multiple of 16, up to 3:1): 1024×1024, 1024×1280, 1152×1536 (3:4), 864×1536, 1536×800. Only if `OPENAI_IMAGE_MODEL` is set by hand to an older model like `gpt-image-1` (square, 2:3, 3:2 only) do we paint the closest shape and trim it.
 - **One image model, no fallback.** Pictures and word edits use only `OPENAI_IMAGE_MODEL` (default `gpt-image-2.5-sunburst`). If it fails, the owner sees an error — we never silently switch to `gpt-image-1`, which costs 3–5× more. See [docs/COSTS.md](docs/COSTS.md).
 - **Change something on a finished picture** (8 credits): words, an object, the background or room for a logo — the AI changes only what you ask and keeps the rest. You can attach one small example picture (the thing to add, or the look to match).
+- **Reels without a voice**: on the Voice step choose “No voice” — captions become the scenes’ on-screen words (free), the video gets a quiet audio track. “Add a voice” brings it back. Captions are optional the same way (“No captions”). The script (on-screen words, voiceover, call to action) and the captions (text and timing) can be edited by hand, free. The logo on Reel frames sits inside the part the 9:16 video keeps, clear of Instagram's bars.
 - **Step breadcrumbs in Studio**: click a finished step (Idea, Script, Frames, Voice, Captions) to look back at what came out and bring back another version — free; one click returns to the current step.
 - **Place the logo by hand** (free): drag it on the picture, resize it by its corner or a slider, save — it goes exactly there and stays there through AI edits.
 - **Another shape for a finished picture** (8 credits): the AI lays the same picture out again for the new shape — it paints the new edges and moves the words, nothing is cut off. The old take stays in the list.

@@ -101,6 +101,9 @@ export const ERROR_UK: Record<string, string> = {
   "We’re already making this. Wait a moment.": "Вже робимо. Зачекайте трохи.",
   "We’re already making this. Wait for it to finish.": "Вже робимо. Зачекайте, поки закінчиться.",
   "Record the voice first.": "Спочатку запишіть голос.",
+  "Record the voice first, or choose No voice.": "Спершу запишіть голос або виберіть «Без голосу».",
+  "Make the captions first, or choose No captions.": "Спершу зробіть субтитри або виберіть «Без субтитрів».",
+  "Keep at least one caption line with a start and an end.": "Залиште хоча б один рядок субтитрів з початком і кінцем.",
   "We can’t make pictures right now. Try again in a few minutes.":
     "Зараз не вдається зробити картинку. Спробуйте за кілька хвилин.",
   "Lots of requests right now. Try again in a minute.": "Зараз багато запитів. Спробуйте за хвилину.",

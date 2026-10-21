@@ -54,6 +54,7 @@ import {
   removeVideoFile,
   removeVoiceFile,
   renderReel,
+  restampReelFrames,
   restoreStillSnapshot,
   snapshotStills,
   brandMarkBox,
@@ -438,6 +439,8 @@ export function serializeProject(row: Record<string, unknown>) {
     voice: tidyVoice(parse(row.voice_json)),
     captions: parse(row.captions_json),
     audioUrl: hasVoiceFile(id) ? `/projects/${id}/audio` : null,
+    voiceOff: Number(row.voice_off) === 1,
+    captionsOff: Number(row.captions_off) === 1,
     outputUrl: hasVideoFile(id) ? `/projects/${id}/file` : row.output_url || null,
     hasVideo: hasVideoFile(id),
     hasImages: isImagePost(String(row.type)) && Boolean(parse(row.visuals_json)),
@@ -1080,9 +1083,16 @@ export async function runStep(
   if (step === "visuals" && sceneId && imageScript && !imageScript.scenes.find((item) => item.id === sceneId)) {
     throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   }
-  if (step === "render" && !hasVoiceFile(projectId)) {
-    throw Object.assign(new Error("Record the voice first."), { status: 400 });
+  const voiceOff = Number(project.voice_off) === 1;
+  const captionsOff = Number(project.captions_off) === 1;
+  if (step === "render" && !captionsOff && !project.captions_json) {
+    throw Object.assign(new Error("Make the captions first, or choose No captions."), { status: 400 });
   }
+  if (step === "render" && !voiceOff && !hasVoiceFile(projectId)) {
+    throw Object.assign(new Error("Record the voice first, or choose No voice."), { status: 400 });
+  }
+  // No voice: captions are the on-screen words of each scene, made here — no AI, no credits.
+  if (step === "captions" && voiceOff) cost = 0;
   if (step === "render") {
     assertArchiveRoom(userId, projectId, Boolean(opts.evictOldest));
   }
@@ -1107,7 +1117,7 @@ export async function runStep(
   const generationId = logged.id;
   const reserved = cost;
   try {
-    spendCredits(userId, reserved, `${regenerate ? "regenerate " : ""}${step} for ${type}`, generationId);
+    if (reserved > 0) spendCredits(userId, reserved, `${regenerate ? "regenerate " : ""}${step} for ${type}`, generationId);
   } catch (error) {
     finishGeneration(generationId, logged.started, {
       provider: "pending",
@@ -1279,6 +1289,7 @@ export async function runStep(
         notes: result.data.notes,
       };
       updates.voice_json = JSON.stringify(direction);
+      updates.voice_off = 0;
       const tts = await synthesizeSpeech(direction.script, projectId);
       updates.audio_url = `/projects/${projectId}/audio`;
       updates.current_step = "voice";
@@ -1295,10 +1306,17 @@ export async function runStep(
         credits: 0,
         status: "succeeded",
       });
+    } else if (step === "captions" && script && voiceOff) {
+      updates.captions_off = 0;
+      updates.captions_json = JSON.stringify({ cues: sceneCaptions(script) });
+      updates.current_step = "captions";
+      provider = "auteur";
+      model = "on-screen-words";
     } else if (step === "captions" && script) {
       providerTouched = true;
       const audioSec = (await voiceDurationSec(projectId)) || script.durationSec || 30;
       const result = await generateCaptions(script, audioSec);
+      updates.captions_off = 0;
       updates.captions_json = JSON.stringify(result.data);
       updates.current_step = "captions";
       provider = result.provider;
@@ -1306,12 +1324,16 @@ export async function runStep(
       actualCost = result.cost;
     } else if (step === "render" && script) {
       providerTouched = true;
+      const frames = parse<Visual[]>(project.visuals_json) || [];
+      const owner = brandFor(userId);
+      if (owner) await restampReelFrames(projectId, frames, owner);
       const rendered = await renderReel({
         projectId,
         script,
         visuals: parse<Visual[]>(project.visuals_json),
-        captions: parse<{ cues: CaptionCue[] }>(project.captions_json),
+        captions: captionsOff ? null : parse<{ cues: CaptionCue[] }>(project.captions_json),
         primaryColor: brand?.primary_color,
+        silent: voiceOff,
       });
       updates.current_step = "create";
       updates.status = "ready";
@@ -1412,6 +1434,111 @@ function stepFailedText(step: keyof typeof CREDIT_COSTS, type: string) {
   if (step === "captions") return USER_ERRORS.captionsFailed;
   if (step === "render") return USER_ERRORS.videoFailed;
   return USER_ERRORS.textFailed;
+}
+
+/** Captions for a Reel with no voice: each scene's on-screen words, shown for that scene's share of the video. */
+function sceneCaptions(script: Script): CaptionCue[] {
+  const scenes = script.scenes.filter((scene) => asCaption(scene.onScreen));
+  const total = Math.max(3, script.durationSec || 30);
+  const each = total / Math.max(1, script.scenes.length);
+  return scenes.map((scene) => {
+    const index = script.scenes.indexOf(scene);
+    return { start: Math.round(index * each * 10) / 10, end: Math.round((index + 1) * each * 10) / 10, text: asCaption(scene.onScreen) };
+  });
+}
+
+function asCaption(text: unknown) {
+  return String(text || "").replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+/** Reel with or without a voice. Turning it off drops the voice; either way captions and video must be made again. */
+export function setVoiceOff(userId: string, projectId: string, off: boolean) {
+  const project = getProject(projectId, userId);
+  if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  if (!project.script_json) throw Object.assign(new Error("Generate the script first."), { status: 400 });
+  if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
+  if ((Number(project.voice_off) === 1) === off) return serializeProject(project);
+  if (off) removeVoiceFile(projectId);
+  removeVideoFile(projectId);
+  db.prepare(
+    `UPDATE projects SET voice_off = ?, voice_json = CASE WHEN ? = 1 THEN NULL ELSE voice_json END,
+       audio_url = CASE WHEN ? = 1 THEN '' ELSE audio_url END, captions_json = NULL, output_url = NULL,
+       status = 'draft', current_step = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(off ? 1 : 0, off ? 1 : 0, off ? 1 : 0, off ? "voice" : "visuals", projectId);
+  return serializeProject(getProject(projectId, userId));
+}
+
+/** The owner's own wording for the script. Changed voiceover drops the voice; captions and video are made again. */
+export function editScript(userId: string, projectId: string, raw: unknown) {
+  const project = getProject(projectId, userId);
+  if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
+  const script = parse<Script>(project.script_json);
+  if (!script) throw Object.assign(new Error("Generate the script first."), { status: 400 });
+  const body = (raw || {}) as { scenes?: { id?: unknown; onScreen?: unknown; voiceover?: unknown }[]; cta?: unknown };
+  const byId = new Map((Array.isArray(body.scenes) ? body.scenes : []).map((scene) => [Number(scene.id), scene]));
+  const clip = (value: unknown, max: number) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+  const next: Script = {
+    ...script,
+    cta: body.cta === undefined ? script.cta : clip(body.cta, 200),
+    scenes: script.scenes.map((scene) => {
+      const edit = byId.get(scene.id);
+      if (!edit) return scene;
+      return {
+        ...scene,
+        onScreen: edit.onScreen === undefined ? scene.onScreen : clip(edit.onScreen, 120),
+        voiceover: edit.voiceover === undefined ? scene.voiceover : clip(edit.voiceover, 400),
+      };
+    }),
+  };
+  const voiceChanged = next.scenes.some((scene, i) => scene.voiceover !== script.scenes[i].voiceover);
+  if (voiceChanged) removeVoiceFile(projectId);
+  removeVideoFile(projectId);
+  saveStepVersion(projectId, "script", next, "");
+  db.prepare(
+    `UPDATE projects SET script_json = ?, captions_json = NULL, output_url = NULL, status = 'draft',
+       voice_json = CASE WHEN ? = 1 THEN NULL ELSE voice_json END, audio_url = CASE WHEN ? = 1 THEN '' ELSE audio_url END,
+       updated_at = datetime('now') WHERE id = ?`
+  ).run(JSON.stringify(next), voiceChanged ? 1 : 0, voiceChanged ? 1 : 0, projectId);
+  return serializeProject(getProject(projectId, userId));
+}
+
+/** The owner's own captions: text and timing. The video is made again. */
+export function editCaptions(userId: string, projectId: string, raw: unknown) {
+  const project = getProject(projectId, userId);
+  if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
+  const list = Array.isArray((raw as { cues?: unknown })?.cues) ? ((raw as { cues: unknown[] }).cues as Partial<CaptionCue>[]) : [];
+  const cues = list
+    .slice(0, 60)
+    .map((cue) => ({
+      start: Math.max(0, Math.round(Number(cue.start) * 10) / 10),
+      end: Math.round(Number(cue.end) * 10) / 10,
+      text: String(cue.text ?? "").replace(/\s+/g, " ").trim().slice(0, 120),
+    }))
+    .filter((cue) => cue.text && Number.isFinite(cue.start) && Number.isFinite(cue.end) && cue.end > cue.start)
+    .sort((a, b) => a.start - b.start);
+  if (!cues.length) throw Object.assign(new Error("Keep at least one caption line with a start and an end."), { status: 400 });
+  removeVideoFile(projectId);
+  db.prepare(
+    `UPDATE projects SET captions_json = ?, captions_off = 0, output_url = NULL, status = 'draft', updated_at = datetime('now') WHERE id = ?`
+  ).run(JSON.stringify({ cues }), projectId);
+  return serializeProject(getProject(projectId, userId));
+}
+
+/** Reel with or without burned-in captions. Either way the video must be made again. */
+export function setCaptionsOff(userId: string, projectId: string, off: boolean) {
+  const project = getProject(projectId, userId);
+  if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  if (!project.script_json) throw Object.assign(new Error("Generate the script first."), { status: 400 });
+  if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
+  if ((Number(project.captions_off) === 1) === off) return serializeProject(project);
+  removeVideoFile(projectId);
+  db.prepare(
+    `UPDATE projects SET captions_off = ?, captions_json = CASE WHEN ? = 1 THEN NULL ELSE captions_json END,
+       output_url = NULL, status = 'draft', current_step = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(off ? 1 : 0, off ? 1 : 0, off ? "captions" : "voice", projectId);
+  return serializeProject(getProject(projectId, userId));
 }
 
 function downstreamWipe(step: keyof typeof CREDIT_COSTS, _singleFrame = false): Record<string, string | number | null> {

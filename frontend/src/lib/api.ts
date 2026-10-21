@@ -120,6 +120,10 @@ export type Project = {
   audioUrl: string | null;
   outputUrl: string | null;
   hasVideo: boolean;
+  /** Reel made without a voiceover: captions are the on-screen words, the video has a quiet track. */
+  voiceOff?: boolean;
+  /** Reel made without burned-in captions. */
+  captionsOff?: boolean;
   hasImages: boolean;
   creditsUsed: number;
   stepAttempts: Record<string, number>;
@@ -246,6 +250,14 @@ export const api = {
     request<{ project: Project }>(`/projects/${id}/versions/visuals/${versionId}`, { method: "DELETE" }),
   keepCurrentPicture: (id: string) =>
     request<{ project: Project }>(`/projects/${id}/versions/visuals/keep-current`, { method: "POST" }),
+  editScript: (id: string, body: { cta?: string; scenes: { id: number; onScreen: string; voiceover: string }[] }) =>
+    request<{ project: Project }>(`/projects/${id}/script`, { method: "PATCH", body: JSON.stringify(body) }),
+  editCaptions: (id: string, cues: { start: number; end: number; text: string }[]) =>
+    request<{ project: Project }>(`/projects/${id}/captions`, { method: "PATCH", body: JSON.stringify({ cues }) }),
+  setCaptionsOff: (id: string, off: boolean) =>
+    request<{ project: Project }>(`/projects/${id}/captions-off`, { method: "POST", body: JSON.stringify({ off }) }),
+  setVoiceOff: (id: string, off: boolean) =>
+    request<{ project: Project }>(`/projects/${id}/voice-off`, { method: "POST", body: JSON.stringify({ off }) }),
   updateShot: (id: string, body: { confirm?: boolean; shot?: Shot }) =>
     request<{ project: Project }>(`/projects/${id}/shot`, { method: "POST", body: JSON.stringify(body) }),
   saveFeedback: (id: string, publishable: string, reasons: string[]) =>

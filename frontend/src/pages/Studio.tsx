@@ -103,8 +103,8 @@ function doneThrough(project: Project, step: string) {
     idea: project.idea,
     script: project.script,
     visuals: project.visuals,
-    voice: project.audioUrl,
-    captions: project.captions,
+    voice: project.audioUrl || project.voiceOff,
+    captions: project.captions || project.captionsOff,
     render: project.hasVideo,
   };
   return Boolean(map[step]);
@@ -265,6 +265,13 @@ export default function Studio() {
   const [pickedCorner, setPickedCorner] = useState("");
   const [reformatTo, setReformatTo] = useState("");
   const [viewStep, setViewStep] = useState<string | null>(null);
+  const [scriptDraft, setScriptDraft] = useState<{ cta: string; scenes: { id: number; onScreen: string; voiceover: string }[] } | null>(null);
+  const [capsDraft, setCapsDraft] = useState<{ start: number; end: number; text: string }[] | null>(null);
+  // A half-made edit belongs to the step it was opened on.
+  useEffect(() => {
+    setScriptDraft(null);
+    setCapsDraft(null);
+  }, [viewStep]);
   const [placing, setPlacing] = useState<{ box: LogoBox; markRatio: number; pictureRatio: number; baseSrc: string; markSrc: string } | null>(null);
   const phoneRef = useRef<HTMLDivElement>(null);
   const [editsOpen, setEditsOpen] = useState(() => localStorage.getItem(EDITS_OPEN_KEY) === "1");
@@ -418,6 +425,8 @@ export default function Studio() {
   const next = useMemo(() => STEPS.find((s) => project && !doneThrough(project, s.id)), [project, isImage, isInvite]);
   const lastDone = useMemo(() => [...STEPS].reverse().find((s) => project && doneThrough(project, s.id)), [project, isImage, isInvite]);
   const extraPrice = (step: string, sceneId?: number) => {
+    // Without a voice the captions are the scenes' own words: free.
+    if (step === "captions" && project?.voiceOff) return { extra: false, credits: 0 };
     const base = sceneId ? 8 : STEPS.find((s) => s.id === step)?.cost ?? 0;
     const used = project?.stepAttempts?.[step] ?? 0;
     const included = project?.maxStepAttempts ?? 3;
@@ -640,6 +649,73 @@ export default function Studio() {
     const { box, markRatio, pictureRatio } = placing;
     const next = e.shiftKey ? { ...box, w: box.w + delta[0] - delta[1] } : { ...box, x: box.x + delta[0], y: box.y + delta[1] };
     setPlacing({ ...placing, box: fitBox(next, markRatio, pictureRatio) });
+  }
+
+  async function saveScriptDraft() {
+    if (!id || !project?.script || !scriptDraft) return;
+    const voiceChanged = scriptDraft.scenes.some((sc) => sc.voiceover.trim() !== (project.script?.scenes.find((x) => x.id === sc.id)?.voiceover || "").trim());
+    const ask = voiceChanged && project.audioUrl ? t("studio.scriptEditVoiceConfirm") : project.captions || project.hasVideo ? t("studio.scriptEditConfirm") : "";
+    if (ask && !window.confirm(ask)) return;
+    setBusy("edit-script");
+    setError("");
+    try {
+      const { project: nextProject } = await api.editScript(id, scriptDraft);
+      setScriptDraft(null);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveCapsDraft() {
+    if (!id || !capsDraft) return;
+    if (project?.hasVideo && !window.confirm(t("studio.captionsToggleConfirm"))) return;
+    setBusy("edit-captions");
+    setError("");
+    try {
+      const { project: nextProject } = await api.editCaptions(id, capsDraft);
+      setCapsDraft(null);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggleCaptions(off: boolean) {
+    if (!id) return;
+    if (project?.hasVideo && !window.confirm(t("studio.captionsToggleConfirm"))) return;
+    setBusy(off ? "captions-off" : "captions-on");
+    setError("");
+    try {
+      const { project: nextProject } = await api.setCaptionsOff(id, off);
+      setViewStep(null);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggleVoice(off: boolean) {
+    if (!id) return;
+    if (!off && !window.confirm(t("studio.voiceOnConfirm"))) return;
+    if (off && project?.captions && !window.confirm(t("studio.voiceOffConfirm"))) return;
+    setBusy(off ? "voice-off" : "voice-on");
+    setError("");
+    try {
+      const { project: nextProject } = await api.setVoiceOff(id, off);
+      setViewStep(null);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function applyReformat() {
@@ -1024,7 +1100,8 @@ export default function Studio() {
           const isDone = doneThrough(project, s.id);
           const isCurrent = next?.id === s.id;
           const isViewing = viewStep === s.id;
-          const label = `${i + 1}. ${stepLabel(s.id)}`;
+          const skipped = (s.id === "voice" && project.voiceOff) || (s.id === "captions" && project.captionsOff);
+          const label = `${i + 1}. ${stepLabel(s.id)}${skipped ? ` · ${t(s.id === "voice" ? "studio.voiceOffShort" : "studio.captionsOffShort")}` : ""}`;
           // Done steps open a look back at their result; the current step brings you back to work.
           return isDone || next?.id === s.id ? (
             <button
@@ -1160,8 +1237,60 @@ export default function Studio() {
                 <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} t={t} />
               </>
             )}
-            {viewStep === "script" && project.script && (
+            {viewStep === "script" && project.script && scriptDraft && (
+              <div className="draft-editor">
+                <label className="shot-field">
+                  <span>{t("studio.scriptCta")}</span>
+                  <input value={scriptDraft.cta} maxLength={200} onChange={(e) => setScriptDraft({ ...scriptDraft, cta: e.target.value })} />
+                </label>
+                {scriptDraft.scenes.map((sc, i) => (
+                  <fieldset key={sc.id} className="draft-scene">
+                    <legend className="hint">{t("studio.reviewScene", { n: i + 1 })}</legend>
+                    <label className="shot-field">
+                      <span>{t("studio.scriptOnScreen")}</span>
+                      <input
+                        value={sc.onScreen}
+                        maxLength={120}
+                        onChange={(e) => setScriptDraft({ ...scriptDraft, scenes: scriptDraft.scenes.map((x) => (x.id === sc.id ? { ...x, onScreen: e.target.value } : x)) })}
+                      />
+                    </label>
+                    <label className="shot-field">
+                      <span>{t("studio.scriptVoiceover")}</span>
+                      <textarea
+                        rows={2}
+                        value={sc.voiceover}
+                        maxLength={400}
+                        onChange={(e) => setScriptDraft({ ...scriptDraft, scenes: scriptDraft.scenes.map((x) => (x.id === sc.id ? { ...x, voiceover: e.target.value } : x)) })}
+                      />
+                    </label>
+                  </fieldset>
+                ))}
+                <p className="hint">{t("studio.scriptEditHint")}</p>
+                <div className="action-row">
+                  <button type="button" className="btn" disabled={Boolean(busy)} onClick={saveScriptDraft}>
+                    {busy === "edit-script" ? t("studio.voiceOffSaving") : t("studio.editSave")}
+                  </button>
+                  <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => setScriptDraft(null)}>
+                    {t("studio.placeCancel")}
+                  </button>
+                </div>
+              </div>
+            )}
+            {viewStep === "script" && project.script && !scriptDraft && (
               <>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  disabled={Boolean(busy)}
+                  onClick={() =>
+                    setScriptDraft({
+                      cta: project.script?.cta || "",
+                      scenes: (project.script?.scenes || []).map((sc) => ({ id: sc.id, onScreen: sc.onScreen || "", voiceover: sc.voiceover || "" })),
+                    })
+                  }
+                >
+                  {t("studio.scriptEdit")}
+                </button>
                 {project.script.cta && <p><b>{asText(project.script.cta)}</b></p>}
                 <ol className="review-list">
                   {project.script.scenes.map((sc) => (
@@ -1188,14 +1317,75 @@ export default function Studio() {
                   ))}
                 </div>
               ))}
-            {viewStep === "voice" && (
+            {viewStep === "voice" && project.voiceOff && <p className="lede">{t("studio.voiceOffNow")}</p>}
+            {viewStep === "voice" && !project.voiceOff && (
               <>
                 <p><b>{asText(project.voice?.voicePreset || project.voice?.voice)}</b></p>
                 {asText(project.voice?.notes) && <p className="lede">{asText(project.voice?.notes)}</p>}
                 {audioSrc && <audio controls src={audioSrc} style={{ width: "100%", marginTop: 12 }} />}
               </>
             )}
-            {viewStep === "captions" && project.captions && (
+            {viewStep === "captions" && project.captionsOff && <p className="lede">{t("studio.captionsOffNow")}</p>}
+            {viewStep === "captions" && project.captions && capsDraft && (
+              <div className="draft-editor">
+                {capsDraft.map((cue, i) => (
+                  <div key={i} className="draft-cue">
+                    <input
+                      type="number"
+                      step="0.1"
+                      min={0}
+                      aria-label={t("studio.capsStart")}
+                      value={cue.start}
+                      onChange={(e) => setCapsDraft(capsDraft.map((c, j) => (j === i ? { ...c, start: Number(e.target.value) } : c)))}
+                    />
+                    <input
+                      type="number"
+                      step="0.1"
+                      min={0}
+                      aria-label={t("studio.capsEnd")}
+                      value={cue.end}
+                      onChange={(e) => setCapsDraft(capsDraft.map((c, j) => (j === i ? { ...c, end: Number(e.target.value) } : c)))}
+                    />
+                    <input
+                      className="draft-cue-text"
+                      aria-label={t("studio.capsText")}
+                      value={cue.text}
+                      maxLength={120}
+                      onChange={(e) => setCapsDraft(capsDraft.map((c, j) => (j === i ? { ...c, text: e.target.value } : c)))}
+                    />
+                    <button type="button" className="btn ghost" aria-label={t("studio.capsRemove")} onClick={() => setCapsDraft(capsDraft.filter((_, j) => j !== i))}>
+                      ×
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => {
+                    const last = capsDraft[capsDraft.length - 1];
+                    const start = last ? last.end : 0;
+                    setCapsDraft([...capsDraft, { start, end: Math.round((start + 3) * 10) / 10, text: "" }]);
+                  }}
+                >
+                  + {t("studio.capsAdd")}
+                </button>
+                <p className="hint">{t("studio.capsEditHint")}</p>
+                <div className="action-row">
+                  <button type="button" className="btn" disabled={Boolean(busy)} onClick={saveCapsDraft}>
+                    {busy === "edit-captions" ? t("studio.voiceOffSaving") : t("studio.editSave")}
+                  </button>
+                  <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => setCapsDraft(null)}>
+                    {t("studio.placeCancel")}
+                  </button>
+                </div>
+              </div>
+            )}
+            {viewStep === "captions" && project.captions && !capsDraft && (
+              <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => setCapsDraft(project.captions?.cues.map((c) => ({ ...c })) || [])}>
+                {t("studio.capsEdit")}
+              </button>
+            )}
+            {viewStep === "captions" && project.captions && !capsDraft && (
               <ol className="review-list">
                 {project.captions.cues.map((cue, i) => (
                   <li key={i}>
@@ -1826,13 +2016,45 @@ export default function Studio() {
           )}
 
           {next && !(isImage && next.id === "visuals" && project.idea?.shot?.summary) && (
-            <button className="btn accent" style={{ marginTop: 18 }} disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => run(next.id)}>
-              {busy && busy === next.id
-                ? makingLabel
-                : extraPrice(next.id).extra
-                  ? t("studio.makeStep2x", { label: stepLabel(next.id).toLowerCase(), credits: extraPrice(next.id).credits })
-                  : t("studio.makeStep", { label: stepLabel(next.id).toLowerCase(), credits: extraPrice(next.id).credits })}
-            </button>
+            <div className="action-row" style={{ marginTop: 18 }}>
+              <button className="btn accent" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => run(next.id)}>
+                {busy && busy === next.id
+                  ? makingLabel
+                  : next.id === "captions" && project.voiceOff
+                    ? t("studio.makeCaptionsFree")
+                    : extraPrice(next.id).extra
+                      ? t("studio.makeStep2x", { label: stepLabel(next.id).toLowerCase(), credits: extraPrice(next.id).credits })
+                      : t("studio.makeStep", { label: stepLabel(next.id).toLowerCase(), credits: extraPrice(next.id).credits })}
+              </button>
+              {next.id === "voice" && (
+                <button className="btn ghost" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => toggleVoice(true)}>
+                  {busy === "voice-off" ? t("studio.voiceOffSaving") : t("studio.voiceOff")}
+                </button>
+              )}
+              {next.id === "captions" && (
+                <button className="btn ghost" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => toggleCaptions(true)}>
+                  {busy === "captions-off" ? t("studio.voiceOffSaving") : t("studio.captionsOff")}
+                </button>
+              )}
+            </div>
+          )}
+          {next?.id === "voice" && <p className="hint" style={{ marginTop: 6 }}>{t("studio.voiceOffHint")}</p>}
+          {next?.id === "captions" && <p className="hint" style={{ marginTop: 6 }}>{t("studio.captionsOffHint")}</p>}
+          {project.captionsOff && !isImage && (
+            <div className="voice-off-note">
+              <p className="hint" style={{ margin: 0 }}>{t("studio.captionsOffNow")}</p>
+              <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleCaptions(false)}>
+                {t("studio.captionsOn")}
+              </button>
+            </div>
+          )}
+          {project.voiceOff && !isImage && (
+            <div className="voice-off-note">
+              <p className="hint" style={{ margin: 0 }}>{t("studio.voiceOffNow")}</p>
+              <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleVoice(false)}>
+                {t("studio.voiceOn")}
+              </button>
+            </div>
           )}
           {pendingRegen && STEP_REASONS[pendingRegen.step] && (
             <div style={{ marginTop: 16 }}>
