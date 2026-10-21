@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import OpenAI, { toFile } from "openai";
 import { config } from "../config.js";
-import { canvasLine, padToNative, paintsExactSize, sizeFor, type ImageFormat } from "./imageFormats.js";
+import { canvasLine, padToNative, padToShape, paintsExactSize, sizeFor, type ImageFormat } from "./imageFormats.js";
 import { COMFY_FAILED_MESSAGE, comfyEnabled, comfyFallsBackToOpenAI, comfyHandles, comfyPaint } from "./comfy.js";
 import { USER_ERRORS } from "./userErrors.js";
 import { listBrandRefFiles, logoKindFromBytes, type BrandImageFile } from "./brandAssets.js";
@@ -782,14 +782,79 @@ export function rewriteStillLanguagePrompt(brief: string, lang: PictureLanguage,
     .join("\n\n");
 }
 
-export function rewriteStillCopyPrompt(copyEdit: string) {
+/** The same finished picture, laid out again for another shape. Nothing new, nothing lost. */
+export function rewriteStillFormatPrompt(format: ImageFormat) {
+  return [
+    "Edit the attached image: it is a finished picture placed in the middle of a new canvas. The blurred bands around it are empty space to fill.",
+    `${canvasLine(format)}`,
+    "Make it one finished picture for this new shape. Extend the photograph and background naturally into the bands — same scene, light, colours and style, no seams.",
+    "Keep every word exactly as it is: same spelling, same language, same fonts and colours. Move or resize text blocks only as much as the new shape needs, so nothing is cut off, squashed or overlapping.",
+    "Keep the people, objects, logo and badges as they are. Do not add new words, people, logos or objects. Do not stretch or squash anything.",
+  ].join("\n\n");
+}
+
+export type LogoSpot = {
+  corner: LogoPosition;
+  /** Our stamp's box in % of the picture: width, height, and its gap from the side and from the top or bottom edge. */
+  w: number;
+  h: number;
+  x: number;
+  y: number;
+  wordmark: boolean;
+  shape?: string;
+  colors?: string[];
+};
+
+/** "Make room for the logo / put the logo …": the owner means our logo. Corner words in Ukrainian or English, if any. */
+export function logoSpotRequest(text: string): { vertical: "top" | "bottom" | ""; horizontal: "left" | "right" | "" } | null {
+  const t = text.toLowerCase();
+  if (!/(лого|logo)/.test(t)) return null;
+  const room = /(місц|простір|room|space|clear|звільн|free up|постав|став|put|place|додай|add|перенес|пересун|перемісти|move|shift)/.test(t);
+  const remove = /(прибер|видал|забер|remove|delete|take off|get rid)/.test(t);
+  if (!room || (remove && !/(місц|простір|room|space|звільн|free up)/.test(t))) return null;
+  const vertical = /(вгорі|угорі|вгору|догори|наверх|зверху|згори|верх|top|upper|\bup\b)/.test(t)
+    ? "top"
+    : /(внизу|унизу|вниз|донизу|знизу|низ|bottom|lower|\bdown\b)/.test(t)
+      ? "bottom"
+      : "";
+  const horizontal = /(ліворуч|зліва|лівий|лівому|лівім|left)/.test(t)
+    ? "left"
+    : /(праворуч|справа|правий|правому|правім|right)/.test(t)
+      ? "right"
+      : "";
+  return { vertical, horizontal };
+}
+
+function logoSpotLines(spot: LogoSpot) {
+  const [vertical, horizontal] = spot.corner.split("-");
+  const mark = spot.wordmark
+    ? "their business name on a small soft pill"
+    : `a ${spot.shape || "square"} logo${spot.colors?.length ? ` in ${spot.colors.join(", ")}` : ""}`;
+  return [
+    `This change is room for their logo in the ${vertical} ${horizontal} corner. We place the exact file there afterwards: ${mark}, about ${spot.w}% of the picture's width and ${spot.h}% of its height, ${spot.x}% from the ${horizontal} side and ${spot.y}% from the ${vertical} edge.`,
+    `Clear that box plus a little breathing room around it (about ${Math.round(spot.w * 1.4)}% × ${Math.round(spot.h * 1.4)}% in that corner): move or shrink only the words, objects or details inside it, and leave it calm — just background, no text, faces or busy texture, in a tone the logo reads clearly on.`,
+    "Do not paint any logo, mark or business name there yourself. Everything outside that corner stays exactly as it is.",
+  ];
+}
+
+/** The picture carries our logo: it comes off for the edit and goes back after, so its spot must stay clear. */
+export function logoHoldLine(hold: LogoSpot, exact = true) {
+  const [vertical, horizontal] = hold.corner.split("-");
+  const size = exact
+    ? ` — about ${hold.w}% of the picture's width and ${hold.h}% of its height, ${hold.x}% from the ${horizontal} side and ${hold.y}% from the ${vertical} edge`
+    : "";
+  return `Their logo goes back in the ${vertical} ${horizontal} corner after this edit${size}. Keep that spot calm and clear — just background, no words, faces or busy detail — so the logo sits well there. Do not paint any logo, mark or business name yourself.`;
+}
+
+export function rewriteStillCopyPrompt(copyEdit: string, logoSpot?: LogoSpot) {
   const note = copyEdit.replace(/\s+/g, " ").trim().slice(0, 400);
   return [
-    "Edit the attached image. Keep the same photograph, people, objects, colours, lighting, layout, decorations and crop.",
+    "Edit the attached image. Change only what the instruction asks; everything else stays exactly as it is — the same photograph, people, objects, words, colours, light, layout, decorations and crop.",
     "The owner's message is an INSTRUCTION, not a caption. Do not paint that instruction on the picture.",
     `Instruction: ${note}`,
-    "Follow the instruction: add or remove painted words as they asked. If they named a line to add, paint only those words. If they asked to remove a line, take that line off.",
-    "Never write the instruction itself onto the poster. Do not generate a different scene.",
+    "It may be about words (add, remove or change a line — paint only the words they named), about something in the picture (remove, add, move or recolour an object or detail), or about space (make room or clear a spot, for example for a logo — leave that area calm, just background, and move or shrink only what has to give way).",
+    ...(logoSpot ? logoSpotLines(logoSpot) : []),
+    "Never write the instruction itself onto the picture. Do not generate a different scene or redesign the rest.",
   ].join("\n\n");
 }
 
@@ -1110,6 +1175,14 @@ export type FrameOpts = {
   brief?: string;
   paintedCopy?: string;
   copyEdit?: string;
+  /** A small picture the owner attached to a change: the thing to add or the look to match. */
+  editExample?: BrandImageFile;
+  /** "Make room for the logo": the exact area our stamp will take, so the model clears just that. */
+  logoSpot?: LogoSpot;
+  /** The picture had our logo: where it goes back after the edit, so the model keeps that spot clear. */
+  logoHold?: LogoSpot;
+  /** New shape for a finished picture: the same design laid out again for it. */
+  reformat?: ImageFormat;
   /** Pictures the person attached to this brief as examples. Sent with the request. */
   exampleRefs?: BrandImageFile[];
   /** Shape of the picture (image posts only). */
@@ -1257,16 +1330,19 @@ async function generateSceneFrame(
   let keepPadded: Buffer | null = null;
   if (keepStill && opts?.format && kind !== "video" && opts.keepStillPath) {
     const out = `${opts.keepStillPath}.pad.jpg`;
-    if (await padToNative(opts.keepStillPath, opts.format, out)) keepPadded = fs.readFileSync(out);
+    const padded = opts.reformat ? await padToShape(opts.keepStillPath, opts.reformat, out) : await padToNative(opts.keepStillPath, opts.format, out);
+    if (padded) keepPadded = fs.readFileSync(out);
     fs.rmSync(out, { force: true });
   }
   if (keepRequested && !keepStill?.length) {
     return { ...placeholder, error: "Make the picture first." };
   }
   const basePrompt = keepStill
-    ? opts?.copyEdit
-      ? rewriteStillCopyPrompt(opts.copyEdit)
-      : rewriteStillLanguagePrompt(opts?.brief || "", opts?.pictureLanguage || "", opts?.paintedCopy || "")
+    ? opts?.reformat
+      ? rewriteStillFormatPrompt(opts.reformat)
+        : opts?.copyEdit
+        ? rewriteStillCopyPrompt(opts.copyEdit, opts.logoSpot)
+        : rewriteStillLanguagePrompt(opts?.brief || "", opts?.pictureLanguage || "", opts?.paintedCopy || "")
     : kind === "video"
       ? videoFramePrompt(scene, brand)
       : withBrandLook(
@@ -1284,10 +1360,15 @@ async function generateSceneFrame(
       ? fontSampleFile(brand.user_id, brand.business_name, brand.font)
       : "";
   const fontRef: BrandImageFile[] = sample ? [{ slot: "font", file: sample, type: "image/png", filename: "font-sample.png" }] : [];
-  const refs = [...examples, ...brandRefs, ...fontRef];
+  const editRef = keepStill && opts?.copyEdit && opts.editExample ? [opts.editExample] : [];
+  const refs = [...examples, ...brandRefs, ...fontRef, ...editRef];
   const prompt = [
     basePrompt,
     !keepStill && examples.length ? exampleRefLine(examples.length, kind) : "",
+    keepStill && opts?.logoHold && !opts.logoSpot ? logoHoldLine(opts.logoHold, !opts.reformat) : "",
+    editRef.length
+      ? "The second attached image is the owner's small example for this change — the thing to add, or the look to match. Use it only for what the instruction asks; it is not a new picture and does not replace the first one."
+      : "",
     fontRef.length
       ? "The last attached image is only a type specimen of the owner's brand font. Paint every title and word on the picture in this typeface — same letter shapes, weight and contrast. Do not paint the specimen sheet or its sample letters."
       : "",
@@ -1343,11 +1424,14 @@ async function generateSceneFrame(
   };
 
   const editOnce = async (model: string) => {
-    const usePad = Boolean(keepPadded) && !(opts?.format && paintsExactSize(model));
+    // A new shape always goes in on the padded canvas: the model paints the bands instead of squashing the picture.
+    const usePad = Boolean(keepPadded) && (Boolean(opts?.reformat) || !(opts?.format && paintsExactSize(model)));
     const source = usePad ? keepPadded : keepStill;
-    const editPrompt = usePad
-      ? `${prompt}\nThe blurred bands at the edges are only padding. Leave them alone; change nothing in the sharp picture except what is asked.`
-      : prompt;
+    const editPrompt = opts?.reformat
+      ? prompt
+      : usePad
+        ? `${prompt}\nThe blurred bands at the edges are only padding. Leave them alone; change nothing in the sharp picture except what is asked.`
+        : prompt;
     const files = await Promise.all([
       ...(source ? [toFile(source, keepName, { type: keepType })] : []),
       ...refs.map((ref, i) => toFile(fs.readFileSync(ref.file), `${i + 1}-${ref.filename}`, { type: ref.type })),
@@ -1364,7 +1448,8 @@ async function generateSceneFrame(
       } as Parameters<typeof openai.images.edit>[0]);
       return readResult(model, image);
     };
-    const preferred = keepStill ? (opts?.copyEdit ? "low" : "high") : "";
+    // Every edit of a finished picture keeps what was not asked to change.
+    const preferred = keepStill ? "high" : "";
     try {
       return await run(preferred);
     } catch (error) {

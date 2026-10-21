@@ -290,6 +290,18 @@ a.side-account:hover, a.side-account.active { background: var(--hover); }
 }
 .ready-block:first-of-type,
 h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
+.edit-block { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.edit-block-head { cursor: pointer; list-style: none; position: relative; padding-right: 28px; }
+.edit-block-head::-webkit-details-marker { display: none; }
+.edit-block-head::after {
+  content: "▾";
+  position: absolute; right: 4px; top: 0;
+  font-size: 16px; color: var(--muted, inherit);
+  transition: transform 0.15s ease;
+}
+.edit-block:not([open]) .edit-block-head::after { transform: rotate(-90deg); }
+.edit-block-head h3 { margin: 0 0 4px; font-size: 17px; }
+.edit-block-head .hint { margin: 0; }
 .action-row {
   display: flex;
   flex-wrap: wrap;
@@ -1048,3 +1060,5 @@ details.options[open] .options-summary { border-bottom-left-radius: 0; border-bo
 details.options > :not(summary) { margin-left: 2px; }
 @media (prefers-reduced-motion: reduce) { .options-chevron { transition: none; } }
 details.options > .brand-toggle, details.options > .examples { margin-top: 14px; }
+.edit-example { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.edit-example .example { width: 72px; height: 72px; }

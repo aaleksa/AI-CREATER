@@ -44,6 +44,24 @@ export function resolveImageFormat(kind: "still" | "poster", raw: unknown): Imag
   return parseImageFormat(raw) || (kind === "poster" ? "tall" : "square");
 }
 
+/** The format whose shape is closest to this picture file (pictures of an older take may have another shape). */
+export function formatOfFile(file: string): ImageFormat | "" {
+  const size = imageDimensions(file);
+  if (!size || !size.h) return "";
+  const ratio = size.w / size.h;
+  let best: ImageFormat | "" = "";
+  let gap = Infinity;
+  for (const format of [...IMAGE_FORMATS, "tall"] as ImageFormat[]) {
+    const { w, h } = SPECS[format].ratio;
+    const diff = Math.abs(Math.log(ratio / (w / h)));
+    if (diff < gap) {
+      gap = diff;
+      best = format;
+    }
+  }
+  return gap < 0.04 ? best : "";
+}
+
 export function formatRatio(format: ImageFormat) {
   const { w, h } = SPECS[format].ratio;
   return { w, h, value: w / h };
@@ -142,7 +160,17 @@ export async function padToNative(file: string, format: ImageFormat, out: string
   if (!fs.existsSync(file)) return false;
   const spec = SPECS[format];
   if (spec.native.w / spec.native.h === spec.exact.w / spec.exact.h) return false;
-  const n = `${spec.native.w}/${spec.native.h}`;
+  return padToRatio(file, `${spec.native.w}/${spec.native.h}`, out);
+}
+
+/** The whole picture, untouched, in the middle of a canvas of the new shape; the rest is a blur of it to paint over. */
+export async function padToShape(file: string, format: ImageFormat, out: string) {
+  if (!fs.existsSync(file)) return false;
+  const { w, h } = SPECS[format].ratio;
+  return padToRatio(file, `${w}/${h}`, out);
+}
+
+function padToRatio(file: string, n: string, out: string) {
   const W = `trunc(max(iw\\,ih*${n})/2)*2`;
   const H = `trunc(max(ih\\,iw/(${n}))/2)*2`;
   return runFfmpeg(

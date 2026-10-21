@@ -11,6 +11,11 @@ const SHAPE: Record<string, string> = {
   tall: "2x3",
 };
 
+/** "портрет 4:5", "сторіз 9:16" — the shape of a picture in a few characters. */
+export function shapeLabel(shape: string, t: T) {
+  return SHAPE[shape] ? `${t(`fileName.${shape}`)} ${SHAPE[shape].replace("x", ":")}` : "";
+}
+
 /** Words of the title, safe for a file name on any computer. Letters of any alphabet stay. */
 function slug(text: string, max = 40) {
   const words = text

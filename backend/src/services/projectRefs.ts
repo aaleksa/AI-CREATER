@@ -58,6 +58,17 @@ export function readExampleUpload(raw: unknown) {
   return { buffer, kind };
 }
 
+/** The small picture attached to one "change something" request. Each request replaces it. */
+export function writeEditExample(projectId: string, buffer: Buffer, ext: "png" | "jpg"): BrandImageFile {
+  const dir = projectMediaDir(projectId);
+  for (const name of fs.readdirSync(dir)) {
+    if (name.startsWith("edit-example.")) fs.rmSync(path.join(dir, name), { force: true });
+  }
+  const file = path.join(dir, `edit-example.${ext}`);
+  fs.writeFileSync(file, buffer);
+  return { slot: "place", file, type: ext === "png" ? "image/png" : "image/jpeg", filename: `edit-example.${ext}` };
+}
+
 export function addExampleRef(projectId: string, buffer: Buffer, ext: "png" | "jpg") {
   const slot = SLOTS.find((s) => !exampleRefFile(projectId, s));
   if (!slot) throw Object.assign(new Error("You can add up to 3 example pictures."), { status: 400 });

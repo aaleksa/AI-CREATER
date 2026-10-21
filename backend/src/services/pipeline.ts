@@ -1,8 +1,10 @@
 import fs from "node:fs";
 import { v4 as uuid } from "uuid";
 import { brandImageUrls } from "./brandAssets.js";
-import { exampleRefList, listExampleRefs } from "./projectRefs.js";
-import { IMAGE_FORMATS, parseImageFormat, resolveImageFormat, type ImageFormat } from "./imageFormats.js";
+import { exampleRefList, listExampleRefs, readExampleUpload, writeEditExample } from "./projectRefs.js";
+import type { BrandImageFile } from "./brandAssets.js";
+import { logoLook } from "./logoLook.js";
+import { IMAGE_FORMATS, formatOfFile, parseImageFormat, resolveImageFormat, type ImageFormat } from "./imageFormats.js";
 import { db } from "../db/index.js";
 import { attemptCost, config, CREDIT_COSTS, EXTRA_ATTEMPT_MULTIPLIER, IMAGE_SLIDE_COUNT, MAX_STEP_ATTEMPTS, MAX_REGENERATES_PER_STEP, VISUAL_SCENE_CREDITS, visualMinLive } from "../config.js";
 import { getBalance, refundCredits, spendCredits } from "./credits.js";
@@ -18,8 +20,10 @@ import {
   emptyShot,
   keepWordsHonest,
   logoPositionOf,
+  logoSpotRequest,
   rewriteStillLanguagePrompt,
   rewriteStillCopyPrompt,
+  rewriteStillFormatPrompt,
   readPaintedCopy,
   translateBrief,
   translatePictureCopy,
@@ -29,6 +33,7 @@ import {
   type CaptionCue,
   type Idea,
   type LogoPosition,
+  type LogoSpot,
   type PictureLanguage,
   type Shot,
   type Script,
@@ -50,6 +55,7 @@ import {
   renderReel,
   restoreStillSnapshot,
   snapshotStills,
+  brandMarkSpot,
   stampBrandMark,
   stillFile,
   stillVersionFile,
@@ -364,6 +370,12 @@ function hasOurLogo(projectId: string, rows: VersionRow[], index: number) {
   return Boolean(base.file) && fs.existsSync(file) && !sameFile(base.file, file);
 }
 
+/** Shape of the take as it really is on disk (takes made before a shape change keep their own). */
+function versionShape(projectId: string, row: VersionRow) {
+  const frame = (parse<Visual[]>(row.payload_json) || [])[0];
+  return frame && !frame.placeholder ? formatOfFile(stillVersionFile(projectId, frame.sceneId, row.id)) : "";
+}
+
 function lastVersions(projectId: string, step: string) {
   const rows = versionRows(projectId, step);
   return rows.map((row, index) => ({
@@ -371,7 +383,7 @@ function lastVersions(projectId: string, step: string) {
     accepted: Number(row.accepted) === 1,
     createdAt: row.created_at,
     payload: slimVersionPayload(step, parse(row.payload_json)),
-    ...(step === "visuals" ? { ourLogo: hasOurLogo(projectId, rows, index) } : {}),
+    ...(step === "visuals" ? { ourLogo: hasOurLogo(projectId, rows, index), shape: versionShape(projectId, row) } : {}),
   }));
 }
 
@@ -482,6 +494,9 @@ export function restoreStepVersion(
     db.prepare(
       `UPDATE projects SET visuals_json = ?, output_url = ?, status = ?, updated_at = datetime('now') WHERE id = ?`
     ).run(JSON.stringify(next), ready ? `/projects/${projectId}/image/1` : null, ready ? "ready" : "draft", projectId);
+    // An older take may have another shape: the project follows the picture that is now on screen.
+    const shape = ready && next[0] ? formatOfFile(stillFile(projectId, next[0].sceneId)) : "";
+    if (shape && shape !== "tall") db.prepare("UPDATE projects SET image_format = ? WHERE id = ?").run(shape, projectId);
     removeVideoFile(projectId);
     return serializeProject(getProject(projectId, userId));
   }
@@ -807,6 +822,8 @@ export async function runStep(
     keepStill?: boolean;
     keepStillVersionId?: unknown;
     copyEdit?: unknown;
+    copyEditImage?: unknown;
+    reformat?: unknown;
     uiLanguage?: unknown;
   } = {}
 ) {
@@ -827,11 +844,15 @@ export async function runStep(
     .trim()
     .slice(0, 400);
   const requestedLang = parsePictureLanguage(opts.pictureLanguage);
+  const reformat = keepStill ? parseImageFormat(opts.reformat) : "";
   const pictureLanguage =
     requestedLang || parsePictureLanguage(project.picture_language);
   const regenerate = Boolean(opts.regenerate) || keepStill;
   let keepStillPath = "";
   let keepLogo: { file: string; corner: LogoPosition } | null = null;
+  let editExample: BrandImageFile | undefined;
+  let logoSpot: LogoSpot | undefined;
+  let logoHold: LogoSpot | undefined;
 
   const alreadyDone =
     (step === "idea" && Boolean(project.idea_json)) ||
@@ -902,15 +923,18 @@ export async function runStep(
     if (step !== "visuals" || !isImagePost(type)) {
       throw Object.assign(new Error("Text changes are only for still pictures."), { status: 400 });
     }
-    if (requestedLang && copyEdit) {
-      throw Object.assign(new Error("Choose a language remake or a text change, not both."), { status: 400 });
+    if ([requestedLang, copyEdit, reformat].filter(Boolean).length > 1) {
+      throw Object.assign(new Error("Choose one change at a time: language, words or shape."), { status: 400 });
+    }
+    if (reformat && reformat === parseImageFormat(project.image_format)) {
+      throw Object.assign(new Error("The picture already has this shape."), { status: 400 });
     }
     if (requestedLang && !isTextPoster(type, imageIntent)) {
       throw Object.assign(new Error("Same-picture language is only for invitations, information and offers."), {
         status: 400,
       });
     }
-    if (!requestedLang && !copyEdit) {
+    if (!requestedLang && !copyEdit && !reformat) {
       throw Object.assign(new Error("Say what to add or remove on the picture, or choose English or Ukrainian."), {
         status: 400,
       });
@@ -919,6 +943,11 @@ export async function runStep(
       throw Object.assign(new Error("Say what to add or remove on the picture — a few words is enough."), {
         status: 400,
       });
+    }
+    if (copyEdit && opts.copyEditImage) {
+      const upload = readExampleUpload(opts.copyEditImage);
+      if ("error" in upload) throw Object.assign(new Error(upload.error), { status: 400 });
+      editExample = writeEditExample(projectId, upload.buffer, upload.kind);
     }
     const keepScene = sceneId || 1;
     let useLiveIfMissing = !keepStillVersionId;
@@ -943,6 +972,25 @@ export async function runStep(
     }
     keepLogo = logoToKeep(projectId, keepScene, keepStillVersionId);
     if (keepLogo) fs.copyFileSync(keepLogo.file, keepStillPath);
+    // "Make room for the logo": tell the model the exact box our stamp will take, then stamp it there ourselves.
+    const spotAsk = copyEdit ? logoSpotRequest(copyEdit) : null;
+    const kit = spotAsk ? brandFor(userId) : null;
+    const box = spotAsk && kit ? brandMarkSpot(kit, keepStillPath) : null;
+    if (spotAsk && kit && box) {
+      // A move keeps the half of the corner they did not name from where the logo is now, else from the kit.
+      const [vertical, horizontal] = (keepLogo?.corner || logoPositionOf(kit)).split("-");
+      const look = logoLook(userId);
+      logoSpot = {
+        corner: `${spotAsk.vertical || vertical}-${spotAsk.horizontal || horizontal}` as LogoPosition,
+        ...box,
+        shape: look?.shape,
+        colors: look?.colors,
+      };
+    } else if (keepLogo) {
+      const owner = brandFor(userId);
+      const held = owner ? brandMarkSpot(owner, keepStillPath) : null;
+      if (held) logoHold = { corner: keepLogo.corner, ...held };
+    }
   }
   if ((step === "visuals" || step === "voice" || step === "captions" || step === "render") && !script && !isImagePost(type)) {
     throw Object.assign(new Error("Generate the script first."), { status: 400 });
@@ -1054,10 +1102,20 @@ export async function runStep(
         brief: translatedBrief || prompt,
         paintedCopy: paintedCopy || undefined,
         copyEdit: keepStill && copyEdit ? copyEdit : undefined,
+        editExample,
+        logoSpot,
+        logoHold,
+        reformat: reformat || undefined,
         exampleRefs: keepStill ? [] : listExampleRefs(projectId),
-        format: (isImagePost(type) ? resolveImageFormat(kind === "poster" ? "poster" : "still", project.image_format) : undefined) as ImageFormat | undefined,
+        format: (reformat ||
+          (isImagePost(type) ? resolveImageFormat(kind === "poster" ? "poster" : "still", project.image_format) : undefined)) as
+          | ImageFormat
+          | undefined,
       };
-      if (keepStill && imageScript && copyEdit) {
+      if (keepStill && imageScript && reformat) {
+        const rewrite = rewriteStillFormatPrompt(reformat);
+        for (const scene of imageScript.scenes) scene.visualPrompt = rewrite;
+      } else if (keepStill && imageScript && copyEdit) {
         const rewrite = rewriteStillCopyPrompt(copyEdit);
         for (const scene of imageScript.scenes) scene.visualPrompt = rewrite;
       } else if (keepStill && imageScript && requestedLang) {
@@ -1101,7 +1159,9 @@ export async function runStep(
           stampContact,
           frameOpts.format
         );
-        if (keepLogo && !one.data.placeholder) next = await putLogoBack(userId, projectId, next, sceneId, keepLogo.corner);
+        const logoBack = logoSpot?.corner || keepLogo?.corner;
+        if (logoBack && !one.data.placeholder) next = await putLogoBack(userId, projectId, next, sceneId, logoBack);
+        if (reformat && !one.data.placeholder) updates.image_format = reformat;
         updates.visuals_json = JSON.stringify(next);
         updates.current_step = "visuals";
         provider = one.provider;
