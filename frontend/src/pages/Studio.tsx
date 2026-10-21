@@ -3,6 +3,7 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type Project, type Shot } from "../lib/api";
 import { copyText } from "../lib/copy";
 import { downloadName, shapeLabel } from "../lib/fileName";
+import { prepareImage } from "../lib/imageUpload";
 import BrandToggle from "../components/BrandToggle";
 import ExampleImages, { useProjectImageSrcs } from "../components/ExampleImages";
 import { useLocale } from "../i18n/locale";
@@ -108,6 +109,9 @@ function doneThrough(project: Project, step: string) {
   };
   return Boolean(map[step]);
 }
+
+/** Remembered per browser: whether "Changes to the selected picture" is open. */
+const EDITS_OPEN_KEY = "auteur.studio.editsOpen";
 
 function PictureCompare({
   versions,
@@ -251,6 +255,7 @@ export default function Studio() {
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
   const [copyEdit, setCopyEdit] = useState("");
   const [copyEditOpen, setCopyEditOpen] = useState(false);
+  const [copyEditImage, setCopyEditImage] = useState("");
   const [pendingRegen, setPendingRegen] = useState<{ step: string; sceneId?: number } | null>(null);
   const [regenReason, setRegenReason] = useState("");
   const [regenNote, setRegenNote] = useState("");
@@ -259,6 +264,7 @@ export default function Studio() {
   const [kit, setKit] = useState<BrandKitRow | null>(null);
   const [pickedCorner, setPickedCorner] = useState("");
   const [reformatTo, setReformatTo] = useState("");
+  const [editsOpen, setEditsOpen] = useState(() => localStorage.getItem(EDITS_OPEN_KEY) === "1");
   const [inviteDraft, setInviteDraft] = useState<InviteCard>(EMPTY_INVITE);
   const [inviteSaved, setInviteSaved] = useState(false);
   const [shotEditOpen, setShotEditOpen] = useState(false);
@@ -446,7 +452,7 @@ export default function Studio() {
     sceneId?: number,
     feedback?: { reason?: string; note?: string },
     evictOldest = false,
-    extra?: { pictureLanguage?: string; keepStill?: boolean; keepStillVersionId?: string; copyEdit?: string; reformat?: string }
+    extra?: { pictureLanguage?: string; keepStill?: boolean; keepStillVersionId?: string; copyEdit?: string; copyEditImage?: string; reformat?: string }
   ) {
     if (!id) return;
     setBusy(sceneId ? `visual-${sceneId}` : step);
@@ -468,6 +474,7 @@ export default function Studio() {
       if (nextProject.invite) setInviteDraft(draftFromInvite(nextProject.invite));
       if (extra?.copyEdit) {
         setCopyEdit("");
+        setCopyEditImage("");
         setCopyEditOpen(false);
       }
       refreshMe();
@@ -529,6 +536,7 @@ export default function Studio() {
     await execute("visuals", true, sceneId, undefined, false, {
       keepStill: true,
       copyEdit: note,
+      copyEditImage: copyEditImage || undefined,
       keepStillVersionId: workingVersionId,
     });
   }
@@ -1140,6 +1148,20 @@ export default function Studio() {
                     </button>
                   )}
                 </div>
+                {isImage && (
+                <details
+                  className="edit-block"
+                  open={editsOpen}
+                  onToggle={(e) => {
+                    const open = e.currentTarget.open;
+                    setEditsOpen(open);
+                    localStorage.setItem(EDITS_OPEN_KEY, open ? "1" : "0");
+                  }}
+                >
+                  <summary className="edit-block-head">
+                    <h3>{t("studio.editBlockTitle")}</h3>
+                    <p className="hint">{t("studio.editBlockHint")}</p>
+                  </summary>
                 {isPoster && (
                   <div style={{ marginTop: 16 }}>
                     <p className="hint">{t("studio.samePictureHint")}</p>
@@ -1192,6 +1214,7 @@ export default function Studio() {
                             onClick={() => {
                               setCopyEditOpen(false);
                               setCopyEdit("");
+                              setCopyEditImage("");
                               setError("");
                             }}
                           >
@@ -1209,6 +1232,44 @@ export default function Studio() {
                           autoFocus
                           style={{ minHeight: 88, marginTop: 8 }}
                         />
+                        <div className="edit-example">
+                          {copyEditImage ? (
+                            <div className="example">
+                              <img src={copyEditImage} alt={t("studio.editExampleAlt")} />
+                              <button
+                                type="button"
+                                className="example-x"
+                                aria-label={t("briefImages.remove")}
+                                disabled={Boolean(busy)}
+                                onClick={() => setCopyEditImage("")}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ) : (
+                            <label className={`btn ghost${busy ? " off" : ""}`}>
+                              + {t("studio.editExampleAdd")}
+                              <input
+                                className="sr-only"
+                                type="file"
+                                accept="image/*"
+                                disabled={Boolean(busy)}
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  e.target.value = "";
+                                  if (!file) return;
+                                  setError("");
+                                  try {
+                                    setCopyEditImage(await prepareImage(file));
+                                  } catch {
+                                    setError(t("briefImages.badFile"));
+                                  }
+                                }}
+                              />
+                            </label>
+                          )}
+                          <span className="hint">{t("studio.editExampleHint")}</span>
+                        </div>
                         {error && (
                           <p className="err" style={{ marginTop: 8 }}>
                             {error}
@@ -1316,6 +1377,8 @@ export default function Studio() {
                       </p>
                     )}
                   </div>
+                )}
+                </details>
                 )}
               </div>
               <div className="ready-block">

@@ -206,7 +206,7 @@ export const api = {
     sceneId?: number,
     feedback?: { reason?: string; note?: string },
     evictOldest = false,
-    extra?: { pictureLanguage?: string; keepStill?: boolean; keepStillVersionId?: string; copyEdit?: string; reformat?: string }
+    extra?: { pictureLanguage?: string; keepStill?: boolean; keepStillVersionId?: string; copyEdit?: string; copyEditImage?: string; reformat?: string }
   ) => {
     const idempotencyKey = crypto.randomUUID();
     return request<{ project: Project; archive?: ArchiveState }>(`/projects/${id}/steps/${step}`, {
@@ -224,6 +224,7 @@ export const api = {
         keepStillVersionId: extra?.keepStillVersionId || undefined,
         copyEdit: extra?.copyEdit || undefined,
         reformat: extra?.reformat || undefined,
+        copyEditImage: extra?.copyEditImage || undefined,
       }),
     });
   },

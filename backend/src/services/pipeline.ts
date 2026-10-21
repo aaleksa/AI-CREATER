@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import { v4 as uuid } from "uuid";
 import { brandImageUrls } from "./brandAssets.js";
-import { exampleRefList, listExampleRefs } from "./projectRefs.js";
+import { exampleRefList, listExampleRefs, readExampleUpload, writeEditExample } from "./projectRefs.js";
+import type { BrandImageFile } from "./brandAssets.js";
+import { logoLook } from "./logoLook.js";
 import { IMAGE_FORMATS, formatOfFile, parseImageFormat, resolveImageFormat, type ImageFormat } from "./imageFormats.js";
 import { db } from "../db/index.js";
 import { attemptCost, config, CREDIT_COSTS, EXTRA_ATTEMPT_MULTIPLIER, IMAGE_SLIDE_COUNT, MAX_STEP_ATTEMPTS, MAX_REGENERATES_PER_STEP, VISUAL_SCENE_CREDITS, visualMinLive } from "../config.js";
@@ -18,6 +20,7 @@ import {
   emptyShot,
   keepWordsHonest,
   logoPositionOf,
+  logoSpotRequest,
   rewriteStillLanguagePrompt,
   rewriteStillCopyPrompt,
   rewriteStillFormatPrompt,
@@ -30,6 +33,7 @@ import {
   type CaptionCue,
   type Idea,
   type LogoPosition,
+  type LogoSpot,
   type PictureLanguage,
   type Shot,
   type Script,
@@ -51,6 +55,7 @@ import {
   renderReel,
   restoreStillSnapshot,
   snapshotStills,
+  brandMarkSpot,
   stampBrandMark,
   stillFile,
   stillVersionFile,
@@ -817,6 +822,7 @@ export async function runStep(
     keepStill?: boolean;
     keepStillVersionId?: unknown;
     copyEdit?: unknown;
+    copyEditImage?: unknown;
     reformat?: unknown;
     uiLanguage?: unknown;
   } = {}
@@ -844,6 +850,9 @@ export async function runStep(
   const regenerate = Boolean(opts.regenerate) || keepStill;
   let keepStillPath = "";
   let keepLogo: { file: string; corner: LogoPosition } | null = null;
+  let editExample: BrandImageFile | undefined;
+  let logoSpot: LogoSpot | undefined;
+  let logoHold: LogoSpot | undefined;
 
   const alreadyDone =
     (step === "idea" && Boolean(project.idea_json)) ||
@@ -935,6 +944,11 @@ export async function runStep(
         status: 400,
       });
     }
+    if (copyEdit && opts.copyEditImage) {
+      const upload = readExampleUpload(opts.copyEditImage);
+      if ("error" in upload) throw Object.assign(new Error(upload.error), { status: 400 });
+      editExample = writeEditExample(projectId, upload.buffer, upload.kind);
+    }
     const keepScene = sceneId || 1;
     let useLiveIfMissing = !keepStillVersionId;
     if (keepStillVersionId) {
@@ -958,6 +972,25 @@ export async function runStep(
     }
     keepLogo = logoToKeep(projectId, keepScene, keepStillVersionId);
     if (keepLogo) fs.copyFileSync(keepLogo.file, keepStillPath);
+    // "Make room for the logo": tell the model the exact box our stamp will take, then stamp it there ourselves.
+    const spotAsk = copyEdit ? logoSpotRequest(copyEdit) : null;
+    const kit = spotAsk ? brandFor(userId) : null;
+    const box = spotAsk && kit ? brandMarkSpot(kit, keepStillPath) : null;
+    if (spotAsk && kit && box) {
+      // A move keeps the half of the corner they did not name from where the logo is now, else from the kit.
+      const [vertical, horizontal] = (keepLogo?.corner || logoPositionOf(kit)).split("-");
+      const look = logoLook(userId);
+      logoSpot = {
+        corner: `${spotAsk.vertical || vertical}-${spotAsk.horizontal || horizontal}` as LogoPosition,
+        ...box,
+        shape: look?.shape,
+        colors: look?.colors,
+      };
+    } else if (keepLogo) {
+      const owner = brandFor(userId);
+      const held = owner ? brandMarkSpot(owner, keepStillPath) : null;
+      if (held) logoHold = { corner: keepLogo.corner, ...held };
+    }
   }
   if ((step === "visuals" || step === "voice" || step === "captions" || step === "render") && !script && !isImagePost(type)) {
     throw Object.assign(new Error("Generate the script first."), { status: 400 });
@@ -1069,6 +1102,9 @@ export async function runStep(
         brief: translatedBrief || prompt,
         paintedCopy: paintedCopy || undefined,
         copyEdit: keepStill && copyEdit ? copyEdit : undefined,
+        editExample,
+        logoSpot,
+        logoHold,
         reformat: reformat || undefined,
         exampleRefs: keepStill ? [] : listExampleRefs(projectId),
         format: (reformat ||
@@ -1123,7 +1159,8 @@ export async function runStep(
           stampContact,
           frameOpts.format
         );
-        if (keepLogo && !one.data.placeholder) next = await putLogoBack(userId, projectId, next, sceneId, keepLogo.corner);
+        const logoBack = logoSpot?.corner || keepLogo?.corner;
+        if (logoBack && !one.data.placeholder) next = await putLogoBack(userId, projectId, next, sceneId, logoBack);
         if (reformat && !one.data.placeholder) updates.image_format = reformat;
         updates.visuals_json = JSON.stringify(next);
         updates.current_step = "visuals";

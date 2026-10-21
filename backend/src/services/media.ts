@@ -20,7 +20,7 @@ import {
 } from "./ai.js";
 import { brandLogoPath } from "./brandAssets.js";
 import { writeWordmark } from "./brandFont.js";
-import { cropToFormat, type ImageFormat } from "./imageFormats.js";
+import { cropToFormat, imageDimensions, type ImageFormat } from "./imageFormats.js";
 import { dataDir } from "../dataDir.js";
 
 export {
@@ -127,11 +127,14 @@ export function removeStillFiles(projectId: string) {
   }
 }
 
+/** Gap between our stamp and the edge of the picture, in pixels. */
+const LOGO_MARGIN = 36;
+
 const CORNER: Record<LogoPosition, string> = {
-  "top-left": "36:36",
-  "top-right": "W-w-36:36",
-  "bottom-left": "36:H-h-36",
-  "bottom-right": "W-w-36:H-h-36",
+  "top-left": `${LOGO_MARGIN}:${LOGO_MARGIN}`,
+  "top-right": `W-w-${LOGO_MARGIN}:${LOGO_MARGIN}`,
+  "bottom-left": `${LOGO_MARGIN}:H-h-${LOGO_MARGIN}`,
+  "bottom-right": `W-w-${LOGO_MARGIN}:H-h-${LOGO_MARGIN}`,
 };
 
 function overlayLogoFile(stillPath: string, logoPath: string, height = 120, position: LogoPosition = "bottom-right") {
@@ -235,6 +238,22 @@ function brandMarkFile(brand: BrandKit) {
   if (logo) return { file: logo, height: 120 };
   const word = writeWordmark(brand.user_id, brand.business_name, brand.primary_color || "#1a1612", brand.secondary_color || "#f4efe8", brand.font);
   return { file: word, height: word ? 76 : 0 };
+}
+
+/** Where our stamp will land on this picture, in % of its width and height — so the model can clear exactly that. */
+export function brandMarkSpot(brand: BrandKit, stillPath: string) {
+  const mark = brandMarkFile(brand);
+  const picture = imageDimensions(stillPath);
+  const size = mark.file ? imageDimensions(mark.file) : null;
+  if (!mark.file || !picture || !size || !size.h) return null;
+  const width = (size.w * mark.height) / size.h;
+  return {
+    w: Math.round((width / picture.w) * 100),
+    h: Math.round((mark.height / picture.h) * 100),
+    x: Math.round((LOGO_MARGIN / picture.w) * 100),
+    y: Math.round((LOGO_MARGIN / picture.h) * 100),
+    wordmark: !brandLogoPath(brand.user_id || ""),
+  };
 }
 
 export async function stampBrandMark(stillPath: string, brand: BrandKit, position: LogoPosition) {
