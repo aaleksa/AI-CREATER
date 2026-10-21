@@ -168,6 +168,8 @@ export type ScriptScene = {
   onScreen: string;
   voiceover: string;
   visualPrompt: string;
+  /** The owner's own words for what this frame must show. Wins over visualPrompt when they differ. */
+  frameWish?: string;
 };
 
 export type Script = {
@@ -286,7 +288,7 @@ function parseLearned(value?: string | null): LearnedSummary | null {
   }
 }
 
-export function brandLook(brand?: BrandKit | null, mode: "designed" | "photo" = "designed") {
+export function brandLook(brand?: BrandKit | null, mode: "designed" | "photo" = "designed", logoLine?: string) {
   if (!brand) return "";
   const niche =
     brand.vertical === "salon"
@@ -309,7 +311,7 @@ export function brandLook(brand?: BrandKit | null, mode: "designed" | "photo" = 
       brand.tone_note && `Owner note on tone: ${brand.tone_note}`,
       niche,
       ...brandRefPrompt(brand, "photo"),
-      logoSpotLine(brand),
+      logoLine ?? logoSpotLine(brand),
     ]
       .filter(Boolean)
       .join("\n");
@@ -1148,14 +1150,55 @@ function photoScript(script: Script, request: string): Script {
   };
 }
 
-export function videoFramePrompt(scene: ScriptScene, brand?: BrandKit | null) {
+export type ReelLogoSpot = { corner: LogoPosition; size: "s" | "m" | "l" };
+
+/**
+ * The patch our logo will take on the finished Reel, in this frame's terms. The frame is 2:3 and the video keeps its
+ * middle 9:16, below Instagram's top bar and above its caption — the same numbers the renderer uses.
+ */
+function reelLogoSpotLine(spot: ReelLogoSpot, brand?: BrandKit | null) {
+  const box = { s: [170, 110], m: [230, 150], l: [300, 200] }[spot.size] || [230, 150];
+  const frameW = 1024;
+  const frameH = 1536;
+  const scale = (frameH * 9) / 16 / 1080;
+  const cut = (frameW - (frameH * 9) / 16) / 2;
+  const pct = (n: number) => Math.round(n);
+  const fromSide = pct(((cut + 48 * scale) / frameW) * 100);
+  const fromEdge = spot.corner.startsWith("top") ? 12 : 22;
+  const w = pct(((box[0] * 1.25 * scale) / frameW) * 100);
+  const h = pct(((box[1] * 1.35 * scale) / frameH) * 100);
+  const side = spot.corner.endsWith("left") ? "left" : "right";
+  const edge = spot.corner.startsWith("top") ? "top" : "bottom";
+  const look = brand?.user_id ? logoLook(brand.user_id) : null;
+  const mark = look ? `a ${look.shape} logo${look.colors.length ? ` in ${look.colors.join(", ")}` : ""}` : "their logo";
+  return [
+    `Leave a calm, plain patch for their logo in the ${edge} ${side} — we add the exact file there afterwards.`,
+    `That patch starts about ${fromSide}% in from the ${side} side and about ${fromEdge}% from the ${edge}, and is about ${w}% of the picture's width and ${h}% of its height.`,
+    `Keep it free of faces, words and busy texture, in an even tone that ${mark} stands out on. Do not paint any logo or mark yourself.`,
+  ].join(" ");
+}
+
+/** What the owner wrote for this frame, in their words and language. It decides what is in the picture. */
+function frameWishLine(wish?: string) {
+  const text = String(wish || "").replace(/\s+/g, " ").trim().slice(0, 300);
+  if (!text) return "";
+  return `The owner asked for this frame: "${text}". Show exactly that. Where it differs from the description above, follow the owner. Still a photograph — never paint their words onto the picture.`;
+}
+
+/** The video keeps the middle of the frame: what matters must not sit at the far left or right. */
+const REEL_CROP_LINE =
+  "The finished video shows the middle of this picture: about 8% is cut from the left and from the right. Keep faces and the main action inside that middle.";
+
+export function videoFramePrompt(scene: ScriptScene, brand?: BrandKit | null, reelLogo?: ReelLogoSpot | null) {
   const fallback = `Cinematic photograph of the moment: ${scene.voiceover || scene.onScreen || "the story"}`.slice(0, 240);
   const beat = asPhotoBeat(scene.visualPrompt, fallback);
   return [
     "One vertical 9:16 photograph for a short film. Real place, real light, cinematic. Fill the frame.",
     beat,
+    frameWishLine(scene.frameWish),
     "Photograph only. No letters, no numbers, no words, no title card, no script, no timestamps, no captions, no UI, no logo, no watermark, no document, no storyboard.",
-    brandLook(brand, "photo"),
+    reelLogo === undefined ? "" : REEL_CROP_LINE,
+    brandLook(brand, "photo", reelLogo === undefined ? undefined : reelLogo ? reelLogoSpotLine(reelLogo, brand) : ""),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -1214,6 +1257,8 @@ export type FrameOpts = {
   exampleRefs?: BrandImageFile[];
   /** Shape of the picture (image posts only). */
   format?: ImageFormat;
+  /** Reel frames: where the logo will sit on the video (null: no logo on this Reel). */
+  reelLogo?: ReelLogoSpot | null;
 };
 
 export async function generateVisuals(
@@ -1371,7 +1416,7 @@ async function generateSceneFrame(
         ? rewriteStillCopyPrompt(opts.copyEdit, opts.logoSpot)
         : rewriteStillLanguagePrompt(opts?.brief || "", opts?.pictureLanguage || "", opts?.paintedCopy || "")
     : kind === "video"
-      ? videoFramePrompt(scene, brand)
+      ? videoFramePrompt(scene, brand, opts?.reelLogo)
       : withBrandLook(
           kind === "poster"
             ? `${scene.visualPrompt}${opts?.format ? `\n${canvasLine(opts.format)}` : ""}`

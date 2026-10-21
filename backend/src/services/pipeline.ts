@@ -1219,6 +1219,7 @@ export async function runStep(
         logoHold,
         reformat: reformat || undefined,
         exampleRefs: keepStill ? [] : listExampleRefs(projectId),
+        reelLogo: kind === "video" ? reelLogoSpotFor(project, brand) : undefined,
         format: (reformat ||
           (isImagePost(type) ? resolveImageFormat(kind === "poster" ? "poster" : "still", project.image_format) : undefined)) as
           | ImageFormat
@@ -1378,7 +1379,12 @@ export async function runStep(
 
     updates.credits_used = Number(project.credits_used) + cost;
 
-    if (regenerate || sceneId) {
+    // One new frame in a finished Reel: keep the video and make it again with that frame (ffmpeg only, free).
+    const newFrame = sceneId ? (parse<Visual[]>(String(updates.visuals_json || "")) || []).find((v) => v.sceneId === sceneId) : undefined;
+    const remakeVideo = step === "visuals" && Boolean(sceneId) && !isImagePost(type) && hasVideoFile(projectId) && Boolean(newFrame) && !newFrame?.placeholder;
+    if (remakeVideo) {
+      delete updates.current_step;
+    } else if (regenerate || sceneId) {
       Object.assign(updates, downstreamWipe(step, Boolean(sceneId)));
       if (step === "idea" || step === "script") removeVoiceFile(projectId);
       if (step !== "render") removeVideoFile(projectId);
@@ -1429,6 +1435,7 @@ export async function runStep(
       if (frames?.length) snapshotStills(projectId, versionId, frames);
     }
     if (String(updates.status || "") === "ready") maybeRefreshLearnedSummary(userId);
+    if (remakeVideo) await remakeOrDrop(userId, projectId, brand);
 
     return serializeProject(getProject(projectId, userId));
   } catch (error) {
@@ -1494,14 +1501,17 @@ export function setVoiceOff(userId: string, projectId: string, off: boolean) {
   return serializeProject(getProject(projectId, userId));
 }
 
-/** The owner's own wording for the script. Changed voiceover drops the voice; captions and video are made again. */
+/**
+ * The owner's own wording for the script. Changed voiceover drops the voice; changed words make captions and video
+ * again. A changed "what I want in the frame" touches nothing else — that frame changes when it is redone.
+ */
 export function editScript(userId: string, projectId: string, raw: unknown) {
   const project = getProject(projectId, userId);
   if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
   const script = parse<Script>(project.script_json);
   if (!script) throw Object.assign(new Error("Generate the script first."), { status: 400 });
-  const body = (raw || {}) as { scenes?: { id?: unknown; onScreen?: unknown; voiceover?: unknown }[]; cta?: unknown };
+  const body = (raw || {}) as { scenes?: { id?: unknown; onScreen?: unknown; voiceover?: unknown; frameWish?: unknown }[]; cta?: unknown };
   const byId = new Map((Array.isArray(body.scenes) ? body.scenes : []).map((scene) => [Number(scene.id), scene]));
   const clip = (value: unknown, max: number) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
   const next: Script = {
@@ -1510,17 +1520,26 @@ export function editScript(userId: string, projectId: string, raw: unknown) {
     scenes: script.scenes.map((scene) => {
       const edit = byId.get(scene.id);
       if (!edit) return scene;
+      const frameWish = edit.frameWish === undefined ? scene.frameWish || "" : clip(edit.frameWish, 300);
       return {
         ...scene,
         onScreen: edit.onScreen === undefined ? scene.onScreen : clip(edit.onScreen, 120),
         voiceover: edit.voiceover === undefined ? scene.voiceover : clip(edit.voiceover, 400),
+        ...(frameWish ? { frameWish } : { frameWish: undefined }),
       };
     }),
   };
   const voiceChanged = next.scenes.some((scene, i) => scene.voiceover !== script.scenes[i].voiceover);
+  const wordsChanged = voiceChanged || next.cta !== script.cta || next.scenes.some((scene, i) => scene.onScreen !== script.scenes[i].onScreen);
+  const wishChanged = next.scenes.some((scene, i) => (scene.frameWish || "") !== (script.scenes[i].frameWish || ""));
+  if (!wordsChanged && !wishChanged) return serializeProject(project);
+  saveStepVersion(projectId, "script", next, "");
+  if (!wordsChanged) {
+    db.prepare(`UPDATE projects SET script_json = ?, updated_at = datetime('now') WHERE id = ?`).run(JSON.stringify(next), projectId);
+    return serializeProject(getProject(projectId, userId));
+  }
   if (voiceChanged) removeVoiceFile(projectId);
   removeVideoFile(projectId);
-  saveStepVersion(projectId, "script", next, "");
   db.prepare(
     `UPDATE projects SET script_json = ?, captions_json = NULL, output_url = NULL, status = 'draft',
        voice_json = CASE WHEN ? = 1 THEN NULL ELSE voice_json END, audio_url = CASE WHEN ? = 1 THEN '' ELSE audio_url END,
@@ -1544,8 +1563,8 @@ export async function translateReelScript(userId: string, projectId: string, raw
   return editScript(userId, projectId, result.data);
 }
 
-/** The owner's own captions: text and timing. The video is made again. */
-export function editCaptions(userId: string, projectId: string, raw: unknown) {
+/** The owner's own captions: text and timing. A finished video is made again with them straight away, free. */
+export async function editCaptions(userId: string, projectId: string, raw: unknown) {
   const project = getProject(projectId, userId);
   if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
@@ -1560,7 +1579,11 @@ export function editCaptions(userId: string, projectId: string, raw: unknown) {
     .filter((cue) => cue.text && Number.isFinite(cue.start) && Number.isFinite(cue.end) && cue.end > cue.start)
     .sort((a, b) => a.start - b.start);
   if (!cues.length) throw Object.assign(new Error("Keep at least one caption line with a start and an end."), { status: 400 });
-  removeVideoFile(projectId);
+  if (hasVideoFile(projectId)) {
+    db.prepare(`UPDATE projects SET captions_json = ?, captions_off = 0, updated_at = datetime('now') WHERE id = ?`).run(JSON.stringify({ cues }), projectId);
+    await remakeOrDrop(userId, projectId, Number(project.use_brand) === 0 ? null : brandFor(userId));
+    return serializeProject(getProject(projectId, userId));
+  }
   db.prepare(
     `UPDATE projects SET captions_json = ?, captions_off = 0, output_url = NULL, status = 'draft', updated_at = datetime('now') WHERE id = ?`
   ).run(JSON.stringify({ cues }), projectId);
@@ -1577,14 +1600,22 @@ function reelLogoOf(row: Record<string, unknown>, brand: BrandKit | null): ReelL
     corner: (LOGO_POSITIONS as readonly string[]).includes(String(saved.corner)) ? (saved.corner as LogoPosition) : logoPositionOf(brand),
     size: (REEL_LOGO_SIZES as readonly string[]).includes(String(saved.size)) ? (saved.size as ReelLogoSettings["size"]) : "m",
     endCard: typeof saved.endCard === "boolean" ? saved.endCard : true,
+    plate: typeof saved.plate === "boolean" ? saved.plate : true,
   };
+}
+
+/** Where the Reel's logo will be, so new frames leave a calm patch exactly there; null when this Reel has no logo. */
+function reelLogoSpotFor(project: Record<string, unknown>, brand: BrandKit | null) {
+  if (!brand || !brandMarkPath(brand)) return null;
+  const settings = reelLogoOf(project, brand);
+  return settings.show ? { corner: settings.corner, size: settings.size } : null;
 }
 
 /** What goes over and after the scenes: clean frames, the small logo and the end card. */
 async function reelLayers(projectId: string, project: Record<string, unknown>, brand: BrandKit | null, script: Script) {
   const frames = unstampReelFrames(projectId, parse<Visual[]>(project.visuals_json as string) || []);
   const settings = reelLogoOf(project, brand);
-  const badge = brand && settings.show ? await writeReelLogoBadge(projectId, brand, settings.size) : null;
+  const badge = brand && settings.show ? await writeReelLogoBadge(projectId, brand, settings.size, settings.plate) : null;
   const endCard = brand && settings.endCard ? await writeReelEndCard(projectId, brand, script.cta) : null;
   return { visuals: frames.visuals, framesChanged: frames.changed, logo: badge ? { ...badge, corner: settings.corner } : null, endCard };
 }
@@ -1602,6 +1633,7 @@ export async function updateReelLogo(userId: string, projectId: string, raw: unk
     corner: (LOGO_POSITIONS as readonly string[]).includes(String(body.corner)) ? (body.corner as LogoPosition) : current.corner,
     size: (REEL_LOGO_SIZES as readonly string[]).includes(String(body.size)) ? (body.size as ReelLogoSettings["size"]) : current.size,
     endCard: typeof body.endCard === "boolean" ? body.endCard : current.endCard,
+    plate: typeof body.plate === "boolean" ? body.plate : current.plate,
   };
   db.prepare(`UPDATE projects SET reel_logo_json = ? WHERE id = ?`).run(JSON.stringify(next), projectId);
   await remakeReelVideo(userId, projectId, brand);
@@ -1624,6 +1656,17 @@ export async function updateCaptionStyle(userId: string, projectId: string, raw:
   const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
   if (Number(project.captions_off) !== 1) await remakeReelVideo(userId, projectId, brand);
   return serializeProject(getProject(projectId, userId));
+}
+
+/** Make the finished Reel again; if that fails, drop it so the owner makes it as the normal step. */
+async function remakeOrDrop(userId: string, projectId: string, brand: BrandKit | null) {
+  try {
+    await remakeReelVideo(userId, projectId, brand);
+  } catch (error) {
+    console.error("reel remake failed", error instanceof Error ? error.message : error);
+    removeVideoFile(projectId);
+    db.prepare(`UPDATE projects SET output_url = NULL, status = 'draft', updated_at = datetime('now') WHERE id = ?`).run(projectId);
+  }
 }
 
 /** The same Reel made again from what is already there — frames, voice, captions, music — when only its look changed. */
@@ -1703,13 +1746,26 @@ export async function removeMusic(userId: string, projectId: string) {
   return remixAfterMusicChange(userId, projectId);
 }
 
-/** Reel with or without burned-in captions. Either way the video must be made again. */
-export function setCaptionsOff(userId: string, projectId: string, off: boolean) {
+/**
+ * Reel with or without burned-in captions. A finished video is made again straight away, free — except turning
+ * captions back on under a voice: those come from the voice (AI), so captions and video are made again as steps.
+ */
+export async function setCaptionsOff(userId: string, projectId: string, off: boolean) {
   const project = getProject(projectId, userId);
   if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   if (!project.script_json) throw Object.assign(new Error("Generate the script first."), { status: 400 });
   if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
   if ((Number(project.captions_off) === 1) === off) return serializeProject(project);
+  const script = parse<Script>(project.script_json);
+  if (hasVideoFile(projectId) && script && (off || Number(project.voice_off) === 1)) {
+    db.prepare(`UPDATE projects SET captions_off = ?, captions_json = ?, updated_at = datetime('now') WHERE id = ?`).run(
+      off ? 1 : 0,
+      off ? null : JSON.stringify({ cues: sceneCaptions(script) }),
+      projectId
+    );
+    await remakeOrDrop(userId, projectId, Number(project.use_brand) === 0 ? null : brandFor(userId));
+    return serializeProject(getProject(projectId, userId));
+  }
   removeVideoFile(projectId);
   db.prepare(
     `UPDATE projects SET captions_off = ?, captions_json = CASE WHEN ? = 1 THEN NULL ELSE captions_json END,
