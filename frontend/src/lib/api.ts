@@ -252,6 +252,8 @@ export const api = {
     request<{ project: Project }>(`/projects/${id}/versions/visuals/keep-current`, { method: "POST" }),
   editScript: (id: string, body: { cta?: string; scenes: { id: number; onScreen: string; voiceover: string }[] }) =>
     request<{ project: Project }>(`/projects/${id}/script`, { method: "PATCH", body: JSON.stringify(body) }),
+  translateScript: (id: string, lang: "en" | "uk") =>
+    request<{ project: Project }>(`/projects/${id}/script/translate`, { method: "POST", body: JSON.stringify({ lang }) }),
   editCaptions: (id: string, cues: { start: number; end: number; text: string }[]) =>
     request<{ project: Project }>(`/projects/${id}/captions`, { method: "PATCH", body: JSON.stringify({ cues }) }),
   setCaptionsOff: (id: string, off: boolean) =>

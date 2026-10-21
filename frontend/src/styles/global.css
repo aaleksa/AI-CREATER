@@ -1106,3 +1106,4 @@ details.options > .brand-toggle, details.options > .examples { margin-top: 14px;
 .draft-cue { display: grid; grid-template-columns: 72px 72px 1fr auto; gap: 6px; align-items: center; }
 .draft-cue input { min-width: 0; }
 @media (max-width: 560px) { .draft-cue { grid-template-columns: 64px 64px 1fr auto; } }
+.reel-lang { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }

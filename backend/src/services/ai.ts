@@ -1161,12 +1161,34 @@ export function videoFramePrompt(scene: ScriptScene, brand?: BrandKit | null) {
     .join("\n\n");
 }
 
+/** The whole Reel script in one language: on-screen words, voiceover and the call to action. Names stay as written. */
+export async function translateScript(script: Script, lang: "en" | "uk", brandName = "") {
+  const target = lang === "uk" ? "Ukrainian" : "English";
+  const input = {
+    cta: script.cta,
+    scenes: script.scenes.map((scene) => ({ id: scene.id, onScreen: scene.onScreen, voiceover: scene.voiceover })),
+  };
+  return jsonCompletion<typeof input>(
+    [
+      `Translate this short video script into ${target}. Every line must end up in ${target} — on-screen words, voiceover and the call to action — including lines that are already in another language.`,
+      "Keep the meaning and the tone. The voiceover is read aloud, so it must sound natural when spoken. On-screen lines stay short (2–6 words).",
+      `Write dates and times the way a ${target} speaker would.`,
+      keepNamesRule(brandName),
+      "Same scenes, same ids, same order. Do not add or drop a scene.",
+    ].join(" "),
+    `${JSON.stringify(input)}\nReturn JSON: { cta, scenes: [{ id, onScreen, voiceover }] }`,
+    input,
+    { temperature: 0 }
+  );
+}
+
 export async function generateScript(prompt: string, idea: Idea, brand?: BrandKit | null, feedback?: RegenNote) {
   const fallback = mockScript(prompt, idea, brand);
   const result = await jsonCompletion<Script>(
     `Write a 30-second vertical video script. 4–6 scenes. Voiceover should sound spoken, not marketed.
 visualPrompt describes a photograph we would shoot — a real place or moment. Never a title card, never type, never the voiceover printed on the picture.
-onScreen is a short later caption (2–6 words) with a normal space between every word.\n${brandContext(brand)}\n${contactCtaLine(brand)}`,
+onScreen is a short later caption (2–6 words) with a normal space between every word.
+Write onScreen, voiceover and cta all in ONE language — the main language of the request — never a mix.\n${brandContext(brand)}\n${contactCtaLine(brand)}`,
     `Request: ${prompt}\nIdea: ${JSON.stringify(idea)}${regenInstruction(feedback) ? `\n${regenInstruction(feedback)}` : ""}\nReturn JSON: { durationSec, cta, scenes: [{ id, time, onScreen, voiceover, visualPrompt }] }`,
     fallback
   );

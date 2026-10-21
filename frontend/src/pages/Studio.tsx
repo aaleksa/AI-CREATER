@@ -456,6 +456,17 @@ export default function Studio() {
   );
   // With the brand kit and "logo on photos", the AI leaves a spot and we stamp the logo ourselves — no manual block.
   const currentShape = project?.imageFormat || (isPoster ? "tall" : "square");
+  // Lines of the Reel script in different alphabets: Ukrainian words on screen, English voice, or the other way round.
+  const reelLanguagesMixed = useMemo(() => {
+    const lines = [project?.script?.cta, ...(project?.script?.scenes || []).flatMap((sc) => [sc.onScreen, sc.voiceover])];
+    const kinds = new Set(
+      lines
+        .map((line) => String(line || ""))
+        .filter((line) => /\p{L}{3}/u.test(line))
+        .map((line) => ((line.match(/\p{Script=Cyrillic}/gu) || []).length > (line.match(/[A-Za-z]/g) || []).length ? "uk" : "en"))
+    );
+    return kinds.size > 1;
+  }, [project?.script]);
   const shownTake = (project?.versions?.visuals || []).findIndex((version) => version.id === (previewVersionId || acceptedVersionId));
   const autoLogo = Boolean((project?.useBrand ?? true) && hasBrandMark && kit?.logo_on_photos);
   const caption = readableLine(
@@ -649,6 +660,22 @@ export default function Studio() {
     const { box, markRatio, pictureRatio } = placing;
     const next = e.shiftKey ? { ...box, w: box.w + delta[0] - delta[1] } : { ...box, x: box.x + delta[0], y: box.y + delta[1] };
     setPlacing({ ...placing, box: fitBox(next, markRatio, pictureRatio) });
+  }
+
+  async function translateReel(lang: "en" | "uk") {
+    if (!id || !project?.script) return;
+    if ((project.audioUrl || project.captions || project.hasVideo) && !window.confirm(t("studio.reelLangConfirm"))) return;
+    setBusy(`lang-${lang}`);
+    setError("");
+    try {
+      const { project: nextProject } = await api.translateScript(id, lang);
+      setScriptDraft(null);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function saveScriptDraft() {
@@ -1291,6 +1318,15 @@ export default function Studio() {
                 >
                   {t("studio.scriptEdit")}
                 </button>
+                <div className="reel-lang">
+                  <span className="hint">{t("studio.reelLangAsk")}</span>
+                  <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => translateReel("en")}>
+                    {busy === "lang-en" ? t("studio.reelLangWorking") : t("studio.reelLangEn")}
+                  </button>
+                  <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => translateReel("uk")}>
+                    {busy === "lang-uk" ? t("studio.reelLangWorking") : t("studio.reelLangUk")}
+                  </button>
+                </div>
                 {project.script.cta && <p><b>{asText(project.script.cta)}</b></p>}
                 <ol className="review-list">
                   {project.script.scenes.map((sc) => (
@@ -2036,6 +2072,20 @@ export default function Studio() {
                   {busy === "captions-off" ? t("studio.voiceOffSaving") : t("studio.captionsOff")}
                 </button>
               )}
+            </div>
+          )}
+          {!isImage && project.script && reelLanguagesMixed && !viewStep && (
+            <div className="voice-off-note">
+              <p className="hint" style={{ margin: 0 }}>{t("studio.reelLangMixed")}</p>
+              <div className="reel-lang">
+                <span className="hint">{t("studio.reelLangAsk")}</span>
+                <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => translateReel("en")}>
+                  {busy === "lang-en" ? t("studio.reelLangWorking") : t("studio.reelLangEn")}
+                </button>
+                <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => translateReel("uk")}>
+                  {busy === "lang-uk" ? t("studio.reelLangWorking") : t("studio.reelLangUk")}
+                </button>
+              </div>
             </div>
           )}
           {next?.id === "voice" && <p className="hint" style={{ marginTop: 6 }}>{t("studio.voiceOffHint")}</p>}

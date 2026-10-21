@@ -26,6 +26,7 @@ import {
   rewriteStillFormatPrompt,
   readPaintedCopy,
   translateBrief,
+  translateScript,
   translatePictureCopy,
   tidyIdea,
   tidyVoice,
@@ -1501,6 +1502,21 @@ export function editScript(userId: string, projectId: string, raw: unknown) {
        updated_at = datetime('now') WHERE id = ?`
   ).run(JSON.stringify(next), voiceChanged ? 1 : 0, voiceChanged ? 1 : 0, projectId);
   return serializeProject(getProject(projectId, userId));
+}
+
+/** One language for the whole Reel: the script is translated, then saved like a hand edit (voice, captions, video again). */
+export async function translateReelScript(userId: string, projectId: string, rawLang: unknown) {
+  const lang = rawLang === "uk" ? "uk" : rawLang === "en" ? "en" : "";
+  if (!lang) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  const project = getProject(projectId, userId);
+  const script = parse<Script>(project.script_json);
+  if (!script || isImagePost(String(project.type))) throw Object.assign(new Error("Generate the script first."), { status: 400 });
+  const brand = brandFor(userId);
+  const result = await translateScript(script, lang, brand?.business_name || "");
+  const before = JSON.stringify({ cta: script.cta, scenes: script.scenes.map((s) => [s.onScreen, s.voiceover]) });
+  const after = JSON.stringify({ cta: result.data.cta, scenes: (result.data.scenes || []).map((s) => [s.onScreen, s.voiceover]) });
+  if (!result.data?.scenes?.length || before === after) throw Object.assign(new Error(USER_ERRORS.textFailed), { status: 502 });
+  return editScript(userId, projectId, result.data);
 }
 
 /** The owner's own captions: text and timing. The video is made again. */
