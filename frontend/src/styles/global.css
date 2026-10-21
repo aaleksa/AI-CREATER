@@ -1062,3 +1062,24 @@ details.options > :not(summary) { margin-left: 2px; }
 details.options > .brand-toggle, details.options > .examples { margin-top: 14px; }
 .edit-example { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
 .edit-example .example { width: 72px; height: 72px; }
+.logo-place {
+  position: absolute;
+  cursor: grab;
+  touch-action: none;
+  outline: 2px dashed rgba(255, 255, 255, 0.95);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+  border-radius: 4px;
+  z-index: 3;
+}
+.logo-place:active { cursor: grabbing; }
+.logo-place:focus-visible { outline-color: var(--accent-2); }
+.logo-place img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; user-select: none; }
+.logo-place-handle {
+  position: absolute; right: -9px; bottom: -9px; width: 18px; height: 18px;
+  border-radius: 50%; background: #fff; border: 2px solid var(--accent-2, #c45c26);
+  cursor: nwse-resize; touch-action: none;
+}
+.logo-place-panel { margin-top: 10px; display: grid; gap: 8px; }
+.logo-place-size { display: flex; align-items: center; gap: 10px; }
+.logo-place-size input { flex: 1; max-width: 260px; }

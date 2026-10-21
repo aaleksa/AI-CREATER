@@ -185,7 +185,12 @@ export type Visual = {
   clean?: string;
   /** Corner our logo sits in, so an AI edit of the picture can put it back in the same place. */
   logoCorner?: LogoPosition;
+  /** Set when the owner placed the logo by hand: exactly where and how big, kept through AI edits. */
+  logoBox?: LogoBox;
 };
+
+/** Our logo placed by hand, in fractions of the picture: left edge, top edge and width (height follows the logo). */
+export type LogoBox = { x: number; y: number; w: number };
 
 export type Voiceover = {
   voicePreset: string;

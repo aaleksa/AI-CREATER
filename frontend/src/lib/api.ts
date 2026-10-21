@@ -40,6 +40,8 @@ export type BrandKitRow = Record<string, string> & {
   vertical_note?: string;
   logo_on_photos?: boolean;
 };
+/** Our logo placed by hand: left, top and width as fractions of the picture. */
+export type LogoBox = { x: number; y: number; w: number };
 export type Shot = {
   subject: string;
   place: string;
@@ -112,7 +114,7 @@ export type Project = {
   currentStep: string;
   idea: Idea | null;
   script: { durationSec: number; cta: string; scenes: ScriptScene[] } | null;
-  visuals: { sceneId: number; imageUrl: string; prompt: string; placeholder?: boolean; clean?: string }[] | null;
+  visuals: { sceneId: number; imageUrl: string; prompt: string; placeholder?: boolean; clean?: string; logoCorner?: string; logoBox?: LogoBox }[] | null;
   voice: { voicePreset?: string; voice: string; script: string; notes: string } | null;
   captions: { cues: { start: number; end: number; text: string }[] } | null;
   audioUrl: string | null;
@@ -129,7 +131,7 @@ export type Project = {
   versions: {
     idea: StepVersion<Idea>[];
     script: StepVersion<{ durationSec: number; cta: string; scenes: ScriptScene[] }>[];
-    visuals?: (StepVersion<{ sceneId: number; imageUrl: string; prompt: string; placeholder?: boolean; clean?: string }[]> & {
+    visuals?: (StepVersion<{ sceneId: number; imageUrl: string; prompt: string; placeholder?: boolean; clean?: string; logoCorner?: string; logoBox?: LogoBox }[]> & {
       ourLogo?: boolean;
       shape?: string;
     })[];
@@ -228,11 +230,13 @@ export const api = {
       }),
     });
   },
-  stampLogo: (id: string, sceneId: number, position: string, versionId?: string) =>
+  stampLogo: (id: string, sceneId: number, position: string, versionId?: string, box?: LogoBox) =>
     request<{ project: Project }>(`/projects/${id}/logo`, {
       method: "POST",
-      body: JSON.stringify({ sceneId, position, versionId }),
+      body: JSON.stringify({ sceneId, position, versionId, box }),
     }),
+  logoLayout: (id: string, sceneId: number) =>
+    request<{ box: LogoBox; markRatio: number; pictureRatio: number }>(`/projects/${id}/logo/layout?sceneId=${sceneId}`),
   removeLogo: (id: string, sceneId: number, versionId?: string) =>
     request<{ project: Project }>(
       `/projects/${id}/logo?sceneId=${sceneId}${versionId ? `&versionId=${encodeURIComponent(versionId)}` : ""}`,
