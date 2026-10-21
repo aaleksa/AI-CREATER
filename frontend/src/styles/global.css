@@ -994,6 +994,7 @@ details.learned > summary { font-family: var(--serif); font-size: 20px; }
   border: 1px solid var(--line); background: var(--surface-soft);
 }
 .example img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.example-loading { display: block; width: 100%; height: 100%; background: var(--surface-media-2); }
 .example.add {
   display: grid; place-items: center; cursor: pointer; border-style: dashed;
   color: var(--muted); font-size: 13px; text-align: center; padding: 6px;

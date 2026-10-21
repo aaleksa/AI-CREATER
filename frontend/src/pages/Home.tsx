@@ -102,14 +102,16 @@ export default function Home() {
         isPoster ? pictureLanguage : undefined,
         isImage ? imageFormat : undefined
       );
+      // The project exists either way; a picture that did not save is reported in the Studio, where it can be added again.
+      let missedExamples = 0;
       for (const item of exampleFiles) {
         try {
           await api.addProjectRef(project.id, item.src);
         } catch {
-          /* the project exists; examples can be added again in the Studio */
+          missedExamples++;
         }
       }
-      nav(`/app/studio/${project.id}`);
+      nav(`/app/studio/${project.id}`, missedExamples ? { state: { missedExamples } } : undefined);
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("home.fallback"));
     } finally {

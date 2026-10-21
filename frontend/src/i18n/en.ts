@@ -120,6 +120,7 @@ export const en = {
     alt: "Example {n}",
     badFile: "We couldn’t open that picture. Try a JPG or PNG.",
     nextTime: "Used the next time you make pictures.",
+    missed: "The example pictures from the last step ({n}) didn’t save. Add them here again.",
     pending: "Added when you create.",
   },
   home: {

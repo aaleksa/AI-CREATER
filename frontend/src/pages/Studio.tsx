@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type Project, type Shot } from "../lib/api";
 import { copyText } from "../lib/copy";
 import { downloadName } from "../lib/fileName";
@@ -229,6 +229,7 @@ function VersionCompare({
 
 export default function Studio() {
   const { id } = useParams();
+  const missedExamples = Number((useLocation().state as { missedExamples?: number } | null)?.missedExamples) || 0;
   const { t, te } = useLocale();
   const [project, setProject] = useState<Project | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -832,7 +833,11 @@ export default function Studio() {
       </div>
       <ExampleImages
         items={(project.refs || []).map((ref) => ({ id: ref.id, src: refSrcs[ref.id] || "" }))}
-        note={t("briefImages.nextTime")}
+        note={
+          missedExamples && !(project.refs || []).length
+            ? t("briefImages.missed", { n: missedExamples })
+            : t("briefImages.nextTime")
+        }
         onAdd={async (image) => {
           const { refs } = await api.addProjectRef(project.id, image);
           setProject((p) => (p ? { ...p, refs } : p));

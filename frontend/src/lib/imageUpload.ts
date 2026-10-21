@@ -55,8 +55,17 @@ function encode(img: HTMLImageElement, side: number, type: "image/png" | "image/
  * Any picture the browser can open, as a PNG or JPG data URL under 2 MB.
  * keepAlpha keeps a transparent logo as PNG; photos become JPG.
  */
+/** What the file really is. A picture saved from the web is often WebP under a .jpg or .png name. */
+async function realType(file: File) {
+  const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+  if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return "image/png";
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "image/jpeg";
+  return "";
+}
+
 export async function prepareImage(file: File, { keepAlpha = false } = {}): Promise<string> {
-  if (/^image\/(png|jpeg)$/i.test(file.type) && file.size <= MAX_BYTES) return asDataUrl(file);
+  const actual = await realType(file);
+  if (actual && file.size <= MAX_BYTES) return asDataUrl(new Blob([file], { type: actual }));
   const img = await decode(file);
   const type = keepAlpha ? "image/png" : "image/jpeg";
   for (const side of [MAX_SIDE, 1600, 1200, 900]) {

@@ -47,7 +47,7 @@ export default function ExampleImages({
       <div className="examples-row">
         {items.map((item, i) => (
           <div className="example" key={item.id}>
-            <img src={item.src} alt={t("briefImages.alt", { n: i + 1 })} />
+            {item.src ? <img src={item.src} alt={t("briefImages.alt", { n: i + 1 })} /> : <span className="example-loading" aria-hidden />}
             <button
               type="button"
               className="example-x"
