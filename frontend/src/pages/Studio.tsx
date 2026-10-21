@@ -430,6 +430,8 @@ export default function Studio() {
   const hasBrandMark = Boolean(
     kit && (kit.logo_url || ((kit.font_url || ["Nunito", "Montserrat"].includes(kit.font)) && String(kit.business_name || "").trim()))
   );
+  // With the brand kit and "logo on photos", the AI leaves a spot and we stamp the logo ourselves — no manual block.
+  const autoLogo = Boolean((project?.useBrand ?? true) && hasBrandMark && kit?.logo_on_photos);
   const caption = readableLine(
     project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title || ""
   );
@@ -1205,7 +1207,7 @@ export default function Studio() {
                     )}
                   </div>
                 )}
-                {isImage && (
+                {isImage && !autoLogo && (
                   <div style={{ marginTop: 16 }}>
                     <p className="hint">{t(frameHasOurLogo ? "studio.logoOnIt" : "studio.logoAsk")}</p>
                     {hasBrandMark && (
