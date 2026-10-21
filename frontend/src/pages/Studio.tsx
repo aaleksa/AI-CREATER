@@ -103,8 +103,8 @@ function doneThrough(project: Project, step: string) {
     idea: project.idea,
     script: project.script,
     visuals: project.visuals,
-    voice: project.audioUrl,
-    captions: project.captions,
+    voice: project.audioUrl || project.voiceOff,
+    captions: project.captions || project.captionsOff,
     render: project.hasVideo,
   };
   return Boolean(map[step]);
@@ -203,33 +203,38 @@ function VersionCompare({
   t: (path: string, vars?: Record<string, string | number>) => string;
 }) {
   if (versions.length < 2) return null;
+  const numbered = versions.map((version, index) => ({ version, n: index + 1 }));
+  const ordered = [...numbered.filter((item) => item.version.accepted), ...numbered.filter((item) => !item.version.accepted).reverse()];
   return (
-    <div style={{ marginTop: 16 }}>
-      <p className="hint">{t(step === "script" ? "studio.scriptCompare" : "studio.ideaCompare")}</p>
-      <div className="compare-grid">
-        {versions.map((version, index) => (
-          <div key={version.id} className={`compare-card${version.accepted ? " on" : ""}`}>
-            <p className="hint">{version.accepted ? t("studio.current") : t("studio.takeN", { n: index + 1 })}</p>
-            {step === "idea" ? (
-              <>
-                <p><b>{asText(version.payload?.title)}</b></p>
-                <p className="hint">{asText(version.payload?.hook || version.payload?.concept)}</p>
-              </>
-            ) : (
-              <>
-                <p className="hint">{asText(version.payload?.cta)}</p>
-                <p className="hint">{asText(version.payload?.scenes?.[0]?.voiceover)}</p>
-              </>
-            )}
-            {!version.accepted && (
-              <button className="btn ghost" type="button" disabled={busy} onClick={() => onRestore(step, version.id)}>
-                {t("studio.useVersion")}
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
+    <details className="edit-block versions">
+      <summary className="edit-block-head">
+        <h3>{t(step === "script" ? "studio.scriptVersions" : "studio.ideaVersions", { n: versions.length })}</h3>
+        <p className="hint">{t(step === "script" ? "studio.scriptCompare" : "studio.ideaCompare")}</p>
+      </summary>
+      <ol className="version-list">
+        {ordered.map(({ version, n }) => {
+          const line =
+            step === "idea"
+              ? asText(version.payload?.title) || asText(version.payload?.hook || version.payload?.concept)
+              : asText(version.payload?.cta) || asText(version.payload?.scenes?.[0]?.voiceover);
+          const more = step === "idea" ? asText(version.payload?.hook || version.payload?.concept) : asText(version.payload?.scenes?.[0]?.voiceover);
+          return (
+            <li key={version.id} className={`version-row${version.accepted ? " on" : ""}`}>
+              <span className="version-tag">{version.accepted ? t("studio.current") : t("studio.takeN", { n })}</span>
+              <span className="version-text">
+                <b>{line}</b>
+                {more && more !== line && <span className="hint">{more}</span>}
+              </span>
+              {!version.accepted && (
+                <button className="btn ghost tiny" type="button" disabled={busy} onClick={() => onRestore(step, version.id)}>
+                  {t("studio.useVersionShort")}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </details>
   );
 }
 
@@ -243,6 +248,10 @@ export default function Studio() {
   const [scene, setScene] = useState(0);
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const [musicSrc, setMusicSrc] = useState<string | null>(null);
+  const [musicDraft, setMusicDraft] = useState<{ volume: number; start: number } | null>(null);
+  const [briefOpen, setBriefOpen] = useState(false);
+  const [scenesOpen, setScenesOpen] = useState<boolean | null>(null);
   const [brief, setBrief] = useState("");
   const refSrcs = useProjectImageSrcs(project?.refs);
   const [briefSaved, setBriefSaved] = useState(false);
@@ -265,6 +274,13 @@ export default function Studio() {
   const [pickedCorner, setPickedCorner] = useState("");
   const [reformatTo, setReformatTo] = useState("");
   const [viewStep, setViewStep] = useState<string | null>(null);
+  const [scriptDraft, setScriptDraft] = useState<{ cta: string; scenes: { id: number; onScreen: string; voiceover: string }[] } | null>(null);
+  const [capsDraft, setCapsDraft] = useState<{ start: number; end: number; text: string }[] | null>(null);
+  // A half-made edit belongs to the step it was opened on.
+  useEffect(() => {
+    setScriptDraft(null);
+    setCapsDraft(null);
+  }, [viewStep]);
   const [placing, setPlacing] = useState<{ box: LogoBox; markRatio: number; pictureRatio: number; baseSrc: string; markSrc: string } | null>(null);
   const phoneRef = useRef<HTMLDivElement>(null);
   const [editsOpen, setEditsOpen] = useState(() => localStorage.getItem(EDITS_OPEN_KEY) === "1");
@@ -321,7 +337,31 @@ export default function Studio() {
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [id, project?.hasVideo]);
+  }, [id, project?.hasVideo, project?.videoStamp]);
+
+  const musicKey = project?.music ? `${project.music.name}|${project.music.durationSec}` : "";
+  useEffect(() => {
+    setMusicDraft(null);
+    if (!id || !musicKey) {
+      setMusicSrc(null);
+      return;
+    }
+    let cancelled = false;
+    let url = "";
+    fetchMedia(`/projects/${id}/music`)
+      .then((blob) => {
+        if (cancelled) return;
+        url = URL.createObjectURL(blob);
+        setMusicSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setMusicSrc(null);
+      });
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [id, musicKey]);
 
   useEffect(() => {
     if (!id || !project?.audioUrl) {
@@ -418,6 +458,8 @@ export default function Studio() {
   const next = useMemo(() => STEPS.find((s) => project && !doneThrough(project, s.id)), [project, isImage, isInvite]);
   const lastDone = useMemo(() => [...STEPS].reverse().find((s) => project && doneThrough(project, s.id)), [project, isImage, isInvite]);
   const extraPrice = (step: string, sceneId?: number) => {
+    // Without a voice the captions are the scenes' own words: free.
+    if (step === "captions" && project?.voiceOff) return { extra: false, credits: 0 };
     const base = sceneId ? 8 : STEPS.find((s) => s.id === step)?.cost ?? 0;
     const used = project?.stepAttempts?.[step] ?? 0;
     const included = project?.maxStepAttempts ?? 3;
@@ -447,6 +489,17 @@ export default function Studio() {
   );
   // With the brand kit and "logo on photos", the AI leaves a spot and we stamp the logo ourselves — no manual block.
   const currentShape = project?.imageFormat || (isPoster ? "tall" : "square");
+  // Lines of the Reel script in different alphabets: Ukrainian words on screen, English voice, or the other way round.
+  const reelLanguagesMixed = useMemo(() => {
+    const lines = [project?.script?.cta, ...(project?.script?.scenes || []).flatMap((sc) => [sc.onScreen, sc.voiceover])];
+    const kinds = new Set(
+      lines
+        .map((line) => String(line || ""))
+        .filter((line) => /\p{L}{3}/u.test(line))
+        .map((line) => ((line.match(/\p{Script=Cyrillic}/gu) || []).length > (line.match(/[A-Za-z]/g) || []).length ? "uk" : "en"))
+    );
+    return kinds.size > 1;
+  }, [project?.script]);
   const shownTake = (project?.versions?.visuals || []).findIndex((version) => version.id === (previewVersionId || acceptedVersionId));
   const autoLogo = Boolean((project?.useBrand ?? true) && hasBrandMark && kit?.logo_on_photos);
   const caption = readableLine(
@@ -640,6 +693,136 @@ export default function Studio() {
     const { box, markRatio, pictureRatio } = placing;
     const next = e.shiftKey ? { ...box, w: box.w + delta[0] - delta[1] } : { ...box, x: box.x + delta[0], y: box.y + delta[1] };
     setPlacing({ ...placing, box: fitBox(next, markRatio, pictureRatio) });
+  }
+
+  async function pickMusic(file: File | undefined) {
+    if (!id || !file) return;
+    if (file.size > 20 * 1024 * 1024) {
+      setError(t("studio.musicTooBig"));
+      return;
+    }
+    setBusy("music");
+    setError("");
+    try {
+      const { project: nextProject } = await api.uploadMusic(id, file);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveMusic() {
+    if (!id || !musicDraft) return;
+    setBusy("music");
+    setError("");
+    try {
+      const { project: nextProject } = await api.updateMusic(id, musicDraft);
+      setMusicDraft(null);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function dropMusic() {
+    if (!id) return;
+    setBusy("music-off");
+    setError("");
+    try {
+      const { project: nextProject } = await api.removeMusic(id);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function translateReel(lang: "en" | "uk") {
+    if (!id || !project?.script) return;
+    if ((project.audioUrl || project.captions || project.hasVideo) && !window.confirm(t("studio.reelLangConfirm"))) return;
+    setBusy(`lang-${lang}`);
+    setError("");
+    try {
+      const { project: nextProject } = await api.translateScript(id, lang);
+      setScriptDraft(null);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveScriptDraft() {
+    if (!id || !project?.script || !scriptDraft) return;
+    const voiceChanged = scriptDraft.scenes.some((sc) => sc.voiceover.trim() !== (project.script?.scenes.find((x) => x.id === sc.id)?.voiceover || "").trim());
+    const ask = voiceChanged && project.audioUrl ? t("studio.scriptEditVoiceConfirm") : project.captions || project.hasVideo ? t("studio.scriptEditConfirm") : "";
+    if (ask && !window.confirm(ask)) return;
+    setBusy("edit-script");
+    setError("");
+    try {
+      const { project: nextProject } = await api.editScript(id, scriptDraft);
+      setScriptDraft(null);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveCapsDraft() {
+    if (!id || !capsDraft) return;
+    if (project?.hasVideo && !window.confirm(t("studio.captionsToggleConfirm"))) return;
+    setBusy("edit-captions");
+    setError("");
+    try {
+      const { project: nextProject } = await api.editCaptions(id, capsDraft);
+      setCapsDraft(null);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggleCaptions(off: boolean) {
+    if (!id) return;
+    if (project?.hasVideo && !window.confirm(t("studio.captionsToggleConfirm"))) return;
+    setBusy(off ? "captions-off" : "captions-on");
+    setError("");
+    try {
+      const { project: nextProject } = await api.setCaptionsOff(id, off);
+      setViewStep(null);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggleVoice(off: boolean) {
+    if (!id) return;
+    if (!off && !window.confirm(t("studio.voiceOnConfirm"))) return;
+    if (off && project?.captions && !window.confirm(t("studio.voiceOffConfirm"))) return;
+    setBusy(off ? "voice-off" : "voice-on");
+    setError("");
+    try {
+      const { project: nextProject } = await api.setVoiceOff(id, off);
+      setViewStep(null);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function applyReformat() {
@@ -950,103 +1133,154 @@ export default function Studio() {
             ? t("studio.makingPicture")
             : t("studio.making");
 
+  const sceneTime = (time: unknown) => {
+    const raw = asText(time).trim();
+    return /^\d+(\.\d+)?$/.test(raw) ? t("studio.sceneSec", { time: raw }) : raw;
+  };
+  const stepNoun = (step: string) => (step === "render" && !isImage ? t("studio.videoNoun") : stepLabel(step).toLowerCase());
+  const redoList = (
+    <>
+      <p className="hint">
+        {t("studio.keepFree")}
+      </p>
+      {STEPS.filter((s) => doneThrough(project, s.id)).map((s) => (
+        <button
+          key={`regen-${s.id}`}
+          className="btn ghost"
+          style={{ marginTop: 8, marginRight: 8 }}
+          disabled={Boolean(busy) || Boolean(pendingRegen)}
+          onClick={() => run(s.id, true)}
+        >
+          {busy === s.id
+            ? makingLabel
+            : extraPrice(s.id).extra
+              ? t("studio.anotherStep", { label: stepNoun(s.id), credits: extraPrice(s.id).credits })
+              : t("studio.regenStep", { label: stepNoun(s.id), credits: extraPrice(s.id).credits })}
+        </button>
+      ))}
+    </>
+  );
+  const briefFolded = !isImage && Boolean(project.idea) && !briefOpen;
+  const stepsNav = (
+    <nav className="steps" aria-label={t("studio.stepsNav")}>
+      {STEPS.map((s, i) => {
+        const isDone = doneThrough(project, s.id);
+        const isCurrent = next?.id === s.id;
+        const isViewing = viewStep === s.id;
+        const skipped = (s.id === "voice" && project.voiceOff) || (s.id === "captions" && project.captionsOff);
+        const label = `${i + 1}. ${stepLabel(s.id)}${skipped ? ` · ${t(s.id === "voice" ? "studio.voiceOffShort" : "studio.captionsOffShort")}` : ""}`;
+        // Done steps open a look back at their result; the current step brings you back to work.
+        return isDone || next?.id === s.id ? (
+          <button
+            key={s.id}
+            type="button"
+            className={`step ${isDone ? "done" : ""} ${isCurrent ? "on" : ""} ${isViewing ? "viewing" : ""}`}
+            aria-current={isCurrent ? "step" : undefined}
+            aria-pressed={isViewing}
+            onClick={() => setViewStep(isDone && next?.id !== s.id && viewStep !== s.id ? s.id : null)}
+          >
+            {label}
+          </button>
+        ) : (
+          <span key={s.id} className="step">
+            {label}
+          </span>
+        );
+      })}
+    </nav>
+  );
+
   return (
     <div>
-      <div className="field">
-        <label htmlFor="brief">{t("studio.briefLabel")}</label>
-        <textarea
-          id="brief"
-          className="brief-box"
-          value={brief}
-          onChange={(e) => setBrief(e.target.value)}
-          maxLength={2000}
-          rows={10}
-        />
-      </div>
-      <ExampleImages
-        items={(project.refs || []).map((ref) => ({ id: ref.id, src: refSrcs[ref.id] || "" }))}
-        note={
-          missedExamples && !(project.refs || []).length
-            ? t("briefImages.missed", { n: missedExamples })
-            : t("briefImages.nextTime")
-        }
-        onAdd={async (image) => {
-          const { refs } = await api.addProjectRef(project.id, image);
-          setProject((p) => (p ? { ...p, refs } : p));
-        }}
-        onRemove={async (slot) => {
-          const { refs } = await api.deleteProjectRef(project.id, slot);
-          setProject((p) => (p ? { ...p, refs } : p));
-        }}
-      />
-      <div className="row" style={{ marginBottom: 20 }}>
-        <button className="btn ghost" type="button" disabled={briefSaving} onClick={saveBrief}>
-          {briefSaving ? t("studio.savingBrief") : t("studio.saveBrief")}
-        </button>
-        <button
-          className="btn ghost"
-          type="button"
-          disabled={!brief.trim()}
-          onClick={async () => {
-            if (await copyText(brief)) {
-              setBriefCopied(true);
-              setTimeout(() => setBriefCopied(false), 2500);
-              return;
+      {!isImage && stepsNav}
+      {briefFolded ? (
+        <div className="brief-line">
+          <span className="brief-line-label">{t("studio.briefLabel")}</span>
+          <span className="brief-line-text">{project.prompt}</span>
+          <button className="btn ghost" type="button" onClick={() => setBriefOpen(true)}>
+            {t("studio.briefUnfold")}
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="field">
+            <label htmlFor="brief">{t("studio.briefLabel")}</label>
+            <textarea
+              id="brief"
+              className="brief-box"
+              value={brief}
+              onChange={(e) => setBrief(e.target.value)}
+              maxLength={2000}
+              rows={10}
+            />
+          </div>
+          <ExampleImages
+            items={(project.refs || []).map((ref) => ({ id: ref.id, src: refSrcs[ref.id] || "" }))}
+            note={
+              missedExamples && !(project.refs || []).length
+                ? t("briefImages.missed", { n: missedExamples })
+                : t("briefImages.nextTime")
             }
-            const box = document.getElementById("brief") as HTMLTextAreaElement | null;
-            box?.focus();
-            box?.select();
-            setError(t("studio.copyFail"));
-          }}
-        >
-          {briefCopied ? t("studio.briefCopied") : t("studio.copyBrief")}
-        </button>
-        {briefSaved && <span className="ok">{t("studio.briefSaved")}</span>}
-      </div>
+            onAdd={async (image) => {
+              const { refs } = await api.addProjectRef(project.id, image);
+              setProject((p) => (p ? { ...p, refs } : p));
+            }}
+            onRemove={async (slot) => {
+              const { refs } = await api.deleteProjectRef(project.id, slot);
+              setProject((p) => (p ? { ...p, refs } : p));
+            }}
+          />
+          <div className="row" style={{ marginBottom: 20 }}>
+            <button className="btn ghost" type="button" disabled={briefSaving} onClick={saveBrief}>
+              {briefSaving ? t("studio.savingBrief") : t("studio.saveBrief")}
+            </button>
+            <button
+              className="btn ghost"
+              type="button"
+              disabled={!brief.trim()}
+              onClick={async () => {
+                if (await copyText(brief)) {
+                  setBriefCopied(true);
+                  setTimeout(() => setBriefCopied(false), 2500);
+                  return;
+                }
+                const box = document.getElementById("brief") as HTMLTextAreaElement | null;
+                box?.focus();
+                box?.select();
+                setError(t("studio.copyFail"));
+              }}
+            >
+              {briefCopied ? t("studio.briefCopied") : t("studio.copyBrief")}
+            </button>
+            {briefSaved && <span className="ok">{t("studio.briefSaved")}</span>}
+            {!isImage && project.idea && (
+              <button className="btn ghost" type="button" onClick={() => setBriefOpen(false)}>
+                {t("studio.briefFold")}
+              </button>
+            )}
+          </div>
+          <BrandToggle
+            locked
+            value={project.useBrand ?? true}
+            ask={t(project.useBrand ?? true ? "studio.brandLockedOn" : "studio.brandLockedOff")}
+            onLabel={t("studio.useBrandOn")}
+            onHint={t("home.useBrandHint")}
+            offLabel={t("studio.useBrandOff")}
+            offHint={t("home.skipBrandHint")}
+            usingLabel={t("studio.brandUsing")}
+            kit={kit}
+          />
+        </>
+      )}
       {error && (
         <p className="err" style={{ marginTop: -8, marginBottom: 16 }}>
           {error}
         </p>
       )}
-      <BrandToggle
-        locked
-        value={project.useBrand ?? true}
-        ask={t(project.useBrand ?? true ? "studio.brandLockedOn" : "studio.brandLockedOff")}
-        onLabel={t("studio.useBrandOn")}
-        onHint={t("home.useBrandHint")}
-        offLabel={t("studio.useBrandOff")}
-        offHint={t("home.skipBrandHint")}
-        usingLabel={t("studio.brandUsing")}
-        kit={kit}
-      />
-      <nav className="steps" aria-label={t("studio.stepsNav")}>
-        {STEPS.map((s, i) => {
-          const isDone = doneThrough(project, s.id);
-          const isCurrent = next?.id === s.id;
-          const isViewing = viewStep === s.id;
-          const label = `${i + 1}. ${stepLabel(s.id)}`;
-          // Done steps open a look back at their result; the current step brings you back to work.
-          return isDone || next?.id === s.id ? (
-            <button
-              key={s.id}
-              type="button"
-              className={`step ${isDone ? "done" : ""} ${isCurrent ? "on" : ""} ${isViewing ? "viewing" : ""}`}
-              aria-current={isCurrent ? "step" : undefined}
-              aria-pressed={isViewing}
-              onClick={() => setViewStep(isDone && next?.id !== s.id && viewStep !== s.id ? s.id : null)}
-            >
-              {label}
-            </button>
-          ) : (
-            <span key={s.id} className="step">
-              {label}
-            </span>
-          );
-        })}
-      </nav>
+      {isImage && stepsNav}
 
-      <div className={`studio${isImage ? " image" : ""}`}>
-        <div className={isImage ? "studio-preview" : undefined}>
+      <div className={`studio${isImage ? " image" : ""}${!isImage && viewStep ? " reviewing" : ""}`}>
+        <div className={isImage ? "studio-preview" : "reel-stage"}>
           <div ref={phoneRef} className={`phone${isImage ? " post" : ""}${isPoster ? " poster" : ""}${isInvite ? " invite" : ""}`} style={{ ...(shapeRatio ? { aspectRatio: shapeRatio } : {}), ...(typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : {}) }}>
             {project.hasVideo && videoSrc ? (
               <video className="phone-video" src={videoSrc} controls playsInline />
@@ -1098,59 +1332,69 @@ export default function Studio() {
                   })}
             </p>
           )}
-          {!isImage && project.script && (
+          {!isImage && project.script && !viewStep && (
+            <details
+              className="scenes-wrap"
+              open={scenesOpen ?? !project.hasVideo}
+              onToggle={(e) => setScenesOpen((e.currentTarget as HTMLDetailsElement).open)}
+            >
+              <summary className="edit-block-head">
+                <h3>{t("studio.scenesTitle", { n: project.script.scenes.length })}</h3>
+                <p className="hint">{t(project.visuals ? "studio.scenesHintFrames" : "studio.scenesHint")}</p>
+              </summary>
             <div className="scenes">
               {project.script.scenes.map((s, i) => (
-                <div key={s.id} className="scene">
+                <div key={s.id} className={`scene${scene === i ? " on" : ""}`}>
                   <button className="scene-pick" onClick={() => setScene(i)}>
                     <b>{s.time}</b>
                     <span>{readableLine(isImage ? s.onScreen : s.voiceover)}</span>
                   </button>
                   {project.visuals && (
-                    <>
+                    <div className="scene-actions">
                       {project.visuals.find((v) => v.sceneId === s.id)?.placeholder && (
                         <p className="hint">{t("studio.placeholderFail")}</p>
                       )}
                       <button
-                        className="btn ghost"
+                        className="btn ghost tiny"
                         disabled={Boolean(busy) || Boolean(pendingRegen)}
                         onClick={() => run("visuals", true, s.id)}
                       >
                         {busy === `visual-${s.id}`
                           ? t("studio.makingShort")
                           : extraPrice("visuals", s.id).extra
-                            ? t("studio.anotherTry", { credits: extraPrice("visuals", s.id).credits })
-                            : t("studio.regenPicture", { credits: extraPrice("visuals", s.id).credits })}
+                            ? t("studio.anotherFrame", { credits: extraPrice("visuals", s.id).credits })
+                            : t("studio.regenFrame", { credits: extraPrice("visuals", s.id).credits })}
                       </button>
                       {[...(project.versions?.visuals || [])].reverse().find((version) => !version.accepted) && (
                         <button
-                          className="btn ghost"
+                          className="btn ghost tiny"
                           disabled={Boolean(busy) || Boolean(pendingRegen)}
                           onClick={() => {
                             const previous = [...(project.versions?.visuals || [])].reverse().find((version) => !version.accepted);
                             if (previous) restore("visuals", previous.id, s.id);
                           }}
                         >
-                          {busy === `restore-visual-${s.id}` ? t("studio.restoring") : t("studio.usePreviousFree")}
+                          {busy === `restore-visual-${s.id}` ? t("studio.restoring") : t("studio.prevFrameFree")}
                         </button>
                       )}
-                    </>
+                    </div>
                   )}
                 </div>
               ))}
             </div>
+            </details>
           )}
         </div>
 
         {viewStep && (
           <div className="panel step-review">
-            <div className="row" style={{ marginBottom: 8 }}>
-              <h2 style={{ margin: 0 }}>{t("studio.reviewTitle", { label: stepLabel(viewStep) })}</h2>
-              <button type="button" className="btn ghost" onClick={() => setViewStep(null)}>
+            <div className="review-head">
+              <button type="button" className="btn ghost step-back" onClick={() => setViewStep(null)}>
                 {next ? t("studio.reviewBack", { label: stepLabel(next.id) }) : t("studio.reviewBackDone")}
               </button>
+              <h2>{t("studio.reviewTitle", { label: stepLabel(viewStep) })}</h2>
+              <p className="hint">{t(viewStep === "script" || viewStep === "captions" ? "studio.reviewHintEdit" : "studio.reviewHint")}</p>
             </div>
-            <p className="hint">{t("studio.reviewHint")}</p>
             {viewStep === "idea" && project.idea && (
               <>
                 <p><b>{asText(project.idea.title)}</b></p>
@@ -1160,18 +1404,88 @@ export default function Studio() {
                 <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} t={t} />
               </>
             )}
-            {viewStep === "script" && project.script && (
+            {viewStep === "script" && project.script && scriptDraft && (
+              <div className="draft-editor">
+                {scriptDraft.scenes.map((sc, i) => (
+                  <fieldset key={sc.id} className="draft-scene">
+                    <legend className="hint">{t("studio.reviewScene", { n: i + 1 })}</legend>
+                    <label className="shot-field">
+                      <span>{t("studio.scriptOnScreen")}</span>
+                      <input
+                        value={sc.onScreen}
+                        maxLength={120}
+                        onChange={(e) => setScriptDraft({ ...scriptDraft, scenes: scriptDraft.scenes.map((x) => (x.id === sc.id ? { ...x, onScreen: e.target.value } : x)) })}
+                      />
+                    </label>
+                    <label className="shot-field">
+                      <span>{t("studio.scriptVoiceover")}</span>
+                      <textarea
+                        rows={2}
+                        value={sc.voiceover}
+                        maxLength={400}
+                        onChange={(e) => setScriptDraft({ ...scriptDraft, scenes: scriptDraft.scenes.map((x) => (x.id === sc.id ? { ...x, voiceover: e.target.value } : x)) })}
+                      />
+                    </label>
+                  </fieldset>
+                ))}
+                <label className="shot-field">
+                  <span>{t("studio.scriptCta")}</span>
+                  <input value={scriptDraft.cta} maxLength={200} onChange={(e) => setScriptDraft({ ...scriptDraft, cta: e.target.value })} />
+                </label>
+                <p className="hint">{t("studio.scriptEditHint")}</p>
+                <div className="action-row">
+                  <button type="button" className="btn" disabled={Boolean(busy)} onClick={saveScriptDraft}>
+                    {busy === "edit-script" ? t("studio.voiceOffSaving") : t("studio.editSave")}
+                  </button>
+                  <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => setScriptDraft(null)}>
+                    {t("studio.placeCancel")}
+                  </button>
+                </div>
+              </div>
+            )}
+            {viewStep === "script" && project.script && !scriptDraft && (
               <>
-                {project.script.cta && <p><b>{asText(project.script.cta)}</b></p>}
-                <ol className="review-list">
+                <div className="review-tools">
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    disabled={Boolean(busy)}
+                    onClick={() =>
+                      setScriptDraft({
+                        cta: project.script?.cta || "",
+                        scenes: (project.script?.scenes || []).map((sc) => ({ id: sc.id, onScreen: sc.onScreen || "", voiceover: sc.voiceover || "" })),
+                      })
+                    }
+                  >
+                    {t("studio.scriptEdit")}
+                  </button>
+                  <div className="seg" role="group" aria-label={t("studio.reelLangAsk")}>
+                    <span className="hint">{t("studio.reelLangShort")}</span>
+                    <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => translateReel("en")}>
+                      {busy === "lang-en" ? t("studio.reelLangWorking") : t("studio.reelLangEnShort")}
+                    </button>
+                    <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => translateReel("uk")}>
+                      {busy === "lang-uk" ? t("studio.reelLangWorking") : t("studio.reelLangUkShort")}
+                    </button>
+                  </div>
+                </div>
+                <ol className="review-scenes">
                   {project.script.scenes.map((sc) => (
                     <li key={sc.id}>
-                      {asText(sc.time) && <span className="hint">{t("studio.reviewAt", { time: asText(sc.time) })} · </span>}
-                      <b>{asText(sc.onScreen)}</b>
-                      <p className="hint" style={{ margin: "2px 0 0" }}>{asText(sc.voiceover)}</p>
+                      <span className="time-chip">{sceneTime(sc.time)}</span>
+                      <div>
+                        {asText(sc.onScreen) && <b>{asText(sc.onScreen)}</b>}
+                        {asText(sc.voiceover) && <p className="hint">{asText(sc.voiceover)}</p>}
+                      </div>
                     </li>
                   ))}
                 </ol>
+                {asText(project.script.cta) && (
+                  <p className="review-cta">
+                    <span className="hint">{t("studio.scriptCta")}</span>
+                    <b>{asText(project.script.cta)}</b>
+                  </p>
+                )}
                 <VersionCompare step="script" versions={project.versions?.script || []} onRestore={restore} busy={Boolean(busy)} t={t} />
               </>
             )}
@@ -1188,21 +1502,80 @@ export default function Studio() {
                   ))}
                 </div>
               ))}
-            {viewStep === "voice" && (
+            {viewStep === "voice" && project.voiceOff && <p className="lede">{t("studio.voiceOffNow")}</p>}
+            {viewStep === "voice" && !project.voiceOff && (
               <>
                 <p><b>{asText(project.voice?.voicePreset || project.voice?.voice)}</b></p>
                 {asText(project.voice?.notes) && <p className="lede">{asText(project.voice?.notes)}</p>}
                 {audioSrc && <audio controls src={audioSrc} style={{ width: "100%", marginTop: 12 }} />}
               </>
             )}
-            {viewStep === "captions" && project.captions && (
-              <ol className="review-list">
+            {viewStep === "captions" && project.captionsOff && <p className="lede">{t("studio.captionsOffNow")}</p>}
+            {viewStep === "captions" && project.captions && capsDraft && (
+              <div className="draft-editor">
+                {capsDraft.map((cue, i) => (
+                  <div key={i} className="draft-cue">
+                    <input
+                      type="number"
+                      step="0.1"
+                      min={0}
+                      aria-label={t("studio.capsStart")}
+                      value={cue.start}
+                      onChange={(e) => setCapsDraft(capsDraft.map((c, j) => (j === i ? { ...c, start: Number(e.target.value) } : c)))}
+                    />
+                    <input
+                      type="number"
+                      step="0.1"
+                      min={0}
+                      aria-label={t("studio.capsEnd")}
+                      value={cue.end}
+                      onChange={(e) => setCapsDraft(capsDraft.map((c, j) => (j === i ? { ...c, end: Number(e.target.value) } : c)))}
+                    />
+                    <input
+                      className="draft-cue-text"
+                      aria-label={t("studio.capsText")}
+                      value={cue.text}
+                      maxLength={120}
+                      onChange={(e) => setCapsDraft(capsDraft.map((c, j) => (j === i ? { ...c, text: e.target.value } : c)))}
+                    />
+                    <button type="button" className="btn ghost" aria-label={t("studio.capsRemove")} onClick={() => setCapsDraft(capsDraft.filter((_, j) => j !== i))}>
+                      ×
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => {
+                    const last = capsDraft[capsDraft.length - 1];
+                    const start = last ? last.end : 0;
+                    setCapsDraft([...capsDraft, { start, end: Math.round((start + 3) * 10) / 10, text: "" }]);
+                  }}
+                >
+                  + {t("studio.capsAdd")}
+                </button>
+                <p className="hint">{t("studio.capsEditHint")}</p>
+                <div className="action-row">
+                  <button type="button" className="btn" disabled={Boolean(busy)} onClick={saveCapsDraft}>
+                    {busy === "edit-captions" ? t("studio.voiceOffSaving") : t("studio.editSave")}
+                  </button>
+                  <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => setCapsDraft(null)}>
+                    {t("studio.placeCancel")}
+                  </button>
+                </div>
+              </div>
+            )}
+            {viewStep === "captions" && project.captions && !capsDraft && (
+              <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => setCapsDraft(project.captions?.cues.map((c) => ({ ...c })) || [])}>
+                {t("studio.capsEdit")}
+              </button>
+            )}
+            {viewStep === "captions" && project.captions && !capsDraft && (
+              <ol className="review-scenes">
                 {project.captions.cues.map((cue, i) => (
                   <li key={i}>
-                    <span className="hint">
-                      {cue.start.toFixed(1)}–{cue.end.toFixed(1)} с
-                    </span>{" "}
-                    {asText(cue.text)}
+                    <span className="time-chip">{t("studio.sceneSec", { time: `${cue.start.toFixed(1)}–${cue.end.toFixed(1)}` })}</span>
+                    <div>{asText(cue.text)}</div>
                   </li>
                 ))}
               </ol>
@@ -1320,14 +1693,14 @@ export default function Studio() {
               <VersionCompare step="script" versions={project.versions?.script || []} onRestore={restore} busy={Boolean(busy)} t={t} />
             </>
           )}
-          {!isImage && project.visuals && !project.audioUrl && (
+          {!isImage && project.visuals && !project.hasVideo && (next?.id === "voice" || placeholderCount > 0) && (
             <p className="lede">
               {placeholderCount
                 ? t(placeholderCount === 1 ? "studio.framesFail" : "studio.framesFailMany", { count: placeholderCount })
                 : t("studio.framesOk")}
             </p>
           )}
-          {project.audioUrl && !project.captions && (
+          {project.audioUrl && next?.id === "captions" && (
             <>
               <p><b>{asText(project.voice?.voicePreset || project.voice?.voice)}</b></p>
               <p className="lede">{asText(project.voice?.notes)}</p>
@@ -1826,13 +2199,152 @@ export default function Studio() {
           )}
 
           {next && !(isImage && next.id === "visuals" && project.idea?.shot?.summary) && (
-            <button className="btn accent" style={{ marginTop: 18 }} disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => run(next.id)}>
-              {busy && busy === next.id
-                ? makingLabel
-                : extraPrice(next.id).extra
-                  ? t("studio.makeStep2x", { label: stepLabel(next.id).toLowerCase(), credits: extraPrice(next.id).credits })
-                  : t("studio.makeStep", { label: stepLabel(next.id).toLowerCase(), credits: extraPrice(next.id).credits })}
-            </button>
+            <div className="action-row" style={{ marginTop: 18 }}>
+              <button className="btn accent" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => run(next.id)}>
+                {busy && busy === next.id
+                  ? makingLabel
+                  : next.id === "captions" && project.voiceOff
+                    ? t("studio.makeCaptionsFree")
+                    : next.id === "render"
+                      ? t(extraPrice("render").extra ? "studio.makeVideo2x" : "studio.makeVideo", { credits: extraPrice("render").credits })
+                      : extraPrice(next.id).extra
+                      ? t("studio.makeStep2x", { label: stepLabel(next.id).toLowerCase(), credits: extraPrice(next.id).credits })
+                      : t("studio.makeStep", { label: stepLabel(next.id).toLowerCase(), credits: extraPrice(next.id).credits })}
+              </button>
+              {next.id === "voice" && (
+                <button className="btn ghost" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => toggleVoice(true)}>
+                  {busy === "voice-off" ? t("studio.voiceOffSaving") : t("studio.voiceOff")}
+                </button>
+              )}
+              {next.id === "captions" && (
+                <button className="btn ghost" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => toggleCaptions(true)}>
+                  {busy === "captions-off" ? t("studio.voiceOffSaving") : t("studio.captionsOff")}
+                </button>
+              )}
+            </div>
+          )}
+          {!isImage && project.script && reelLanguagesMixed && !viewStep && (
+            <div className="voice-off-note">
+              <p className="hint" style={{ margin: 0 }}>{t("studio.reelLangMixed")}</p>
+              <div className="reel-lang">
+                <span className="hint">{t("studio.reelLangAsk")}</span>
+                <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => translateReel("en")}>
+                  {busy === "lang-en" ? t("studio.reelLangWorking") : t("studio.reelLangEn")}
+                </button>
+                <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => translateReel("uk")}>
+                  {busy === "lang-uk" ? t("studio.reelLangWorking") : t("studio.reelLangUk")}
+                </button>
+              </div>
+            </div>
+          )}
+          {next?.id === "voice" && <p className="hint" style={{ marginTop: 6 }}>{t("studio.voiceOffHint")}</p>}
+          {next?.id === "captions" && <p className="hint" style={{ marginTop: 6 }}>{t("studio.captionsOffHint")}</p>}
+          {!isImage && project.script && !viewStep && (
+            <details className="edit-block sound-card">
+              <summary className="edit-block-head">
+                <h3>{t("studio.soundTitle")}</h3>
+                <p className="hint">
+                  {[
+                    t(project.voiceOff ? "studio.soundVoiceOff" : project.audioUrl ? "studio.soundVoiceOn" : "studio.soundVoiceNot"),
+                    t(project.captionsOff ? "studio.soundCapsOff" : project.captions ? "studio.soundCapsOn" : "studio.soundCapsNot"),
+                    project.music ? t("studio.soundMusicOn", { name: project.music.name }) : t("studio.soundMusicNot"),
+                  ].join(" · ")}
+                </p>
+              </summary>
+              {project.voiceOff && (
+                <div className="voice-off-note">
+                  <p className="hint" style={{ margin: 0 }}>{t("studio.voiceOffNow")}</p>
+                  <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleVoice(false)}>
+                    {t("studio.voiceOn")}
+                  </button>
+                </div>
+              )}
+              {project.captionsOff && (
+                <div className="voice-off-note">
+                  <p className="hint" style={{ margin: 0 }}>{t("studio.captionsOffNow")}</p>
+                  <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleCaptions(false)}>
+                    {t("studio.captionsOn")}
+                  </button>
+                </div>
+              )}
+            <div className="music-block">
+              <p className="music-title">{t("studio.musicTitle")}</p>
+              {!project.music ? (
+                <>
+                  <p className="hint" style={{ margin: 0 }}>{t("studio.musicHint")}</p>
+                  <label className={`btn ghost${busy ? " disabled" : ""}`}>
+                    {busy === "music" ? t("studio.musicUploading") : t("studio.musicAdd")}
+                    <input
+                      type="file"
+                      accept="audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,.mp3,.m4a,.aac,.wav,.ogg,.flac"
+                      hidden
+                      disabled={Boolean(busy)}
+                      onChange={(e) => {
+                        pickMusic(e.target.files?.[0]);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <p className="hint" style={{ margin: 0 }}>
+                    <b>{project.music.name}</b> · {t("studio.musicLength", { sec: Math.round(project.music.durationSec) })}
+                  </p>
+                  {musicSrc && <audio controls src={musicSrc} style={{ width: "100%" }} />}
+                  <label className="music-row">
+                    <span>{t("studio.musicVolume", { n: (musicDraft || project.music).volume })}</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={(musicDraft || project.music).volume}
+                      disabled={Boolean(busy)}
+                      onChange={(e) => setMusicDraft({ ...(musicDraft || project.music!), volume: Number(e.target.value) })}
+                    />
+                  </label>
+                  <label className="music-row">
+                    <span>{t("studio.musicStart")}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={Math.max(0, Math.floor(project.music.durationSec - 1))}
+                      step={1}
+                      value={(musicDraft || project.music).start}
+                      disabled={Boolean(busy)}
+                      onChange={(e) => setMusicDraft({ ...(musicDraft || project.music!), start: Math.max(0, Number(e.target.value) || 0) })}
+                    />
+                  </label>
+                  <p className="hint" style={{ margin: 0 }}>{t(project.voiceOff ? "studio.musicAlone" : "studio.musicUnderVoice")}</p>
+                  <div className="row">
+                    {musicDraft && (
+                      <button className="btn accent" type="button" disabled={Boolean(busy)} onClick={saveMusic}>
+                        {busy === "music" ? t("studio.musicSaving") : t(project.hasVideo ? "studio.musicApplyVideo" : "studio.musicApply")}
+                      </button>
+                    )}
+                    <label className={`btn ghost${busy ? " disabled" : ""}`}>
+                      {t("studio.musicReplace")}
+                      <input
+                        type="file"
+                        accept="audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,.mp3,.m4a,.aac,.wav,.ogg,.flac"
+                        hidden
+                        disabled={Boolean(busy)}
+                        onChange={(e) => {
+                          pickMusic(e.target.files?.[0]);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                    <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={dropMusic}>
+                      {busy === "music-off" ? t("studio.musicSaving") : t("studio.musicRemove")}
+                    </button>
+                  </div>
+                </>
+              )}
+              <p className="hint" style={{ margin: 0 }}>{t(project.hasVideo ? "studio.musicFreeNow" : "studio.musicLater")}</p>
+            </div>
+            </details>
           )}
           {pendingRegen && STEP_REASONS[pendingRegen.step] && (
             <div style={{ marginTop: 16 }}>
@@ -1873,7 +2385,7 @@ export default function Studio() {
               </div>
             </div>
           )}
-          {lastDone && !project.hasImages && !project.hasVideo && (
+          {isImage && lastDone && !project.hasImages && !project.hasVideo && (
             <button
               className="btn ghost"
               style={{ marginTop: 10 }}
@@ -1887,28 +2399,18 @@ export default function Studio() {
                   : t("studio.notThis", { label: stepLabel(lastDone.id).toLowerCase(), credits: extraPrice(lastDone.id).credits })}
             </button>
           )}
-          {STEPS.some((s) => doneThrough(project, s.id)) && (
-            <div style={{ marginTop: 18 }}>
-              <p className="hint">
-                {t("studio.keepFree")}
-              </p>
-              {STEPS.filter((s) => doneThrough(project, s.id)).map((s) => (
-                <button
-                  key={`regen-${s.id}`}
-                  className="btn ghost"
-                  style={{ marginTop: 8, marginRight: 8 }}
-                  disabled={Boolean(busy) || Boolean(pendingRegen)}
-                  onClick={() => run(s.id, true)}
-                >
-                  {busy === s.id
-                    ? makingLabel
-                    : extraPrice(s.id).extra
-                      ? t("studio.anotherStep", { label: stepLabel(s.id).toLowerCase(), credits: extraPrice(s.id).credits })
-                      : t("studio.regenStep", { label: stepLabel(s.id).toLowerCase(), credits: extraPrice(s.id).credits })}
-                </button>
-              ))}
-            </div>
-          )}
+          {STEPS.some((s) => doneThrough(project, s.id)) &&
+            (isImage ? (
+              <div style={{ marginTop: 18 }}>{redoList}</div>
+            ) : (
+              <details className="edit-block redo-card">
+                <summary className="edit-block-head">
+                  <h3>{t("studio.redoTitle")}</h3>
+                  <p className="hint">{t("studio.redoHint")}</p>
+                </summary>
+                {redoList}
+              </details>
+            ))}
           {error && (
             <p className="err">
               {error}

@@ -59,7 +59,11 @@ if (fs.existsSync(path.join(webDir, "index.html"))) {
   });
 }
 
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((err: Error & { type?: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (err.type === "entity.too.large") {
+    res.status(413).json({ error: "That file is too big." });
+    return;
+  }
   console.error(err);
   res.status(500).json({ error: "Something went wrong in the studio." });
 });

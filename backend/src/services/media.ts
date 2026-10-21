@@ -138,8 +138,24 @@ const CORNER: Record<LogoPosition, string> = {
   "bottom-right": `W-w-${LOGO_MARGIN}:H-h-${LOGO_MARGIN}`,
 };
 
-function overlayLogoFile(stillPath: string, logoPath: string, height = 120, position: LogoPosition = "bottom-right") {
-  return overlayLogo(stillPath, logoPath, `[1:v]scale=-1:${height}[lg];[0:v][lg]overlay=${CORNER[position]}`);
+function overlayLogoFile(stillPath: string, logoPath: string, height = 120, position: LogoPosition = "bottom-right", reel = false) {
+  return overlayLogo(stillPath, logoPath, `[1:v]scale=-1:${height}[lg];[0:v][lg]overlay=${reel ? reelCorner(stillPath, position) : CORNER[position]}`);
+}
+
+/**
+ * A Reel frame is 2:3, the mp4 is 9:16: the sides get cut. Instagram also draws its bar at the top and the caption,
+ * reply box and buttons at the bottom. The logo goes inside what stays visible and clear.
+ */
+function reelCorner(stillPath: string, position: LogoPosition) {
+  const size = imageDimensions(stillPath);
+  if (!size) return CORNER[position];
+  const cut = Math.max(0, Math.round((size.w - Math.min(size.w, (size.h * 9) / 16)) / 2));
+  const side = cut + LOGO_MARGIN;
+  const top = Math.round(size.h * 0.12);
+  const bottom = Math.round(size.h * 0.22);
+  const x = position.endsWith("left") ? `${side}` : `W-w-${side}`;
+  const y = position.startsWith("top") ? `${top}` : `H-h-${bottom}`;
+  return `${x}:${y}`;
 }
 
 /** The logo exactly where the owner dragged it, at the width they chose. */
@@ -292,6 +308,24 @@ export function brandMarkBox(brand: BrandKit, stillPath: string, corner: LogoPos
   };
 }
 
+/**
+ * Reel frames stamped before the logo knew about the 9:16 crop: put it back from the clean copy, inside the part of the
+ * frame the mp4 keeps. Frames without our logo are left alone.
+ */
+export async function restampReelFrames(projectId: string, visuals: Visual[], brand: BrandKit) {
+  const mark = brandMarkFile(brand);
+  if (!mark.file) return;
+  for (const visual of visuals) {
+    if (visual.placeholder || !visual.clean || !visual.logoCorner) continue;
+    const clean = cleanStillFile(projectId, visual.clean);
+    if (!fs.existsSync(clean) || !hasStillFile(projectId, visual.sceneId)) continue;
+    const still = stillFile(projectId, visual.sceneId);
+    const before = fs.readFileSync(still);
+    fs.copyFileSync(clean, still);
+    if (!(await overlayLogoFile(still, mark.file, mark.height, visual.logoCorner, true))) fs.writeFileSync(still, before);
+  }
+}
+
 export async function stampBrandMark(stillPath: string, brand: BrandKit, position: LogoPosition, box?: LogoBox) {
   const mark = brandMarkFile(brand);
   if (!mark.file) return false;
@@ -365,7 +399,7 @@ export async function persistStills(
       if (visual.placeholder || visual.clean || !hasStillFile(projectId, visual.sceneId)) continue;
       const clean = keepCleanStill(projectId, visual.sceneId);
       const corner = logoPositionOf(brand);
-      if (await overlayLogoFile(stillFile(projectId, visual.sceneId), logo, mark.height, corner)) {
+      if (await overlayLogoFile(stillFile(projectId, visual.sceneId), logo, mark.height, corner, !format)) {
         next[i] = { ...visual, clean, logoCorner: corner };
       }
     }
@@ -398,8 +432,124 @@ export function hasVoiceFile(projectId: string) {
 }
 
 export async function voiceDurationSec(projectId: string) {
-  const file = voiceFile(projectId);
-  if (!hasVoiceFile(projectId) || !ffmpegPath || !fs.existsSync(ffmpegPath)) return 0;
+  if (!hasVoiceFile(projectId)) return 0;
+  return mediaDurationSec(voiceFile(projectId));
+}
+
+export function musicFile(projectId: string) {
+  return path.join(projectMediaDir(projectId), "music.m4a");
+}
+
+export function hasMusicFile(projectId: string) {
+  return fs.existsSync(musicFile(projectId)) && fs.statSync(musicFile(projectId)).size > 0;
+}
+
+export function removeMusicFile(projectId: string) {
+  fs.rmSync(musicFile(projectId), { force: true });
+}
+
+export const MUSIC_MAX_BYTES = 20 * 1024 * 1024;
+const MUSIC_MAX_SEC = 600;
+
+function audioKindFromBytes(buf: Buffer) {
+  if (buf.length < 12) return "";
+  if (buf.subarray(0, 3).toString("latin1") === "ID3") return "mp3";
+  if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return (buf[1] & 0x06) === 0 ? "aac" : "mp3";
+  if (buf.subarray(4, 8).toString("latin1") === "ftyp") return "m4a";
+  if (buf.subarray(0, 4).toString("latin1") === "RIFF" && buf.subarray(8, 12).toString("latin1") === "WAVE") return "wav";
+  if (buf.subarray(0, 4).toString("latin1") === "OggS") return "ogg";
+  if (buf.subarray(0, 4).toString("latin1") === "fLaC") return "flac";
+  return "";
+}
+
+/** The owner's track, kept as AAC (no cover art, at most 10 minutes). Returns its length in seconds. */
+export async function writeMusicFromUpload(projectId: string, buf: Buffer) {
+  const kind = audioKindFromBytes(buf);
+  if (!kind) throw Object.assign(new Error("Upload an MP3, M4A, WAV or OGG music file."), { status: 400 });
+  if (buf.length > MUSIC_MAX_BYTES) throw Object.assign(new Error("Music file is too big. Keep it under 20 MB."), { status: 400 });
+  const dir = projectMediaDir(projectId);
+  const tmpIn = path.join(dir, `music-upload-${randomUUID()}.${kind}`);
+  const tmpOut = path.join(dir, `music-${randomUUID()}.m4a`);
+  fs.writeFileSync(tmpIn, buf);
+  try {
+    await run(ffmpegPath, ["-y", "-i", tmpIn, "-vn", "-sn", "-t", String(MUSIC_MAX_SEC), "-ac", "2", "-ar", "44100", "-c:a", "aac", "-b:a", "160k", tmpOut]);
+    const seconds = await mediaDurationSec(tmpOut);
+    if (!seconds) throw new Error("empty");
+    fs.renameSync(tmpOut, musicFile(projectId));
+    return Math.round(seconds * 10) / 10;
+  } catch {
+    throw Object.assign(new Error("We couldn’t read this music file. Try an MP3 or M4A."), { status: 400 });
+  } finally {
+    fs.rmSync(tmpIn, { force: true });
+    fs.rmSync(tmpOut, { force: true });
+  }
+}
+
+export type ReelMusic = { volume: number; start: number };
+
+/**
+ * Audio for a Reel: the voice (or a quiet track) plus the owner's music, looped to the end,
+ * ducked while the voice speaks, faded in and out. Inputs: voice at `voiceIndex` (or none), music at `musicIndex`.
+ */
+function reelAudioFilter(opts: { voiceIndex: number | null; musicIndex: number; lengthSec: number; music: ReelMusic }) {
+  const len = Math.max(1, opts.lengthSec);
+  const fadeOut = Math.min(2, len / 4);
+  const level = Math.max(0, Math.min(100, opts.music.volume)) / 100;
+  const stereo = "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo";
+  const music =
+    `[${opts.musicIndex}:a]${stereo},atrim=0:${len.toFixed(2)},asetpts=N/SR/TB,` +
+    `volume=${(opts.voiceIndex == null ? level : level * 0.6).toFixed(3)},` +
+    `afade=t=in:d=0.4,afade=t=out:st=${(len - fadeOut).toFixed(2)}:d=${fadeOut.toFixed(2)}`;
+  if (opts.voiceIndex == null) return `${music}[aout]`;
+  return (
+    `[${opts.voiceIndex}:a]${stereo},apad,atrim=0:${len.toFixed(2)},asplit=2[vmain][vkey];` +
+    `${music}[mraw];[mraw][vkey]sidechaincompress=threshold=0.02:ratio=8:attack=15:release=350[mduck];` +
+    `[vmain][mduck]amix=inputs=2:duration=first:normalize=0[aout]`
+  );
+}
+
+function musicInputArgs(projectId: string, music: ReelMusic) {
+  const start = Math.max(0, music.start || 0);
+  return ["-stream_loop", "-1", ...(start ? ["-ss", start.toFixed(1)] : []), "-i", musicFile(projectId)];
+}
+
+/** New sound for a finished Reel (music added, changed or removed): the picture is copied as it is, so it is free. */
+export async function remixReelAudio(params: { projectId: string; music: ReelMusic | null; silent: boolean }) {
+  if (!hasVideoFile(params.projectId)) return false;
+  const source = videoFile(params.projectId);
+  const lengthSec = (await mediaDurationSec(source)) || 30;
+  const withMusic = Boolean(params.music && hasMusicFile(params.projectId));
+  if (!params.silent && !hasVoiceFile(params.projectId)) {
+    throw Object.assign(new Error("Record the voice first, or choose No voice."), { status: 400 });
+  }
+  const inputs = ["-i", source];
+  let voiceIndex: number | null = null;
+  if (!params.silent) {
+    inputs.push("-i", voiceFile(params.projectId));
+    voiceIndex = 1;
+  } else if (!withMusic) {
+    inputs.push("-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100");
+  }
+  const audioArgs: string[] = [];
+  if (withMusic) {
+    inputs.push(...musicInputArgs(params.projectId, params.music!));
+    const musicIndex = voiceIndex == null ? 1 : 2;
+    audioArgs.push("-filter_complex", reelAudioFilter({ voiceIndex, musicIndex, lengthSec, music: params.music! }), "-map", "0:v", "-map", "[aout]");
+  } else {
+    audioArgs.push("-map", "0:v", "-map", "1:a");
+  }
+  const out = path.join(projectMediaDir(params.projectId), `reel-mix-${randomUUID()}.mp4`);
+  try {
+    await run(ffmpegPath, ["-y", ...inputs, ...audioArgs, "-c:v", "copy", "-c:a", "aac", "-t", lengthSec.toFixed(2), "-movflags", "+faststart", out]);
+    fs.renameSync(out, source);
+  } finally {
+    fs.rmSync(out, { force: true });
+  }
+  return true;
+}
+
+async function mediaDurationSec(file: string) {
+  if (!fs.existsSync(file) || !ffmpegPath || !fs.existsSync(ffmpegPath)) return 0;
   return new Promise<number>((resolve) => {
     const child = spawn(ffmpegPath, ["-hide_banner", "-i", file, "-f", "null", "-"], {
       stdio: ["ignore", "pipe", "pipe"],
@@ -572,8 +722,11 @@ export async function renderReel(params: {
   visuals: Visual[] | null;
   captions: { cues: CaptionCue[] } | null;
   primaryColor?: string;
+  /** No voice: a quiet audio track instead, so Instagram and phones play it as a normal video. */
+  silent?: boolean;
+  music?: ReelMusic | null;
 }) {
-  if (!hasVoiceFile(params.projectId)) {
+  if (!params.silent && !hasVoiceFile(params.projectId)) {
     throw Object.assign(new Error("Record the voice first."), { status: 400 });
   }
   const queuedAt = Date.now();
@@ -594,6 +747,8 @@ async function encodeReel(params: {
   visuals: Visual[] | null;
   captions: { cues: CaptionCue[] } | null;
   primaryColor?: string;
+  silent?: boolean;
+  music?: ReelMusic | null;
 }) {
   const dir = projectMediaDir(params.projectId);
   const scenes = params.script.scenes.length ? params.script.scenes : [{ id: 1, time: "0–30s", onScreen: "", voiceover: "", visualPrompt: "" }];
@@ -611,9 +766,17 @@ async function encodeReel(params: {
       inputs.push("-f", "lavfi", "-i", `color=c=0x${color}:s=1080x1920:d=${duration}`);
     }
   }
-  inputs.push("-i", voiceFile(params.projectId));
-
   const n = scenes.length;
+  const withMusic = Boolean(params.music && hasMusicFile(params.projectId));
+  const lengthSec = Math.min(params.script.durationSec || 30, duration * n);
+  if (!params.silent) inputs.push("-i", voiceFile(params.projectId));
+  else if (!withMusic) inputs.push("-f", "lavfi", "-t", String(params.script.durationSec || 30), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100");
+  if (withMusic) inputs.push(...musicInputArgs(params.projectId, params.music!));
+  const audioFilter = withMusic
+    ? `;${reelAudioFilter({ voiceIndex: params.silent ? null : n, musicIndex: params.silent ? n : n + 1, lengthSec, music: params.music! })}`
+    : "";
+  const audioMap = withMusic ? "[aout]" : `${n}:a`;
+
   const concat = scenes.map((_, i) => `[v${i}]`).join("");
   const scaled = scenes
     .map((_, i) => `[${i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30[v${i}]`)
@@ -638,11 +801,11 @@ async function encodeReel(params: {
     "-y",
     ...inputs,
     "-filter_complex",
-    filter,
+    filter + audioFilter,
     "-map",
     "[vout]",
     "-map",
-    `${n}:a`,
+    audioMap,
     "-c:v",
     "libx264",
     "-pix_fmt",
@@ -664,11 +827,11 @@ async function encodeReel(params: {
       "-y",
       ...inputs,
       "-filter_complex",
-      `${scaled};${concat}concat=n=${n}:v=1:a=0,format=yuv420p[vout]`,
+      `${scaled};${concat}concat=n=${n}:v=1:a=0,format=yuv420p[vout]${audioFilter}`,
       "-map",
       "[vout]",
       "-map",
-      `${n}:a`,
+      audioMap,
       "-c:v",
       "libx264",
       "-pix_fmt",

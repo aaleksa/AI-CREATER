@@ -88,6 +88,11 @@ export const ERROR_UK: Record<string, string> = {
   "Something went wrong. Try again in a minute.": "Щось пішло не так. Спробуйте за хвилину.",
   "Something went wrong. Refresh the page and try again.": "Щось пішло не так. Оновіть сторінку й спробуйте ще раз.",
   "This file isn’t ready yet.": "Файл ще не готовий.",
+  "Upload an MP3, M4A, WAV or OGG music file.": "Завантажте музику у форматі MP3, M4A, WAV або OGG.",
+  "Music file is too big. Keep it under 20 MB.": "Файл музики завеликий. До 20 МБ.",
+  "We couldn’t read this music file. Try an MP3 or M4A.": "Не вдалося прочитати цей файл музики. Спробуйте MP3 або M4A.",
+  "Add a music file first.": "Спершу додайте файл музики.",
+  "That file is too big.": "Файл завеликий.",
   "Confirm your email first — we sent you a link. Your 400 free credits arrive right after.":
     "Спочатку підтвердіть пошту — ми надіслали посилання. Одразу після цього отримаєте 400 безкоштовних кредитів.",
   "We just sent a link. Check your inbox and spam, or try again in a minute.":
@@ -101,6 +106,9 @@ export const ERROR_UK: Record<string, string> = {
   "We’re already making this. Wait a moment.": "Вже робимо. Зачекайте трохи.",
   "We’re already making this. Wait for it to finish.": "Вже робимо. Зачекайте, поки закінчиться.",
   "Record the voice first.": "Спочатку запишіть голос.",
+  "Record the voice first, or choose No voice.": "Спершу запишіть голос або виберіть «Без голосу».",
+  "Make the captions first, or choose No captions.": "Спершу зробіть субтитри або виберіть «Без субтитрів».",
+  "Keep at least one caption line with a start and an end.": "Залиште хоча б один рядок субтитрів з початком і кінцем.",
   "We can’t make pictures right now. Try again in a few minutes.":
     "Зараз не вдається зробити картинку. Спробуйте за кілька хвилин.",
   "Lots of requests right now. Try again in a minute.": "Зараз багато запитів. Спробуйте за хвилину.",
