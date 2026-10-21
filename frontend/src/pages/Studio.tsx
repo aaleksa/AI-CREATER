@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type Project, type Shot } from "../lib/api";
 import { copyText } from "../lib/copy";
-import { downloadName } from "../lib/fileName";
+import { downloadName, shapeLabel } from "../lib/fileName";
 import BrandToggle from "../components/BrandToggle";
 import ExampleImages, { useProjectImageSrcs } from "../components/ExampleImages";
 import { useLocale } from "../i18n/locale";
@@ -122,7 +122,7 @@ function PictureCompare({
   ratio,
   t,
 }: {
-  versions: { id: string; accepted: boolean }[];
+  versions: { id: string; accepted: boolean; shape?: string }[];
   srcs: Record<string, string>;
   liveSrc?: string;
   onPreview: (versionId: string) => void;
@@ -147,7 +147,9 @@ function PictureCompare({
         {versions.map((version, index) => {
           const src = srcs[version.id] || (version.accepted ? liveSrc : "");
           const showing = previewId === version.id || (!previewId && version.accepted);
-          const label = t("studio.takeN", { n: index + 1 });
+          const shape = version.shape ? shapeLabel(version.shape, t) : "";
+          const label = [t("studio.takeN", { n: index + 1 }), shape].filter(Boolean).join(" · ");
+          const takeRatio = (version.shape && SHAPE_RATIO[version.shape]) || ratio;
           return (
             <div key={version.id} className="compare-item">
               <button
@@ -159,7 +161,7 @@ function PictureCompare({
               >
                 <p className="hint">{showing ? `${t("studio.selectedTake")} · ${label}` : label}</p>
                 {src ? (
-                  <img className={`compare-still${poster ? " poster" : ""}`} style={ratio ? { aspectRatio: ratio, objectFit: "contain" } : undefined} src={src} alt="" />
+                  <img className={`compare-still${poster ? " poster" : ""}`} style={takeRatio ? { aspectRatio: takeRatio, objectFit: "contain" } : undefined} src={src} alt="" />
                 ) : (
                   <p className="hint">{t("studio.gone")}</p>
                 )}
@@ -256,6 +258,7 @@ export default function Studio() {
   const [archive, setArchive] = useState<ArchiveState | null>(null);
   const [kit, setKit] = useState<BrandKitRow | null>(null);
   const [pickedCorner, setPickedCorner] = useState("");
+  const [reformatTo, setReformatTo] = useState("");
   const [inviteDraft, setInviteDraft] = useState<InviteCard>(EMPTY_INVITE);
   const [inviteSaved, setInviteSaved] = useState(false);
   const [shotEditOpen, setShotEditOpen] = useState(false);
@@ -431,6 +434,7 @@ export default function Studio() {
     kit && (kit.logo_url || ((kit.font_url || ["Nunito", "Montserrat"].includes(kit.font)) && String(kit.business_name || "").trim()))
   );
   // With the brand kit and "logo on photos", the AI leaves a spot and we stamp the logo ourselves — no manual block.
+  const currentShape = project?.imageFormat || (isPoster ? "tall" : "square");
   const autoLogo = Boolean((project?.useBrand ?? true) && hasBrandMark && kit?.logo_on_photos);
   const caption = readableLine(
     project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title || ""
@@ -442,7 +446,7 @@ export default function Studio() {
     sceneId?: number,
     feedback?: { reason?: string; note?: string },
     evictOldest = false,
-    extra?: { pictureLanguage?: string; keepStill?: boolean; keepStillVersionId?: string; copyEdit?: string }
+    extra?: { pictureLanguage?: string; keepStill?: boolean; keepStillVersionId?: string; copyEdit?: string; reformat?: string }
   ) {
     if (!id) return;
     setBusy(sceneId ? `visual-${sceneId}` : step);
@@ -527,6 +531,22 @@ export default function Studio() {
       copyEdit: note,
       keepStillVersionId: workingVersionId,
     });
+  }
+
+  async function applyReformat() {
+    if (!id || !project || !reformatTo) return;
+    const sceneId = project.visuals?.[scene]?.sceneId ?? 1;
+    const price = extraPrice("visuals", sceneId);
+    if (price.extra) {
+      const ok = window.confirm(t("studio.confirm2x", { credits: price.credits }));
+      if (!ok) return;
+    }
+    await execute("visuals", true, sceneId, undefined, false, {
+      keepStill: true,
+      reformat: reformatTo,
+      keepStillVersionId: workingVersionId,
+    });
+    setReformatTo("");
   }
 
   async function run(step: string, regenerate = false, sceneId?: number) {
@@ -1100,6 +1120,9 @@ export default function Studio() {
                 <p className="ok">
                   {t(isInvite ? "studio.inviteReady" : "studio.pictureReady", { credits: project.creditsUsed })}
                 </p>
+                {shapeLabel(currentShape, t) && (
+                  <p className="hint">{t("studio.shapeNow", { shape: shapeLabel(currentShape, t) })}</p>
+                )}
                 <p className="hint">{t(isInvite ? "studio.inviteKeep" : "studio.pictureKeep")}</p>
                 <div className="action-row">
                   {downloadSrc && !String(downloadSrc).startsWith("linear") && (
@@ -1203,6 +1226,41 @@ export default function Studio() {
                               : t("studio.editPictureApply", { credits: extraPrice("visuals", project.visuals?.[scene]?.sceneId ?? 1).credits })}
                           </button>
                         </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {isImage && (
+                  <div style={{ marginTop: 16 }}>
+                    <p className="hint">
+                      <b>{t("studio.reformatAsk")}</b> · {t("studio.reformatHint")}
+                    </p>
+                    <div className="pills" role="group" aria-label={t("studio.reformatAsk")}>
+                      {(["square", "portrait", "portrait34", "story", "wide"] as const)
+                        .filter((shape) => shape !== currentShape)
+                        .map((shape) => (
+                          <button
+                            key={shape}
+                            type="button"
+                            aria-pressed={reformatTo === shape}
+                            className={`pill ${reformatTo === shape ? "on" : ""}`}
+                            disabled={Boolean(busy)}
+                            onClick={() => setReformatTo(reformatTo === shape ? "" : shape)}
+                          >
+                            {t(`shapes.${shape}`)}
+                          </button>
+                        ))}
+                    </div>
+                    {reformatTo && (
+                      <div className="action-row" style={{ marginTop: 10 }}>
+                        <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={applyReformat}>
+                          {makingPicture
+                            ? t("studio.makingPicture")
+                            : t("studio.reformatApply", {
+                                shape: t(`shapes.${reformatTo}Hint`).split(" · ")[0],
+                                credits: extraPrice("visuals", project.visuals?.[scene]?.sceneId ?? 1).credits,
+                              })}
+                        </button>
                       </div>
                     )}
                   </div>

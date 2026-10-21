@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import OpenAI, { toFile } from "openai";
 import { config } from "../config.js";
-import { canvasLine, padToNative, paintsExactSize, sizeFor, type ImageFormat } from "./imageFormats.js";
+import { canvasLine, padToNative, padToShape, paintsExactSize, sizeFor, type ImageFormat } from "./imageFormats.js";
 import { COMFY_FAILED_MESSAGE, comfyEnabled, comfyFallsBackToOpenAI, comfyHandles, comfyPaint } from "./comfy.js";
 import { USER_ERRORS } from "./userErrors.js";
 import { listBrandRefFiles, logoKindFromBytes, type BrandImageFile } from "./brandAssets.js";
@@ -782,6 +782,17 @@ export function rewriteStillLanguagePrompt(brief: string, lang: PictureLanguage,
     .join("\n\n");
 }
 
+/** The same finished picture, laid out again for another shape. Nothing new, nothing lost. */
+export function rewriteStillFormatPrompt(format: ImageFormat) {
+  return [
+    "Edit the attached image: it is a finished picture placed in the middle of a new canvas. The blurred bands around it are empty space to fill.",
+    `${canvasLine(format)}`,
+    "Make it one finished picture for this new shape. Extend the photograph and background naturally into the bands — same scene, light, colours and style, no seams.",
+    "Keep every word exactly as it is: same spelling, same language, same fonts and colours. Move or resize text blocks only as much as the new shape needs, so nothing is cut off, squashed or overlapping.",
+    "Keep the people, objects, logo and badges as they are. Do not add new words, people, logos or objects. Do not stretch or squash anything.",
+  ].join("\n\n");
+}
+
 export function rewriteStillCopyPrompt(copyEdit: string) {
   const note = copyEdit.replace(/\s+/g, " ").trim().slice(0, 400);
   return [
@@ -1110,6 +1121,8 @@ export type FrameOpts = {
   brief?: string;
   paintedCopy?: string;
   copyEdit?: string;
+  /** New shape for a finished picture: the same design laid out again for it. */
+  reformat?: ImageFormat;
   /** Pictures the person attached to this brief as examples. Sent with the request. */
   exampleRefs?: BrandImageFile[];
   /** Shape of the picture (image posts only). */
@@ -1257,16 +1270,19 @@ async function generateSceneFrame(
   let keepPadded: Buffer | null = null;
   if (keepStill && opts?.format && kind !== "video" && opts.keepStillPath) {
     const out = `${opts.keepStillPath}.pad.jpg`;
-    if (await padToNative(opts.keepStillPath, opts.format, out)) keepPadded = fs.readFileSync(out);
+    const padded = opts.reformat ? await padToShape(opts.keepStillPath, opts.reformat, out) : await padToNative(opts.keepStillPath, opts.format, out);
+    if (padded) keepPadded = fs.readFileSync(out);
     fs.rmSync(out, { force: true });
   }
   if (keepRequested && !keepStill?.length) {
     return { ...placeholder, error: "Make the picture first." };
   }
   const basePrompt = keepStill
-    ? opts?.copyEdit
-      ? rewriteStillCopyPrompt(opts.copyEdit)
-      : rewriteStillLanguagePrompt(opts?.brief || "", opts?.pictureLanguage || "", opts?.paintedCopy || "")
+    ? opts?.reformat
+      ? rewriteStillFormatPrompt(opts.reformat)
+      : opts?.copyEdit
+        ? rewriteStillCopyPrompt(opts.copyEdit)
+        : rewriteStillLanguagePrompt(opts?.brief || "", opts?.pictureLanguage || "", opts?.paintedCopy || "")
     : kind === "video"
       ? videoFramePrompt(scene, brand)
       : withBrandLook(
@@ -1343,11 +1359,14 @@ async function generateSceneFrame(
   };
 
   const editOnce = async (model: string) => {
-    const usePad = Boolean(keepPadded) && !(opts?.format && paintsExactSize(model));
+    // A new shape always goes in on the padded canvas: the model paints the bands instead of squashing the picture.
+    const usePad = Boolean(keepPadded) && (Boolean(opts?.reformat) || !(opts?.format && paintsExactSize(model)));
     const source = usePad ? keepPadded : keepStill;
-    const editPrompt = usePad
-      ? `${prompt}\nThe blurred bands at the edges are only padding. Leave them alone; change nothing in the sharp picture except what is asked.`
-      : prompt;
+    const editPrompt = opts?.reformat
+      ? prompt
+      : usePad
+        ? `${prompt}\nThe blurred bands at the edges are only padding. Leave them alone; change nothing in the sharp picture except what is asked.`
+        : prompt;
     const files = await Promise.all([
       ...(source ? [toFile(source, keepName, { type: keepType })] : []),
       ...refs.map((ref, i) => toFile(fs.readFileSync(ref.file), `${i + 1}-${ref.filename}`, { type: ref.type })),

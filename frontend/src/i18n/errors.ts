@@ -26,6 +26,8 @@ export const ERROR_UK: Record<string, string> = {
   "Say what to add or remove on the picture — a few words is enough.":
     "Напишіть, що додати чи прибрати — кількох слів досить.",
   "Choose a language remake or a text change, not both.": "Оберіть або іншу мову, або правку тексту — не обидва разом.",
+  "Choose one change at a time: language, words or shape.": "Оберіть одну зміну: мову, слова або форму.",
+  "The picture already has this shape.": "Картинка вже має цю форму.",
   "Text changes are only for still pictures.": "Правка тексту — лише для статичної картинки.",
   "Same-picture language is only for invitations, information and offers.":
     "Інша мова на тій самій картинці — лише для запрошень, інформації та оферів.",

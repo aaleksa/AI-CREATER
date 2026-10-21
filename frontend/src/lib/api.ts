@@ -131,6 +131,7 @@ export type Project = {
     script: StepVersion<{ durationSec: number; cta: string; scenes: ScriptScene[] }>[];
     visuals?: (StepVersion<{ sceneId: number; imageUrl: string; prompt: string; placeholder?: boolean; clean?: string }[]> & {
       ourLogo?: boolean;
+      shape?: string;
     })[];
   };
   previewUrl: string | null;
@@ -205,7 +206,7 @@ export const api = {
     sceneId?: number,
     feedback?: { reason?: string; note?: string },
     evictOldest = false,
-    extra?: { pictureLanguage?: string; keepStill?: boolean; keepStillVersionId?: string; copyEdit?: string }
+    extra?: { pictureLanguage?: string; keepStill?: boolean; keepStillVersionId?: string; copyEdit?: string; reformat?: string }
   ) => {
     const idempotencyKey = crypto.randomUUID();
     return request<{ project: Project; archive?: ArchiveState }>(`/projects/${id}/steps/${step}`, {
@@ -222,6 +223,7 @@ export const api = {
         keepStill: extra?.keepStill || undefined,
         keepStillVersionId: extra?.keepStillVersionId || undefined,
         copyEdit: extra?.copyEdit || undefined,
+        reformat: extra?.reformat || undefined,
       }),
     });
   },
