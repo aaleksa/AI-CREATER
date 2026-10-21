@@ -446,6 +446,7 @@ export default function Studio() {
   );
   // With the brand kit and "logo on photos", the AI leaves a spot and we stamp the logo ourselves — no manual block.
   const currentShape = project?.imageFormat || (isPoster ? "tall" : "square");
+  const shownTake = (project?.versions?.visuals || []).findIndex((version) => version.id === (previewVersionId || acceptedVersionId));
   const autoLogo = Boolean((project?.useBrand ?? true) && hasBrandMark && kit?.logo_on_photos);
   const caption = readableLine(
     project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title || ""
@@ -1030,7 +1031,7 @@ export default function Studio() {
       </div>
 
       <div className={`studio${isImage ? " image" : ""}`}>
-        <div>
+        <div className={isImage ? "studio-preview" : undefined}>
           <div ref={phoneRef} className={`phone${isImage ? " post" : ""}${isPoster ? " poster" : ""}${isInvite ? " invite" : ""}`} style={{ ...(shapeRatio ? { aspectRatio: shapeRatio } : {}), ...(typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : {}) }}>
             {project.hasVideo && videoSrc ? (
               <video className="phone-video" src={videoSrc} controls playsInline />
@@ -1072,6 +1073,16 @@ export default function Studio() {
               </>
             )}
           </div>
+          {isImage && project.hasImages && (
+            <p className="hint studio-preview-label">
+              {placing
+                ? t("studio.previewPlacing")
+                : t("studio.previewSelected", {
+                    take: shownTake >= 0 ? t("studio.takeN", { n: shownTake + 1 }) : t("studio.current"),
+                    shape: shapeLabel(currentShape, t),
+                  })}
+            </p>
+          )}
           {!isImage && project.script && (
             <div className="scenes">
               {project.script.scenes.map((s, i) => (

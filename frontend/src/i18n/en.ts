@@ -275,6 +275,8 @@ export const en = {
     samePictureUk: "Same picture in Ukrainian · {credits} credits",
     editPictureAsk: "Change something on this picture?",
     shapeNow: "Shape: {shape}",
+    previewSelected: "Selected: {take} · {shape}. Every change below is for this picture.",
+    previewPlacing: "Placing the logo: drag it on the picture.",
     reformatAsk: "Another shape for this picture",
     reformatHint: "The AI lays this same picture out again for the new shape: it paints the edges and moves the words, nothing is cut off. The previous take stays in the list.",
     reformatApply: "Re-lay out: {shape} · {credits} credits",

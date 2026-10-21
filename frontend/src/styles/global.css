@@ -274,6 +274,11 @@ a.side-account:hover, a.side-account.active { background: var(--hover); }
   grid-template-columns: minmax(280px, 380px) minmax(280px, 1fr);
   max-width: 980px;
 }
+/* The picture being changed stays in view while the edits on the right scroll. */
+@media (min-width: 901px) {
+  .studio-preview { position: sticky; top: 16px; }
+}
+.studio-preview-label { margin: 10px 0 0; text-align: center; }
 .panel {
   background: var(--surface);
   border: 1px solid var(--line);
