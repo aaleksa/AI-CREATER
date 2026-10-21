@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_INVITE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, stampLogoOnPicture, updateInvite, updateShot } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, logoBaseFile, logoLayout, logoMarkFile, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, stampLogoOnPicture, updateInvite, updateShot } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
 import { hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
 import { archiveState } from "../services/archive.js";
@@ -309,9 +309,47 @@ projectsRouter.post("/:id/logo", rateLimit(20, 60_000), async (req, res) => {
       String(req.params.id),
       sceneId,
       String(req.body?.position || ""),
-      String(req.body?.versionId || "").slice(0, 80)
+      String(req.body?.versionId || "").slice(0, 80),
+      req.body?.box
     );
     res.json({ project });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.get("/:id/logo/layout", (req, res) => {
+  try {
+    res.json(logoLayout(req.user!.id, String(req.params.id), Number(req.query.sceneId) || 1));
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.get("/:id/logo/mark", (req, res) => {
+  const file = logoMarkFile(req.user!.id);
+  if (!file) {
+    res.status(404).json({ error: "Add a logo in Brand Kit first." });
+    return;
+  }
+  res.set("Cache-Control", "no-store");
+  res.type(/\.jpe?g$/i.test(file) ? "image/jpeg" : "image/png");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.sendFile(file);
+});
+
+projectsRouter.get("/:id/logo/base", (req, res) => {
+  try {
+    const file = logoBaseFile(req.user!.id, String(req.params.id), Number(req.query.sceneId) || 1);
+    if (!file) {
+      res.status(404).json({ error: "Image not ready." });
+      return;
+    }
+    res.set("Cache-Control", "no-store");
+    res.type("image/jpeg");
+    res.sendFile(file);
   } catch (error) {
     const { status, body } = publicError(error, `${req.method} ${req.path}`);
     res.status(status).json(body);

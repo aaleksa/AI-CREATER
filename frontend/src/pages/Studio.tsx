@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
-import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type Project, type Shot } from "../lib/api";
+import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type LogoBox, type Project, type Shot } from "../lib/api";
 import { copyText } from "../lib/copy";
 import { downloadName, shapeLabel } from "../lib/fileName";
 import { prepareImage } from "../lib/imageUpload";
@@ -264,6 +264,8 @@ export default function Studio() {
   const [kit, setKit] = useState<BrandKitRow | null>(null);
   const [pickedCorner, setPickedCorner] = useState("");
   const [reformatTo, setReformatTo] = useState("");
+  const [placing, setPlacing] = useState<{ box: LogoBox; markRatio: number; pictureRatio: number; baseSrc: string; markSrc: string } | null>(null);
+  const phoneRef = useRef<HTMLDivElement>(null);
   const [editsOpen, setEditsOpen] = useState(() => localStorage.getItem(EDITS_OPEN_KEY) === "1");
   const [inviteDraft, setInviteDraft] = useState<InviteCard>(EMPTY_INVITE);
   const [inviteSaved, setInviteSaved] = useState(false);
@@ -434,6 +436,9 @@ export default function Studio() {
   const frameIsPlaceholder = Boolean(project?.visuals?.[scene]?.placeholder);
   const placeholderCount = project?.visuals?.filter((v) => v.placeholder).length ?? 0;
   const logoCorner = pickedCorner || kit?.logo_position || "bottom-right";
+  // A logo placed by hand is not in a corner: no corner pill lights up until they pick one.
+  const shownLogoBox = (project?.versions?.visuals?.find((v) => v.accepted)?.payload || project?.visuals)?.[scene]?.logoBox;
+  const litCorner = pickedCorner || (shownLogoBox ? "" : logoCorner);
   const shownVersion = project?.versions?.visuals?.find((version) => version.id === (previewVersionId || acceptedVersionId));
   const frameHasOurLogo = shownVersion ? Boolean(shownVersion.ourLogo) : Boolean(project?.visuals?.[scene]?.clean);
   const hasBrandMark = Boolean(
@@ -539,6 +544,100 @@ export default function Studio() {
       copyEditImage: copyEditImage || undefined,
       keepStillVersionId: workingVersionId,
     });
+  }
+
+  /** Keeps a hand-placed logo inside the picture and at a usable size. Height follows the logo's own shape. */
+  function fitBox(box: LogoBox, markRatio: number, pictureRatio: number): LogoBox {
+    const heightPerWidth = pictureRatio / markRatio;
+    const w = Math.min(Math.max(box.w, 0.04), 0.8, 1 / heightPerWidth);
+    const h = w * heightPerWidth;
+    return { w, x: Math.min(Math.max(box.x, 0), 1 - w), y: Math.min(Math.max(box.y, 0), 1 - h) };
+  }
+
+  async function startPlacing() {
+    if (!id || !project) return;
+    const sceneId = project.visuals?.[scene]?.sceneId ?? 1;
+    setBusy("place");
+    setError("");
+    try {
+      const layout = await api.logoLayout(id, sceneId);
+      const [base, mark] = await Promise.all([
+        fetchMedia(`/projects/${id}/logo/base?sceneId=${sceneId}`),
+        fetchMedia(`/projects/${id}/logo/mark`),
+      ]);
+      setPlacing({
+        ...layout,
+        box: fitBox(layout.box, layout.markRatio, layout.pictureRatio),
+        baseSrc: URL.createObjectURL(base),
+        markSrc: URL.createObjectURL(mark),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.logoFail"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function stopPlacing() {
+    if (placing) {
+      URL.revokeObjectURL(placing.baseSrc);
+      URL.revokeObjectURL(placing.markSrc);
+    }
+    setPlacing(null);
+  }
+
+  async function savePlacing() {
+    if (!id || !project || !placing) return;
+    const sceneId = project.visuals?.[scene]?.sceneId ?? 1;
+    setBusy("logo");
+    setError("");
+    try {
+      const { project: nextProject } = await api.stampLogo(id, sceneId, "", undefined, placing.box);
+      stopPlacing();
+      setPreviewVersionId(null);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.logoFail"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function startDrag(e: ReactPointerEvent, mode: "move" | "resize") {
+    if (!placing || !phoneRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = phoneRef.current.getBoundingClientRect();
+    const start = { x: e.clientX, y: e.clientY, box: placing.box };
+    const { markRatio, pictureRatio } = placing;
+    const move = (ev: PointerEvent) => {
+      const dx = (ev.clientX - start.x) / rect.width;
+      const dy = (ev.clientY - start.y) / rect.height;
+      const next =
+        mode === "move"
+          ? { ...start.box, x: start.box.x + dx, y: start.box.y + dy }
+          : { ...start.box, w: start.box.w + dx };
+      setPlacing((p) => (p ? { ...p, box: fitBox(next, markRatio, pictureRatio) } : p));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  /** Arrow keys move the logo; with Shift they change its size. */
+  function nudgeLogo(e: ReactKeyboardEvent) {
+    if (!placing) return;
+    const step = 0.01;
+    const keys: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+    const delta = keys[e.key];
+    if (!delta) return;
+    e.preventDefault();
+    const { box, markRatio, pictureRatio } = placing;
+    const next = e.shiftKey ? { ...box, w: box.w + delta[0] - delta[1] } : { ...box, x: box.x + delta[0], y: box.y + delta[1] };
+    setPlacing({ ...placing, box: fitBox(next, markRatio, pictureRatio) });
   }
 
   async function applyReformat() {
@@ -670,6 +769,7 @@ export default function Studio() {
   /** Clicking a take makes it the picture: free, no AI, and the list shows it as selected. */
   async function pickTake(versionId: string) {
     if (!id || !project || busy) return;
+    stopPlacing();
     const version = project.versions?.visuals?.find((item) => item.id === versionId);
     if (!version || version.accepted) {
       setPreviewVersionId(null);
@@ -931,13 +1031,33 @@ export default function Studio() {
 
       <div className={`studio${isImage ? " image" : ""}`}>
         <div>
-          <div className={`phone${isImage ? " post" : ""}${isPoster ? " poster" : ""}${isInvite ? " invite" : ""}`} style={{ ...(shapeRatio ? { aspectRatio: shapeRatio } : {}), ...(typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : {}) }}>
+          <div ref={phoneRef} className={`phone${isImage ? " post" : ""}${isPoster ? " poster" : ""}${isInvite ? " invite" : ""}`} style={{ ...(shapeRatio ? { aspectRatio: shapeRatio } : {}), ...(typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : {}) }}>
             {project.hasVideo && videoSrc ? (
               <video className="phone-video" src={videoSrc} controls playsInline />
             ) : (
               <>
                 {frame && !frame.startsWith("linear") && (
-                  <div className="phone-frame" style={{ backgroundImage: `url(${frame})` }} />
+                  <div className="phone-frame" style={{ backgroundImage: `url(${placing ? placing.baseSrc : frame})` }} />
+                )}
+                {placing && (
+                  <div
+                    className="logo-place"
+                    role="slider"
+                    aria-label={t("studio.placeAria")}
+                    aria-valuenow={Math.round(placing.box.w * 100)}
+                    tabIndex={0}
+                    style={{
+                      left: `${placing.box.x * 100}%`,
+                      top: `${placing.box.y * 100}%`,
+                      width: `${placing.box.w * 100}%`,
+                      aspectRatio: String(placing.markRatio),
+                    }}
+                    onPointerDown={(e) => startDrag(e, "move")}
+                    onKeyDown={nudgeLogo}
+                  >
+                    <img src={placing.markSrc} alt="" draggable={false} />
+                    <span className="logo-place-handle" onPointerDown={(e) => startDrag(e, "resize")} aria-hidden />
+                  </div>
                 )}
                 {typeof frame === "string" && frame.startsWith("linear") && (
                   <div className="phone-frame" style={{ background: frame }} />
@@ -1326,6 +1446,47 @@ export default function Studio() {
                     )}
                   </div>
                 )}
+                {isImage && autoLogo && frameHasOurLogo && (
+                  <div style={{ marginTop: 16 }}>
+                    <p className="hint">{t("studio.placeAutoHint")}</p>
+                    {placing ? (
+                      <div className="logo-place-panel">
+                        <p className="hint">{t("studio.placeHint")}</p>
+                        <label className="hint logo-place-size">
+                          {t("studio.placeSize")}
+                          <input
+                            type="range"
+                            min={4}
+                            max={80}
+                            value={Math.round(placing.box.w * 100)}
+                            onChange={(e) => {
+                              const w = Number(e.target.value) / 100;
+                              setPlacing((p) =>
+                                p ? { ...p, box: fitBox({ ...p.box, x: p.box.x + (p.box.w - w) / 2, w }, p.markRatio, p.pictureRatio) } : p
+                              );
+                            }}
+                          />
+                        </label>
+                        <div className="action-row">
+                          <button type="button" className="btn" disabled={Boolean(busy)} onClick={savePlacing}>
+                            {busy === "logo" ? t("studio.logoAdding") : t("studio.placeSave")}
+                          </button>
+                          <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={stopPlacing}>
+                            {t("studio.placeCancel")}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      hasBrandMark && (
+                        <div className="action-row" style={{ marginTop: 10 }}>
+                          <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={startPlacing}>
+                            {busy === "place" ? t("studio.placeOpening") : t("studio.placeOpen")}
+                          </button>
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
                 {isImage && !autoLogo && (
                   <div style={{ marginTop: 16 }}>
                     <p className="hint">{t(frameHasOurLogo ? "studio.logoOnIt" : "studio.logoAsk")}</p>
@@ -1335,8 +1496,8 @@ export default function Studio() {
                             <button
                               key={corner}
                               type="button"
-                              aria-pressed={logoCorner === corner}
-                              className={`pill ${logoCorner === corner ? "on" : ""}`}
+                              aria-pressed={litCorner === corner}
+                              className={`pill ${litCorner === corner ? "on" : ""}`}
                               onClick={() => setPickedCorner(corner)}
                             >
                               {t(
@@ -1364,6 +1525,42 @@ export default function Studio() {
                         </button>
                       )}
                     </div>
+                    {placing ? (
+                      <div className="logo-place-panel">
+                        <p className="hint">{t("studio.placeHint")}</p>
+                        <label className="hint logo-place-size">
+                          {t("studio.placeSize")}
+                          <input
+                            type="range"
+                            min={4}
+                            max={80}
+                            value={Math.round(placing.box.w * 100)}
+                            onChange={(e) => {
+                              const w = Number(e.target.value) / 100;
+                              setPlacing((p) =>
+                                p ? { ...p, box: fitBox({ ...p.box, x: p.box.x + (p.box.w - w) / 2, w }, p.markRatio, p.pictureRatio) } : p
+                              );
+                            }}
+                          />
+                        </label>
+                        <div className="action-row">
+                          <button type="button" className="btn" disabled={Boolean(busy)} onClick={savePlacing}>
+                            {busy === "logo" ? t("studio.logoAdding") : t("studio.placeSave")}
+                          </button>
+                          <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={stopPlacing}>
+                            {t("studio.placeCancel")}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      hasBrandMark && (
+                        <div className="action-row" style={{ marginTop: 10 }}>
+                          <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={startPlacing}>
+                            {busy === "place" ? t("studio.placeOpening") : t("studio.placeOpen")}
+                          </button>
+                        </div>
+                      )
+                    )}
                     {hasBrandMark ? (
                       <>
                         <p className="hint" style={{ marginTop: 6 }}>{t("studio.logoUndo")}</p>

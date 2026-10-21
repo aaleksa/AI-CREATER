@@ -14,6 +14,7 @@ import {
   wantsLogoStamp,
   type BrandKit,
   type CaptionCue,
+  type LogoBox,
   type LogoPosition,
   type Script,
   type Visual,
@@ -138,6 +139,20 @@ const CORNER: Record<LogoPosition, string> = {
 };
 
 function overlayLogoFile(stillPath: string, logoPath: string, height = 120, position: LogoPosition = "bottom-right") {
+  return overlayLogo(stillPath, logoPath, `[1:v]scale=-1:${height}[lg];[0:v][lg]overlay=${CORNER[position]}`);
+}
+
+/** The logo exactly where the owner dragged it, at the width they chose. */
+function overlayLogoAt(stillPath: string, logoPath: string, box: LogoBox) {
+  const picture = imageDimensions(stillPath);
+  if (!picture) return Promise.resolve(false);
+  const width = Math.max(8, Math.round(box.w * picture.w));
+  const x = Math.round(box.x * picture.w);
+  const y = Math.round(box.y * picture.h);
+  return overlayLogo(stillPath, logoPath, `[1:v]scale=${width}:-1[lg];[0:v][lg]overlay=${x}:${y}`);
+}
+
+function overlayLogo(stillPath: string, logoPath: string, filter: string) {
   if (!ffmpegPath || !fs.existsSync(stillPath) || !fs.existsSync(logoPath)) return Promise.resolve(false);
   const tmp = `${stillPath}.logo.jpg`;
   return new Promise<boolean>((resolve) => {
@@ -153,7 +168,7 @@ function overlayLogoFile(stillPath: string, logoPath: string, height = 120, posi
         "-i",
         logoPath,
         "-filter_complex",
-        `[1:v]scale=-1:${height}[lg];[0:v][lg]overlay=${CORNER[position]}`,
+        filter,
         tmp,
       ],
       { stdio: ["ignore", "ignore", "pipe"] }
@@ -256,10 +271,31 @@ export function brandMarkSpot(brand: BrandKit, stillPath: string) {
   };
 }
 
-export async function stampBrandMark(stillPath: string, brand: BrandKit, position: LogoPosition) {
+/** The mark file we stamp (logo, or the business name in their font) — also shown in the Studio while placing it. */
+export function brandMarkPath(brand: BrandKit) {
+  return brandMarkFile(brand).file;
+}
+
+/** Where our automatic stamp lands in this corner, as a box — the start point for placing it by hand. */
+export function brandMarkBox(brand: BrandKit, stillPath: string, corner: LogoPosition) {
+  const mark = brandMarkFile(brand);
+  const picture = imageDimensions(stillPath);
+  const size = mark.file ? imageDimensions(mark.file) : null;
+  if (!mark.file || !picture || !size || !size.h) return null;
+  const w = (size.w * mark.height) / size.h;
+  const x = corner.endsWith("left") ? LOGO_MARGIN : picture.w - LOGO_MARGIN - w;
+  const y = corner.startsWith("top") ? LOGO_MARGIN : picture.h - LOGO_MARGIN - mark.height;
+  return {
+    box: { x: x / picture.w, y: y / picture.h, w: w / picture.w },
+    markRatio: size.w / size.h,
+    pictureRatio: picture.w / picture.h,
+  };
+}
+
+export async function stampBrandMark(stillPath: string, brand: BrandKit, position: LogoPosition, box?: LogoBox) {
   const mark = brandMarkFile(brand);
   if (!mark.file) return false;
-  return overlayLogoFile(stillPath, mark.file, mark.height, position);
+  return box ? overlayLogoAt(stillPath, mark.file, box) : overlayLogoFile(stillPath, mark.file, mark.height, position);
 }
 
 export async function persistStills(

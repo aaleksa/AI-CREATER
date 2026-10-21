@@ -32,6 +32,7 @@ import {
   type BrandKit,
   type CaptionCue,
   type Idea,
+  type LogoBox,
   type LogoPosition,
   type LogoSpot,
   type PictureLanguage,
@@ -55,6 +56,8 @@ import {
   renderReel,
   restoreStillSnapshot,
   snapshotStills,
+  brandMarkBox,
+  brandMarkPath,
   brandMarkSpot,
   stampBrandMark,
   stillFile,
@@ -561,26 +564,86 @@ function savePictureVersion(userId: string, projectId: string, visuals: Visual[]
 }
 
 /** Puts the Brand Kit logo on a picture that is already made, or moves ours to another corner. No AI, no credits; a new version. */
-export async function stampLogoOnPicture(userId: string, projectId: string, sceneId = 1, position = "", versionId = "") {
-  const { visuals, frame } = pictureForLogo(userId, projectId, sceneId, versionId);
+export async function stampLogoOnPicture(
+  userId: string,
+  projectId: string,
+  sceneId = 1,
+  position = "",
+  versionId = "",
+  rawBox?: unknown
+) {
+  const { visuals } = pictureForLogo(userId, projectId, sceneId, versionId);
   const brand = brandFor(userId);
   if (!brand) throw Object.assign(new Error(NO_BRAND_MARK), { status: 400 });
-  const corner = logoPositionOf({ ...brand, logo_position: position || brand.logo_position });
+  const box = rawBox === undefined || rawBox === null ? undefined : readLogoBox(rawBox);
+  const corner = box ? cornerOf(box) : logoPositionOf({ ...brand, logo_position: position || brand.logo_position });
   const still = stillFile(projectId, sceneId);
   const before = fs.readFileSync(still);
   // Always start from the model's picture, so logos never pile up.
   const base = currentModelPicture(projectId, sceneId);
   if (base.file) fs.copyFileSync(base.file, still);
   const clean = keepCleanStill(projectId, sceneId);
-  if (!(await stampBrandMark(still, brand, corner))) {
+  if (!(await stampBrandMark(still, brand, corner, box))) {
     fs.writeFileSync(still, before);
     throw Object.assign(new Error(NO_BRAND_MARK), { status: 400 });
   }
   return savePictureVersion(
     userId,
     projectId,
-    visuals.map((item) => (item.sceneId === sceneId ? { ...item, clean, logoCorner: corner } : item))
+    visuals.map((item) => {
+      if (item.sceneId !== sceneId) return item;
+      const { logoBox: _old, ...rest } = item;
+      return { ...rest, clean, logoCorner: corner, ...(box ? { logoBox: box } : {}) };
+    })
   );
+}
+
+const BAD_LOGO_BOX = "Put the logo inside the picture.";
+
+/** A hand-placed box from the Studio, checked: inside the picture and a sensible size. */
+function readLogoBox(raw: unknown): LogoBox {
+  const box = raw as Partial<LogoBox> | null;
+  const x = Number(box?.x);
+  const y = Number(box?.y);
+  const w = Number(box?.w);
+  if (![x, y, w].every(Number.isFinite) || w < 0.03 || w > 0.8 || x < 0 || y < 0 || x + w > 1.001 || y > 0.99) {
+    throw Object.assign(new Error(BAD_LOGO_BOX), { status: 400 });
+  }
+  return { x: Math.round(x * 10000) / 10000, y: Math.round(y * 10000) / 10000, w: Math.round(w * 10000) / 10000 };
+}
+
+/** The corner a hand-placed logo is nearest to — what AI edits keep clear when they cannot use the exact box. */
+function cornerOf(box: LogoBox): LogoPosition {
+  return `${box.y < 0.5 ? "top" : "bottom"}-${box.x + box.w / 2 < 0.5 ? "left" : "right"}` as LogoPosition;
+}
+
+/** Everything the Studio needs to place the logo by hand: the picture without our logo, the mark, and where it sits now. */
+export function logoLayout(userId: string, projectId: string, sceneId = 1) {
+  const project = getProject(projectId, userId);
+  if (!isImagePost(String(project.type))) throw Object.assign(new Error("Only pictures can take a logo."), { status: 400 });
+  const brand = brandFor(userId);
+  const frame = (parse<Visual[]>(project.visuals_json) || []).find((item) => item.sceneId === sceneId);
+  if (!frame || frame.placeholder || !hasStillFile(projectId, sceneId)) {
+    throw Object.assign(new Error("Make the picture first."), { status: 400 });
+  }
+  if (!brand || !brandMarkPath(brand)) throw Object.assign(new Error(NO_BRAND_MARK), { status: 400 });
+  const corner = frame.clean && frame.logoCorner ? frame.logoCorner : logoPositionOf(brand);
+  const start = brandMarkBox(brand, stillFile(projectId, sceneId), corner);
+  if (!start) throw Object.assign(new Error(NO_BRAND_MARK), { status: 400 });
+  return { ...start, box: frame.clean && frame.logoBox ? frame.logoBox : start.box };
+}
+
+/** The exact mark we stamp (logo, or the business name in their font), shown while placing it by hand. */
+export function logoMarkFile(userId: string) {
+  const brand = brandFor(userId);
+  return brand ? brandMarkPath(brand) : "";
+}
+
+/** The picture as the model returned it — the canvas for placing the logo by hand. */
+export function logoBaseFile(userId: string, projectId: string, sceneId = 1) {
+  getProject(projectId, userId);
+  const base = currentModelPicture(projectId, sceneId);
+  return base.file || (hasStillFile(projectId, sceneId) ? stillFile(projectId, sceneId) : "");
 }
 
 /**
@@ -594,15 +657,19 @@ function logoToKeep(projectId: string, sceneId: number, versionId: string) {
   const frame = (parse<Visual[]>(rows[index].payload_json) || []).find((item) => item.sceneId === sceneId);
   const base = modelPictureFor(projectId, rows, index, sceneId);
   if (!base.file) return null;
-  return { file: base.file, corner: logoPositionOf({ logo_position: frame?.logoCorner } as BrandKit) };
+  return { file: base.file, corner: logoPositionOf({ logo_position: frame?.logoCorner } as BrandKit), box: frame?.logoBox };
 }
 
-async function putLogoBack(userId: string, projectId: string, visuals: Visual[], sceneId: number, corner: LogoPosition) {
+async function putLogoBack(userId: string, projectId: string, visuals: Visual[], sceneId: number, corner: LogoPosition, box?: LogoBox) {
   const brand = brandFor(userId);
   if (!brand || !hasStillFile(projectId, sceneId)) return visuals;
   const clean = keepCleanStill(projectId, sceneId);
-  if (!(await stampBrandMark(stillFile(projectId, sceneId), brand, corner))) return visuals;
-  return visuals.map((item) => (item.sceneId === sceneId ? { ...item, clean, logoCorner: corner } : item));
+  if (!(await stampBrandMark(stillFile(projectId, sceneId), brand, corner, box))) return visuals;
+  return visuals.map((item) => {
+    if (item.sceneId !== sceneId) return item;
+    const { logoBox: _old, ...rest } = item;
+    return { ...rest, clean, logoCorner: corner, ...(box ? { logoBox: box } : {}) };
+  });
 }
 
 /** Takes every logo we stamped off: back to the picture the model returned. A logo the model painted itself stays. */
@@ -619,7 +686,7 @@ export function removeLogoFromPicture(userId: string, projectId: string, sceneId
     projectId,
     visuals.map((item) => {
       if (item.sceneId !== sceneId) return item;
-      const { clean: _clean, logoCorner: _corner, ...rest } = item;
+      const { clean: _clean, logoCorner: _corner, logoBox: _box, ...rest } = item;
       return rest;
     })
   );
@@ -849,7 +916,7 @@ export async function runStep(
     requestedLang || parsePictureLanguage(project.picture_language);
   const regenerate = Boolean(opts.regenerate) || keepStill;
   let keepStillPath = "";
-  let keepLogo: { file: string; corner: LogoPosition } | null = null;
+  let keepLogo: { file: string; corner: LogoPosition; box?: LogoBox } | null = null;
   let editExample: BrandImageFile | undefined;
   let logoSpot: LogoSpot | undefined;
   let logoHold: LogoSpot | undefined;
@@ -989,7 +1056,20 @@ export async function runStep(
     } else if (keepLogo) {
       const owner = brandFor(userId);
       const held = owner ? brandMarkSpot(owner, keepStillPath) : null;
-      if (held) logoHold = { corner: keepLogo.corner, ...held };
+      const sizes = owner && keepLogo.box ? brandMarkBox(owner, keepStillPath, keepLogo.corner) : null;
+      if (held && keepLogo.box && sizes) {
+        // Placed by hand: tell the model that exact box, measured from its nearest corner.
+        const { x, y, w } = keepLogo.box;
+        const h = (w * sizes.pictureRatio) / sizes.markRatio;
+        logoHold = {
+          ...held,
+          corner: keepLogo.corner,
+          w: Math.round(w * 100),
+          h: Math.round(h * 100),
+          x: Math.round((keepLogo.corner.endsWith("left") ? x : 1 - x - w) * 100),
+          y: Math.round((keepLogo.corner.startsWith("top") ? y : 1 - y - h) * 100),
+        };
+      } else if (held) logoHold = { corner: keepLogo.corner, ...held };
     }
   }
   if ((step === "visuals" || step === "voice" || step === "captions" || step === "render") && !script && !isImagePost(type)) {
@@ -1160,7 +1240,9 @@ export async function runStep(
           frameOpts.format
         );
         const logoBack = logoSpot?.corner || keepLogo?.corner;
-        if (logoBack && !one.data.placeholder) next = await putLogoBack(userId, projectId, next, sceneId, logoBack);
+        // A logo placed by hand goes back to its exact box — unless this edit moved it.
+        const logoBackBox = logoSpot ? undefined : keepLogo?.box;
+        if (logoBack && !one.data.placeholder) next = await putLogoBack(userId, projectId, next, sceneId, logoBack, logoBackBox);
         if (reformat && !one.data.placeholder) updates.image_format = reformat;
         updates.visuals_json = JSON.stringify(next);
         updates.current_step = "visuals";

@@ -33,6 +33,7 @@ export const ERROR_UK: Record<string, string> = {
     "Інша мова на тій самій картинці — лише для запрошень, інформації та оферів.",
   "Make the picture first.": "Спочатку зробіть картинку.",
   "Add a logo in Brand Kit first.": "Спочатку додайте логотип у Brand Kit.",
+  "Put the logo inside the picture.": "Поставте логотип у межах картинки.",
   "This is the current picture. Pick another one first.": "Це вибрана картинка. Спершу виберіть іншу.",
   "This logo is part of the picture and can’t be taken off. Make the picture again, or go back to an earlier version.":
     "Цей логотип — частина самої картинки, його не прибрати. Зробіть картинку ще раз або поверніть попередню версію.",
