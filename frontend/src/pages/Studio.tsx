@@ -108,10 +108,6 @@ function doneThrough(project: Project, step: string) {
   return Boolean(map[step]);
 }
 
-/** Sent to the picture model as an edit instruction, never shown to the owner. */
-const REMOVE_LOGO_NOTE =
-  "Remove the logo and any business-name mark or watermark from this picture. Fill that spot with the same background so nothing looks erased. Keep every other word, the photo and the layout exactly as they are.";
-
 function PictureCompare({
   versions,
   srcs,
@@ -671,24 +667,6 @@ export default function Studio() {
     const others = (project.versions?.visuals || []).filter((version) => !version.accepted).length;
     void tidyTakes(() => api.keepCurrentPicture(id), t("studio.keepCurrentConfirm", { n: others }));
   }
-
-  /** Our stamped logo comes off for free; a logo the AI painted needs an AI edit of the same picture. */
-  async function removeAnyLogo() {
-    if (!id || !project) return;
-    if (frameHasOurLogo) {
-      await changeLogo(true);
-      return;
-    }
-    const sceneId = project.visuals?.[scene]?.sceneId ?? 1;
-    const price = extraPrice("visuals", sceneId);
-    if (!window.confirm(t("studio.logoRemoveAiConfirm", { credits: price.credits }))) return;
-    await execute("visuals", true, sceneId, undefined, false, {
-      keepStill: true,
-      copyEdit: REMOVE_LOGO_NOTE,
-      keepStillVersionId: workingVersionId,
-    });
-  }
-
   async function restore(step: "idea" | "script" | "visuals", versionId: string, sceneId?: number) {
     if (!id) return;
     const ok = window.confirm(
@@ -1253,15 +1231,12 @@ export default function Studio() {
                           {busy === "logo" ? t("studio.logoAdding") : t(frameHasOurLogo ? "studio.logoMove" : "studio.logoAdd")}
                         </button>
                       )}
-                      <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={removeAnyLogo}>
-                        {busy === "logo-off" || (!frameHasOurLogo && makingPicture)
-                          ? t("studio.logoRemoving")
-                          : frameHasOurLogo
-                            ? t("studio.logoRemove")
-                            : t("studio.logoRemoveAi", { credits: extraPrice("visuals", project.visuals?.[scene]?.sceneId ?? 1).credits })}
-                      </button>
+                      {frameHasOurLogo && (
+                        <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => changeLogo(true)}>
+                          {busy === "logo-off" ? t("studio.logoRemoving") : t("studio.logoRemove")}
+                        </button>
+                      )}
                     </div>
-                    {!frameHasOurLogo && <p className="hint" style={{ marginTop: 6 }}>{t("studio.logoRemoveAiHint")}</p>}
                     {hasBrandMark ? (
                       <>
                         <p className="hint" style={{ marginTop: 6 }}>{t("studio.logoUndo")}</p>
