@@ -205,7 +205,7 @@ function VersionCompare({
   if (versions.length < 2) return null;
   return (
     <div style={{ marginTop: 16 }}>
-      <p className="hint">{t("studio.ideaCompare")}</p>
+      <p className="hint">{t(step === "script" ? "studio.scriptCompare" : "studio.ideaCompare")}</p>
       <div className="compare-grid">
         {versions.map((version, index) => (
           <div key={version.id} className={`compare-card${version.accepted ? " on" : ""}`}>
@@ -264,6 +264,7 @@ export default function Studio() {
   const [kit, setKit] = useState<BrandKitRow | null>(null);
   const [pickedCorner, setPickedCorner] = useState("");
   const [reformatTo, setReformatTo] = useState("");
+  const [viewStep, setViewStep] = useState<string | null>(null);
   const [placing, setPlacing] = useState<{ box: LogoBox; markRatio: number; pictureRatio: number; baseSrc: string; markSrc: string } | null>(null);
   const phoneRef = useRef<HTMLDivElement>(null);
   const [editsOpen, setEditsOpen] = useState(() => localStorage.getItem(EDITS_OPEN_KEY) === "1");
@@ -1018,17 +1019,31 @@ export default function Studio() {
         usingLabel={t("studio.brandUsing")}
         kit={kit}
       />
-      <div className="steps">
+      <nav className="steps" aria-label={t("studio.stepsNav")}>
         {STEPS.map((s, i) => {
           const isDone = doneThrough(project, s.id);
-          const isOn = next?.id === s.id;
-          return (
-            <span key={s.id} className={`step ${isDone ? "done" : ""} ${isOn ? "on" : ""}`}>
-              {i + 1}. {stepLabel(s.id)}
+          const isCurrent = next?.id === s.id;
+          const isViewing = viewStep === s.id;
+          const label = `${i + 1}. ${stepLabel(s.id)}`;
+          // Done steps open a look back at their result; the current step brings you back to work.
+          return isDone || next?.id === s.id ? (
+            <button
+              key={s.id}
+              type="button"
+              className={`step ${isDone ? "done" : ""} ${isCurrent ? "on" : ""} ${isViewing ? "viewing" : ""}`}
+              aria-current={isCurrent ? "step" : undefined}
+              aria-pressed={isViewing}
+              onClick={() => setViewStep(isDone && next?.id !== s.id && viewStep !== s.id ? s.id : null)}
+            >
+              {label}
+            </button>
+          ) : (
+            <span key={s.id} className="step">
+              {label}
             </span>
           );
         })}
-      </div>
+      </nav>
 
       <div className={`studio${isImage ? " image" : ""}`}>
         <div className={isImage ? "studio-preview" : undefined}>
@@ -1127,8 +1142,81 @@ export default function Studio() {
           )}
         </div>
 
-        <div className="panel">
+        {viewStep && (
+          <div className="panel step-review">
+            <div className="row" style={{ marginBottom: 8 }}>
+              <h2 style={{ margin: 0 }}>{t("studio.reviewTitle", { label: stepLabel(viewStep) })}</h2>
+              <button type="button" className="btn ghost" onClick={() => setViewStep(null)}>
+                {next ? t("studio.reviewBack", { label: stepLabel(next.id) }) : t("studio.reviewBackDone")}
+              </button>
+            </div>
+            <p className="hint">{t("studio.reviewHint")}</p>
+            {viewStep === "idea" && project.idea && (
+              <>
+                <p><b>{asText(project.idea.title)}</b></p>
+                {asText(project.idea.hook) && <p>{asText(project.idea.hook)}</p>}
+                <p className="lede">{asText(project.idea.concept)}</p>
+                {asText(project.idea.shot?.summary) && <p className="hint">{asText(project.idea.shot?.summary)}</p>}
+                <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} t={t} />
+              </>
+            )}
+            {viewStep === "script" && project.script && (
+              <>
+                {project.script.cta && <p><b>{asText(project.script.cta)}</b></p>}
+                <ol className="review-list">
+                  {project.script.scenes.map((sc) => (
+                    <li key={sc.id}>
+                      {asText(sc.time) && <span className="hint">{t("studio.reviewAt", { time: asText(sc.time) })} · </span>}
+                      <b>{asText(sc.onScreen)}</b>
+                      <p className="hint" style={{ margin: "2px 0 0" }}>{asText(sc.voiceover)}</p>
+                    </li>
+                  ))}
+                </ol>
+                <VersionCompare step="script" versions={project.versions?.script || []} onRestore={restore} busy={Boolean(busy)} t={t} />
+              </>
+            )}
+            {viewStep === "visuals" &&
+              (isImage ? (
+                <p className="lede">{t("studio.reviewPicture")}</p>
+              ) : (
+                <div className="review-frames">
+                  {(project.visuals || []).map((v, i) => (
+                    <figure key={v.sceneId}>
+                      {imageSrcs[v.sceneId] ? <img src={imageSrcs[v.sceneId]} alt="" /> : <span className="example-loading" />}
+                      <figcaption className="hint">{t("studio.reviewScene", { n: i + 1 })}</figcaption>
+                    </figure>
+                  ))}
+                </div>
+              ))}
+            {viewStep === "voice" && (
+              <>
+                <p><b>{asText(project.voice?.voicePreset || project.voice?.voice)}</b></p>
+                {asText(project.voice?.notes) && <p className="lede">{asText(project.voice?.notes)}</p>}
+                {audioSrc && <audio controls src={audioSrc} style={{ width: "100%", marginTop: 12 }} />}
+              </>
+            )}
+            {viewStep === "captions" && project.captions && (
+              <ol className="review-list">
+                {project.captions.cues.map((cue, i) => (
+                  <li key={i}>
+                    <span className="hint">
+                      {cue.start.toFixed(1)}–{cue.end.toFixed(1)} с
+                    </span>{" "}
+                    {asText(cue.text)}
+                  </li>
+                ))}
+              </ol>
+            )}
+            {viewStep === "render" && <p className="lede">{t("studio.reviewVideo")}</p>}
+          </div>
+        )}
+        <div className="panel" hidden={Boolean(viewStep)}>
           <h2>{next ? t("studio.stepTitle", { label: stepLabel(next.id) }) : t("steps.ready")}</h2>
+          {lastDone && (
+            <button type="button" className="btn ghost step-back" onClick={() => setViewStep(lastDone.id)}>
+              {t("studio.prevStep", { label: stepLabel(lastDone.id) })}
+            </button>
+          )}
           {!project.idea && (
             <p className="lede">
               {isInvite ? t("studio.introInvite") : isImage ? t("studio.introImage") : t("studio.introVideo")}
