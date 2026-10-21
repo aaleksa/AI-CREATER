@@ -338,12 +338,15 @@ export default function Studio() {
   const [pickedCorner, setPickedCorner] = useState("");
   const [reformatTo, setReformatTo] = useState("");
   const [viewStep, setViewStep] = useState<string | null>(null);
-  const [scriptDraft, setScriptDraft] = useState<{ cta: string; scenes: { id: number; onScreen: string; voiceover: string }[] } | null>(null);
+  const [scriptDraft, setScriptDraft] = useState<{ cta: string; scenes: { id: number; onScreen: string; voiceover: string; frameWish: string }[] } | null>(null);
+  /** Scenes whose "what I want in the frame" just changed: their frames change only when redone. */
+  const [wishRedo, setWishRedo] = useState<number[]>([]);
   const [capsDraft, setCapsDraft] = useState<{ start: number; end: number; text: string }[] | null>(null);
   // A half-made edit belongs to the step it was opened on.
   useEffect(() => {
     setScriptDraft(null);
     setCapsDraft(null);
+    setWishRedo([]);
   }, [viewStep]);
   const [placing, setPlacing] = useState<{ box: LogoBox; markRatio: number; pictureRatio: number; baseSrc: string; markSrc: string } | null>(null);
   const phoneRef = useRef<HTMLDivElement>(null);
@@ -898,8 +901,20 @@ export default function Studio() {
 
   async function saveScriptDraft() {
     if (!id || !project?.script || !scriptDraft) return;
-    const voiceChanged = scriptDraft.scenes.some((sc) => sc.voiceover.trim() !== (project.script?.scenes.find((x) => x.id === sc.id)?.voiceover || "").trim());
-    const ask = voiceChanged && project.audioUrl ? t("studio.scriptEditVoiceConfirm", prices) : project.captions || project.hasVideo ? t("studio.scriptEditConfirm", prices) : "";
+    const was = (sceneId: number) => project.script?.scenes.find((x) => x.id === sceneId);
+    const voiceChanged = scriptDraft.scenes.some((sc) => sc.voiceover.trim() !== (was(sc.id)?.voiceover || "").trim());
+    const wordsChanged =
+      voiceChanged ||
+      scriptDraft.cta.trim() !== (project.script.cta || "").trim() ||
+      scriptDraft.scenes.some((sc) => sc.onScreen.trim() !== (was(sc.id)?.onScreen || "").trim());
+    const wishIds = scriptDraft.scenes.filter((sc) => sc.frameWish.trim() !== (was(sc.id)?.frameWish || "").trim()).map((sc) => sc.id);
+    const ask = !wordsChanged
+      ? ""
+      : voiceChanged && project.audioUrl
+        ? t("studio.scriptEditVoiceConfirm", prices)
+        : project.captions || project.hasVideo
+          ? t("studio.scriptEditConfirm", prices)
+          : "";
     if (ask && !window.confirm(ask)) return;
     setBusy("edit-script");
     setError("");
@@ -907,6 +922,7 @@ export default function Studio() {
       const { project: nextProject } = await api.editScript(id, scriptDraft);
       setScriptDraft(null);
       setProject(nextProject);
+      setWishRedo(nextProject.visuals?.length ? wishIds.filter((sceneId) => nextProject.visuals?.some((v) => v.sceneId === sceneId)) : []);
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
     } finally {
@@ -1582,6 +1598,16 @@ export default function Studio() {
                         onChange={(e) => setScriptDraft({ ...scriptDraft, scenes: scriptDraft.scenes.map((x) => (x.id === sc.id ? { ...x, voiceover: e.target.value } : x)) })}
                       />
                     </label>
+                    <label className="shot-field">
+                      <span>{t("studio.frameWish")}</span>
+                      <textarea
+                        rows={2}
+                        value={sc.frameWish}
+                        maxLength={300}
+                        placeholder={t("studio.frameWishPlaceholder")}
+                        onChange={(e) => setScriptDraft({ ...scriptDraft, scenes: scriptDraft.scenes.map((x) => (x.id === sc.id ? { ...x, frameWish: e.target.value } : x)) })}
+                      />
+                    </label>
                   </fieldset>
                 ))}
                 <label className="shot-field">
@@ -1601,6 +1627,31 @@ export default function Studio() {
             )}
             {viewStep === "script" && project.script && !scriptDraft && (
               <>
+                {wishRedo.length > 0 && (
+                  <div className="voice-off-note">
+                    <p className="hint" style={{ margin: 0 }}>{t(project.hasVideo ? "studio.wishRedoVideo" : "studio.wishRedo")}</p>
+                    <div className="pill-row">
+                      {wishRedo.map((sceneId) => {
+                        const at = Math.max(0, project.script?.scenes.findIndex((sc) => sc.id === sceneId) ?? 0);
+                        return (
+                          <button
+                            key={sceneId}
+                            type="button"
+                            className="btn ghost tiny"
+                            disabled={Boolean(busy) || Boolean(pendingRegen)}
+                            onClick={() => {
+                              setScene(at);
+                              setViewStep(null);
+                              run("visuals", true, sceneId);
+                            }}
+                          >
+                            {t("studio.wishRedoScene", { n: at + 1, credits: extraPrice("visuals", sceneId).credits })}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <div className="review-tools">
                   <button
                     type="button"
@@ -1609,7 +1660,7 @@ export default function Studio() {
                     onClick={() =>
                       setScriptDraft({
                         cta: project.script?.cta || "",
-                        scenes: (project.script?.scenes || []).map((sc) => ({ id: sc.id, onScreen: sc.onScreen || "", voiceover: sc.voiceover || "" })),
+                        scenes: (project.script?.scenes || []).map((sc) => ({ id: sc.id, onScreen: sc.onScreen || "", voiceover: sc.voiceover || "", frameWish: sc.frameWish || "" })),
                       })
                     }
                   >
@@ -1632,6 +1683,11 @@ export default function Studio() {
                       <div>
                         {asText(sc.onScreen) && <b>{asText(sc.onScreen)}</b>}
                         {asText(sc.voiceover) && <p className="hint">{asText(sc.voiceover)}</p>}
+                        {asText(sc.frameWish) && (
+                          <p className="frame-wish">
+                            <span>{t("studio.frameWishShort")}</span> {asText(sc.frameWish)}
+                          </p>
+                        )}
                       </div>
                     </li>
                   ))}

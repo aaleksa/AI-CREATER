@@ -168,6 +168,8 @@ export type ScriptScene = {
   onScreen: string;
   voiceover: string;
   visualPrompt: string;
+  /** The owner's own words for what this frame must show. Wins over visualPrompt when they differ. */
+  frameWish?: string;
 };
 
 export type Script = {
@@ -1176,6 +1178,13 @@ function reelLogoSpotLine(spot: ReelLogoSpot, brand?: BrandKit | null) {
   ].join(" ");
 }
 
+/** What the owner wrote for this frame, in their words and language. It decides what is in the picture. */
+function frameWishLine(wish?: string) {
+  const text = String(wish || "").replace(/\s+/g, " ").trim().slice(0, 300);
+  if (!text) return "";
+  return `The owner asked for this frame: "${text}". Show exactly that. Where it differs from the description above, follow the owner. Still a photograph — never paint their words onto the picture.`;
+}
+
 /** The video keeps the middle of the frame: what matters must not sit at the far left or right. */
 const REEL_CROP_LINE =
   "The finished video shows the middle of this picture: about 8% is cut from the left and from the right. Keep faces and the main action inside that middle.";
@@ -1186,6 +1195,7 @@ export function videoFramePrompt(scene: ScriptScene, brand?: BrandKit | null, re
   return [
     "One vertical 9:16 photograph for a short film. Real place, real light, cinematic. Fill the frame.",
     beat,
+    frameWishLine(scene.frameWish),
     "Photograph only. No letters, no numbers, no words, no title card, no script, no timestamps, no captions, no UI, no logo, no watermark, no document, no storyboard.",
     reelLogo === undefined ? "" : REEL_CROP_LINE,
     brandLook(brand, "photo", reelLogo === undefined ? undefined : reelLogo ? reelLogoSpotLine(reelLogo, brand) : ""),

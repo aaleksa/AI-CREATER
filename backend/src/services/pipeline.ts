@@ -1501,14 +1501,17 @@ export function setVoiceOff(userId: string, projectId: string, off: boolean) {
   return serializeProject(getProject(projectId, userId));
 }
 
-/** The owner's own wording for the script. Changed voiceover drops the voice; captions and video are made again. */
+/**
+ * The owner's own wording for the script. Changed voiceover drops the voice; changed words make captions and video
+ * again. A changed "what I want in the frame" touches nothing else — that frame changes when it is redone.
+ */
 export function editScript(userId: string, projectId: string, raw: unknown) {
   const project = getProject(projectId, userId);
   if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
   const script = parse<Script>(project.script_json);
   if (!script) throw Object.assign(new Error("Generate the script first."), { status: 400 });
-  const body = (raw || {}) as { scenes?: { id?: unknown; onScreen?: unknown; voiceover?: unknown }[]; cta?: unknown };
+  const body = (raw || {}) as { scenes?: { id?: unknown; onScreen?: unknown; voiceover?: unknown; frameWish?: unknown }[]; cta?: unknown };
   const byId = new Map((Array.isArray(body.scenes) ? body.scenes : []).map((scene) => [Number(scene.id), scene]));
   const clip = (value: unknown, max: number) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
   const next: Script = {
@@ -1517,17 +1520,26 @@ export function editScript(userId: string, projectId: string, raw: unknown) {
     scenes: script.scenes.map((scene) => {
       const edit = byId.get(scene.id);
       if (!edit) return scene;
+      const frameWish = edit.frameWish === undefined ? scene.frameWish || "" : clip(edit.frameWish, 300);
       return {
         ...scene,
         onScreen: edit.onScreen === undefined ? scene.onScreen : clip(edit.onScreen, 120),
         voiceover: edit.voiceover === undefined ? scene.voiceover : clip(edit.voiceover, 400),
+        ...(frameWish ? { frameWish } : { frameWish: undefined }),
       };
     }),
   };
   const voiceChanged = next.scenes.some((scene, i) => scene.voiceover !== script.scenes[i].voiceover);
+  const wordsChanged = voiceChanged || next.cta !== script.cta || next.scenes.some((scene, i) => scene.onScreen !== script.scenes[i].onScreen);
+  const wishChanged = next.scenes.some((scene, i) => (scene.frameWish || "") !== (script.scenes[i].frameWish || ""));
+  if (!wordsChanged && !wishChanged) return serializeProject(project);
+  saveStepVersion(projectId, "script", next, "");
+  if (!wordsChanged) {
+    db.prepare(`UPDATE projects SET script_json = ?, updated_at = datetime('now') WHERE id = ?`).run(JSON.stringify(next), projectId);
+    return serializeProject(getProject(projectId, userId));
+  }
   if (voiceChanged) removeVoiceFile(projectId);
   removeVideoFile(projectId);
-  saveStepVersion(projectId, "script", next, "");
   db.prepare(
     `UPDATE projects SET script_json = ?, captions_json = NULL, output_url = NULL, status = 'draft',
        voice_json = CASE WHEN ? = 1 THEN NULL ELSE voice_json END, audio_url = CASE WHEN ? = 1 THEN '' ELSE audio_url END,
