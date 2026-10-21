@@ -281,6 +281,7 @@ export const api = {
   },
   updateMusic: (id: string, body: { volume?: number; start?: number }) =>
     request<{ project: Project }>(`/projects/${id}/music`, { method: "PATCH", body: JSON.stringify(body) }),
+  remakeVideo: (id: string) => request<{ project: Project }>(`/projects/${id}/remake`, { method: "POST" }),
   updateCaptionStyle: (id: string, style: "clean" | "box" | "brand") =>
     request<{ project: Project }>(`/projects/${id}/captions-style`, { method: "PATCH", body: JSON.stringify({ style }) }),
   updateReelLogo: (id: string, body: Partial<ReelLogo>) =>

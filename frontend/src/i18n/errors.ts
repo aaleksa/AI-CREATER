@@ -92,6 +92,7 @@ export const ERROR_UK: Record<string, string> = {
   "Music file is too big. Keep it under 20 MB.": "Файл музики завеликий. До 20 МБ.",
   "We couldn’t read this music file. Try an MP3 or M4A.": "Не вдалося прочитати цей файл музики. Спробуйте MP3 або M4A.",
   "Add a music file first.": "Спершу додайте файл музики.",
+  "Make the video first.": "Спершу зробіть відео.",
   "The voice for this Reel is no longer kept (we keep it 7 days), so the video can't be updated for free. Make the voice again, then the video.":
     "Голос цього Reel уже не зберігається (тримаємо 7 днів), тож безкоштовно оновити відео не вийде. Запишіть голос знову, а потім зробіть відео.",
   "We couldn't update the video. Try again in a minute.": "Не вдалося оновити відео. Спробуйте за хвилину — попереднє відео лишилося.",

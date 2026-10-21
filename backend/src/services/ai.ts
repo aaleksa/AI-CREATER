@@ -1218,6 +1218,7 @@ export async function translateScript(script: Script, lang: "en" | "uk", brandNa
       `Write dates and times the way a ${target} speaker would.`,
       keepNamesRule(brandName),
       "Same scenes, same ids, same order. Do not add or drop a scene.",
+      "Keep the call to action under 90 characters.",
     ].join(" "),
     `${JSON.stringify(input)}\nReturn JSON: { cta, scenes: [{ id, onScreen, voiceover }] }`,
     input,
@@ -1231,6 +1232,7 @@ export async function generateScript(prompt: string, idea: Idea, brand?: BrandKi
     `Write a 30-second vertical video script. 4–6 scenes. Voiceover should sound spoken, not marketed.
 visualPrompt describes a photograph we would shoot — a real place or moment. Never a title card, never type, never the voiceover printed on the picture.
 onScreen is a short later caption (2–6 words) with a normal space between every word.
+cta is one short call to action for the end card, at most 80 characters.
 Write onScreen, voiceover and cta all in ONE language — the main language of the request — never a mix.\n${brandContext(brand)}\n${contactCtaLine(brand)}`,
     `Request: ${prompt}\nIdea: ${JSON.stringify(idea)}${regenInstruction(feedback) ? `\n${regenInstruction(feedback)}` : ""}\nReturn JSON: { durationSec, cta, scenes: [{ id, time, onScreen, voiceover, visualPrompt }] }`,
     fallback

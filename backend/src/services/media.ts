@@ -1031,6 +1031,44 @@ function wrapLines(text: string, perLine: number, maxLines: number) {
   return lines;
 }
 
+/** Width of one line of text in this font, in pixels, measured by the same renderer that draws it. */
+function textWidth(text: string, size: number, fonts: string[], family: string) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.max(200, text.length * size)}" height="${size * 2}"><text x="0" y="${size}" font-family="${family}" font-size="${size}">${xmlEscape(text)}</text></svg>`;
+  try {
+    const box = new Resvg(svg, { font: { loadSystemFonts: false, fontFiles: [...fonts, ...SANS_FONTS], defaultFontFamily: family } }).getBBox();
+    return box ? box.width : text.length * size * 0.55;
+  } catch {
+    return text.length * size * 0.55;
+  }
+}
+
+/**
+ * The whole call to action, never cut: the largest size at which it fits the card in a few lines. Long ones get
+ * smaller type and more lines; a word longer than the line still gets a line of its own.
+ */
+function fitCallToAction(text: string, fonts: string[], family: string) {
+  const words = text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  if (!words.length) return { size: 72, lines: [] as string[] };
+  const maxWidth = 920;
+  const steps: [number, number][] = [[72, 3], [64, 4], [56, 4], [50, 5], [44, 6]];
+  let best = { size: 44, lines: [] as string[] };
+  for (const [size, maxLines] of steps) {
+    const lines: string[] = [];
+    let line = "";
+    for (const word of words) {
+      const tryLine = line ? `${line} ${word}` : word;
+      if (line && textWidth(tryLine, size, fonts, family) > maxWidth) {
+        lines.push(line);
+        line = word;
+      } else line = tryLine;
+    }
+    if (line) lines.push(line);
+    best = { size, lines };
+    if (lines.length <= maxLines) return best;
+  }
+  return best;
+}
+
 /**
  * The last 2.5 seconds: their logo large, the call to action and where to find them. Light paper for ordinary logos,
  * a dark ground for white ones, so the logo always reads.
@@ -1049,10 +1087,14 @@ export async function writeReelEndCard(projectId: string, brand: BrandKit, cta: 
   const muted = dark ? "rgba(244,239,232,0.72)" : "rgba(26,22,18,0.62)";
   const font = brandFont(brand.user_id, brand.font);
   const family = font ? xmlEscape(font.family) : "Arial";
-  const ctaLines = wrapLines(String(cta || ""), 20, 3);
+  const fit = fitCallToAction(String(cta || ""), font ? [font.file] : [], font ? font.family : "Arial");
+  const ctaLines = fit.lines;
+  const lineGap = Math.round(fit.size * 1.28);
   const contact = contactStampText(brand);
-  const logoTop = 560;
   const logoBox: [number, number] = [620, 420];
+  // Everything stays above Instagram's caption and buttons (bottom ~22%): a long call to action lifts the logo.
+  const blockBelow = 170 + Math.max(0, ctaLines.length - 1) * lineGap + (contact ? 56 + 40 : 0) + (logo ? 0 : 300);
+  const logoTop = Math.max(300, Math.min(560, 1500 - logoBox[1] - blockBelow));
   let textTop = logoTop + logoBox[1] + 170;
   const texts: string[] = [];
   const accent = dark ? "rgba(244,239,232,0.6)" : luminance(primary) > 0.85 ? ink : primary;
@@ -1062,9 +1104,9 @@ export async function writeReelEndCard(projectId: string, brand: BrandKit, cta: 
     textTop = logoTop + 180 + nameLines.length * 120 + 130;
   }
   if (ctaLines.length) texts.push(`<rect x="500" y="${textTop - 110}" width="80" height="8" rx="4" fill="${accent}"/>`);
-  ctaLines.forEach((line, i) => texts.push(`<text x="540" y="${textTop + i * 92}" text-anchor="middle" font-family="${family}" font-size="72" fill="${ink}">${xmlEscape(line)}</text>`));
+  ctaLines.forEach((line, i) => texts.push(`<text x="540" y="${textTop + i * lineGap}" text-anchor="middle" font-family="${family}" font-size="${fit.size}" fill="${ink}">${xmlEscape(line)}</text>`));
   if (contact) {
-    const y = textTop + ctaLines.length * 92 + (ctaLines.length ? 56 : 0);
+    const y = textTop + Math.max(0, ctaLines.length - 1) * lineGap + (ctaLines.length ? 56 + 40 : 0);
     texts.push(`<text x="540" y="${y}" text-anchor="middle" font-family="Arial, Helvetica, DejaVu Sans, sans-serif" font-size="40" fill="${muted}">${xmlEscape(contact)}</text>`);
   }
   const dir = projectMediaDir(projectId);

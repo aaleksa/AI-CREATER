@@ -1526,6 +1526,18 @@ export function setVoiceOff(userId: string, projectId: string, off: boolean) {
   return serializeProject(getProject(projectId, userId));
 }
 
+/** Longest call to action: what fits the end card at a readable size. */
+export const CTA_MAX = 90;
+
+/** Cut at the last whole word, never mid-word. */
+function clipWords(value: unknown, max: number) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max + 1);
+  const space = cut.lastIndexOf(" ");
+  return (space > max * 0.6 ? cut.slice(0, space) : text.slice(0, max)).replace(/[\s,;:—–-]+$/, "");
+}
+
 /**
  * The owner's own wording for the script. Changed voiceover drops the voice; changed words make captions and video
  * again. A changed "what I want in the frame" touches nothing else — that frame changes when it is redone.
@@ -1541,7 +1553,8 @@ export function editScript(userId: string, projectId: string, raw: unknown, opts
   const clip = (value: unknown, max: number) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
   const next: Script = {
     ...script,
-    cta: body.cta === undefined ? script.cta : clip(body.cta, 200),
+    // An older, longer call to action stays as it is until the owner changes it.
+    cta: body.cta === undefined || String(body.cta).trim() === String(script.cta || "").trim() ? script.cta : clipWords(body.cta, CTA_MAX),
     scenes: script.scenes.map((scene) => {
       const edit = byId.get(scene.id);
       if (!edit) return scene;
@@ -1692,6 +1705,17 @@ const REMAKE_NO_VOICE = "The voice for this Reel is no longer kept (we keep it 7
 function assertCanRemake(projectId: string, project: Record<string, unknown>) {
   if (!hasVideoFile(projectId)) return;
   if (Number(project.voice_off) !== 1 && !hasVoiceFile(projectId)) throw Object.assign(new Error(REMAKE_NO_VOICE), { status: 409 });
+}
+
+/** "Update the video": the same Reel made again with what is there now — free, no AI. */
+export async function refreshReelVideo(userId: string, projectId: string) {
+  const project = getProject(projectId, userId);
+  if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
+  if (!hasVideoFile(projectId)) throw Object.assign(new Error("Make the video first."), { status: 400 });
+  assertCanRemake(projectId, project);
+  await remakeOrDrop(userId, projectId, Number(project.use_brand) === 0 ? null : brandFor(userId));
+  return serializeProject(getProject(projectId, userId));
 }
 
 /** Make the finished Reel again. The old video stays if that fails — the owner can try again. */

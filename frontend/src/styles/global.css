@@ -418,6 +418,7 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
 .sound-card .voice-off-note { margin-top: 10px; }
 .sound-card .music-block { margin-top: 10px; }
 .redo-card .btn { padding: 6px 12px; font-size: 13px; }
+.remake-btn { justify-self: start; margin-top: 4px; }
 .free-note { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); display: grid; gap: 4px; }
 .free-note p { margin: 0; font-size: 13px; line-height: 1.45; }
 @font-face { font-family: "Montserrat Caption"; src: url("/fonts/Montserrat-ExtraBold.ttf") format("truetype"); font-weight: 800; font-display: swap; }
@@ -456,6 +457,9 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
 .review-scenes b { display: block; font-weight: 600; }
 .review-scenes .hint { margin: 2px 0 0; line-height: 1.45; }
 .time-chip { justify-self: start; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-2); font-size: 12px; white-space: nowrap; }
+.field-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.char-count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.char-count.over { color: var(--danger, #c0392b); font-weight: 600; }
 .frame-wish { margin: 4px 0 0; font-size: 13px; line-height: 1.45; color: var(--ink); }
 .frame-wish span { color: var(--accent-2); font-weight: 600; }
 .review-cta { display: grid; gap: 2px; margin: 0 0 14px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 12px; }

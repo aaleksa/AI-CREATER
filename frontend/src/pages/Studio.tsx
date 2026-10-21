@@ -197,6 +197,8 @@ function hexLight(hex: string) {
   return (0.2126 * ((v >> 16) & 255) + 0.7152 * ((v >> 8) & 255) + 0.0722 * (v & 255)) / 255 > 0.6;
 }
 
+/** Longest call to action the end card shows at a readable size (the server keeps the same limit). */
+const CTA_MAX = 90;
 const REEL_CORNERS = ["top-left", "top-right", "bottom-left", "bottom-right"] as const;
 /** Same boxes the renderer uses on a 1080×1920 Reel. */
 const REEL_LOGO_BOX = { s: [170, 110], m: [230, 150], l: [300, 200] } as const;
@@ -847,6 +849,20 @@ export default function Studio() {
     setError("");
     try {
       const { project: nextProject } = await api.removeMusic(id);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function remakeVideo() {
+    if (!id) return;
+    setBusy("remake");
+    setError("");
+    try {
+      const { project: nextProject } = await api.remakeVideo(id);
       setProject(nextProject);
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
@@ -1609,12 +1625,29 @@ export default function Studio() {
                   </fieldset>
                 ))}
                 <label className="shot-field">
-                  <span>{t("studio.scriptCta")}</span>
-                  <input value={scriptDraft.cta} maxLength={200} onChange={(e) => setScriptDraft({ ...scriptDraft, cta: e.target.value })} />
+                  <span className="field-head">
+                    {t("studio.scriptCta")}
+                    <span className={`char-count${scriptDraft.cta.length > CTA_MAX ? " over" : ""}`}>
+                      {scriptDraft.cta.length}/{CTA_MAX}
+                    </span>
+                  </span>
+                  <input
+                    value={scriptDraft.cta}
+                    maxLength={Math.max(CTA_MAX, (project.script?.cta || "").length)}
+                    onChange={(e) => setScriptDraft({ ...scriptDraft, cta: e.target.value })}
+                  />
+                  <span className="hint">{t(
+                      scriptDraft.cta.length <= CTA_MAX
+                        ? "studio.ctaHint"
+                        : scriptDraft.cta.trim() === (project.script?.cta || "").trim()
+                          ? "studio.ctaOld"
+                          : "studio.ctaTooLong",
+                      { max: CTA_MAX }
+                    )}</span>
                 </label>
                 <p className="hint">{t("studio.scriptEditHint", prices)}</p>
                 <div className="action-row">
-                  <button type="button" className="btn" disabled={Boolean(busy)} onClick={saveScriptDraft}>
+                  <button type="button" className="btn" disabled={Boolean(busy) || (scriptDraft.cta.length > CTA_MAX && scriptDraft.cta.trim() !== (project.script?.cta || "").trim())} onClick={saveScriptDraft}>
                     {busy === "edit-script" ? t("studio.voiceOffSaving") : t("studio.editSave")}
                   </button>
                   <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => setScriptDraft(null)}>
@@ -2359,6 +2392,10 @@ export default function Studio() {
             <>
               <p className="ok">{t("studio.reelReady", { credits: project.creditsUsed })}</p>
               <p className="hint">{t("studio.reelReadyFree")}</p>
+              <button type="button" className="btn ghost tiny remake-btn" disabled={Boolean(busy)} onClick={remakeVideo}>
+                {busy === "remake" ? t("studio.reelLogoSaving") : t("studio.remakeVideo")}
+              </button>
+              <p className="hint" style={{ marginTop: 0 }}>{t("studio.remakeHint")}</p>
               <p className="hint">{t("studio.reelKeep")}</p>
               <div className="row" style={{ marginTop: 18 }}>
                 {videoSrc && (
