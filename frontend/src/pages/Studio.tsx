@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type Project, type Shot } from "../lib/api";
 import { copyText } from "../lib/copy";
+import { downloadName } from "../lib/fileName";
 import BrandToggle from "../components/BrandToggle";
 import ExampleImages, { useProjectImageSrcs } from "../components/ExampleImages";
 import { useLocale } from "../i18n/locale";
@@ -1098,7 +1099,7 @@ export default function Studio() {
                     <a
                       className="btn accent"
                       href={downloadSrc}
-                      download={isInvite ? "invitation.jpg" : "still-1.jpg"}
+                      download={downloadName(project, t, "jpg")}
                     >
                       {t(isInvite ? "studio.downloadInvite" : "studio.downloadN", { n: 1 })}
                     </a>
@@ -1332,7 +1333,7 @@ export default function Studio() {
               <p className="hint">{t("studio.reelKeep")}</p>
               <div className="row" style={{ marginTop: 18 }}>
                 {videoSrc && (
-                  <a className="btn" href={videoSrc} download="reel.mp4">
+                  <a className="btn" href={videoSrc} download={downloadName(project, t, "mp4")}>
                     {t("studio.downloadMp4")}
                   </a>
                 )}

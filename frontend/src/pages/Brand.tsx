@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, fetchMedia, type BrandKitRow } from "../lib/api";
 import { useLocale } from "../i18n/locale";
+import { ImageUploadError, prepareImage } from "../lib/imageUpload";
 
 const TONES = [
   { id: "warm", labelKey: "brand.toneWarm", exKey: "brand.toneWarmEx", text: "Warm and friendly. Like a regular, not an ad." },
@@ -267,35 +268,32 @@ export default function Brand() {
     }
   }
 
-  function readKitFile(file: File | undefined, send: (dataUrl: string) => Promise<void>, fallback: string) {
+  async function readKitFile(file: File | undefined, send: (dataUrl: string) => Promise<void>, fallback: string, keepAlpha = false) {
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      setError(t("brand.tooBig"));
+    setError("");
+    let image = "";
+    try {
+      image = await prepareImage(file, { keepAlpha });
+    } catch (err) {
+      setError(err instanceof ImageUploadError && err.reason === "tooBig" ? t("brand.tooBig") : t("brand.badType"));
       return;
     }
-    if (!["image/png", "image/jpeg"].includes(file.type)) {
-      setError(t("brand.badType"));
-      return;
+    try {
+      await send(image);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : fallback);
     }
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        await send(String(reader.result || ""));
-      } catch (err) {
-        setError(err instanceof Error ? te(err.message) : fallback);
-      }
-    };
-    reader.readAsDataURL(file);
   }
 
   async function onLogo(file: File | undefined) {
-    readKitFile(
+    await readKitFile(
       file,
       async (image) => {
         const { brandKit } = await api.uploadLogo(image);
         applyImages(brandKit);
       },
-      t("brand.fallbackLogo")
+      t("brand.fallbackLogo"),
+      true
     );
   }
 
@@ -438,7 +436,16 @@ export default function Brand() {
             <button className="btn ghost" type="button" onClick={onRemove}>{t("brand.removeRef")}</button>
           )}
         </div>
-        <input id={id} className="sr-only" type="file" accept="image/png,image/jpeg" onChange={(e) => onPick(e.target.files?.[0])} />
+        <input
+          id={id}
+          className="sr-only"
+          type="file"
+          accept="image/*"
+          onChange={(e) => {
+            onPick(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
       </div>
     );
   }

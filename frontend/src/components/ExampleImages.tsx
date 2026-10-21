@@ -1,24 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchMedia } from "../lib/api";
 import { useLocale } from "../i18n/locale";
+import { ImageUploadError, prepareImage } from "../lib/imageUpload";
 
 export const MAX_EXAMPLES = 3;
-const MAX_BYTES = 2 * 1024 * 1024;
 
 export type ExampleItem = { id: string; src: string };
-
-export function readImageFile(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (!/^image\/(png|jpeg)$/i.test(file.type) || file.size > MAX_BYTES) {
-      reject(new Error("bad"));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("bad"));
-    reader.readAsDataURL(file);
-  });
-}
 
 /** Thumbnails + "Add picture". The caller decides what adding and removing means. */
 export default function ExampleImages({
@@ -45,9 +32,9 @@ export default function ExampleImages({
     if (input.current) input.current.value = "";
     for (const file of list) {
       try {
-        await onAdd(await readImageFile(file));
+        await onAdd(await prepareImage(file));
       } catch (err) {
-        setError(err instanceof Error && err.message !== "bad" ? te(err.message) : t("briefImages.badFile"));
+        setError(err instanceof ImageUploadError || !(err instanceof Error) ? t("briefImages.badFile") : te(err.message));
         break;
       }
     }
@@ -86,7 +73,7 @@ export default function ExampleImages({
               ref={input}
               className="sr-only"
               type="file"
-              accept="image/png,image/jpeg"
+              accept="image/*"
               multiple
               disabled={busy}
               onChange={(e) => pick(e.target.files)}
