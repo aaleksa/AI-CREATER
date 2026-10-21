@@ -17,6 +17,7 @@ import {
   stillPicturePrompt,
   emptyShot,
   keepWordsHonest,
+  logoPositionOf,
   rewriteStillLanguagePrompt,
   rewriteStillCopyPrompt,
   readPaintedCopy,
@@ -27,12 +28,34 @@ import {
   type BrandKit,
   type CaptionCue,
   type Idea,
+  type LogoPosition,
   type PictureLanguage,
   type Shot,
   type Script,
   type Visual,
 } from "./ai.js";
-import { copySelectedStill, hasStillVersionFile, hasVideoFile, hasVoiceFile, persistStills, removeVideoFile, removeVoiceFile, renderReel, restoreStillSnapshot, snapshotStills, synthesizeSpeech, voiceDurationSec } from "./media.js";
+import {
+  cleanStillFile,
+  copySelectedStill,
+  hasCleanStill,
+  hasStillFile,
+  keepCleanCopy,
+  keepCleanStill,
+  hasStillVersionFile,
+  hasVideoFile,
+  hasVoiceFile,
+  persistStills,
+  removeVideoFile,
+  removeVoiceFile,
+  renderReel,
+  restoreStillSnapshot,
+  snapshotStills,
+  stampBrandMark,
+  stillFile,
+  stillVersionFile,
+  synthesizeSpeech,
+  voiceDurationSec,
+} from "./media.js";
 import { assertArchiveRoom, evictOverLimit } from "./archive.js";
 import { inviteFrom, parseInvite, preferBriefInvite } from "./invite.js";
 import { parseStepFeedback, recordStepRejection } from "./feedback.js";
@@ -291,20 +314,65 @@ function slimVersionPayload(step: string, payload: unknown) {
   });
 }
 
-function lastVersions(projectId: string, step: string) {
-  const rows = db
+type VersionRow = { id: string; payload_json: string; accepted: number; created_at: string; generation_id: string | null };
+
+function versionRows(projectId: string, step: string) {
+  return db
     .prepare(
-      `SELECT id, payload_json, accepted, created_at FROM project_step_versions
-       WHERE project_id = ? AND step = ? ORDER BY created_at ASC`
+      `SELECT id, payload_json, accepted, created_at, generation_id FROM project_step_versions
+       WHERE project_id = ? AND step = ? ORDER BY created_at ASC, rowid ASC`
     )
-    .all(projectId, step) as { id: string; payload_json: string; accepted: number; created_at: string }[];
-  return rows
-    .map((row) => ({
-      id: row.id,
-      accepted: Number(row.accepted) === 1,
-      createdAt: row.created_at,
-      payload: slimVersionPayload(step, parse(row.payload_json)),
-    }));
+    .all(projectId, step) as VersionRow[];
+}
+
+/**
+ * The picture as the model returned it, before any logo we stamped. Versions we make ourselves (logo on / off) have no
+ * generation, so we walk back to the nearest version the model made.
+ */
+function modelPictureFor(projectId: string, rows: VersionRow[], index: number, sceneId: number) {
+  let base = rows[0];
+  for (let i = index; i >= 0; i--) {
+    if (rows[i]?.generation_id) {
+      base = rows[i];
+      break;
+    }
+  }
+  const frame = (parse<Visual[]>(base?.payload_json || "") || []).find((item) => item.sceneId === sceneId);
+  const file =
+    frame?.clean && hasCleanStill(projectId, frame.clean)
+      ? cleanStillFile(projectId, frame.clean)
+      : base && hasStillVersionFile(projectId, sceneId, base.id)
+        ? stillVersionFile(projectId, sceneId, base.id)
+        : "";
+  return { file, frame };
+}
+
+function sameFile(a: string, b: string) {
+  if (!a || !b || !fs.existsSync(a) || !fs.existsSync(b)) return false;
+  if (fs.statSync(a).size !== fs.statSync(b).size) return false;
+  return fs.readFileSync(a).equals(fs.readFileSync(b));
+}
+
+/** True when this picture carries a logo we put on, so it can come off without AI. */
+function hasOurLogo(projectId: string, rows: VersionRow[], index: number) {
+  const frame = (parse<Visual[]>(rows[index].payload_json) || [])[0];
+  if (!frame || frame.placeholder) return false;
+  if (frame.clean) return true;
+  if (rows[index].generation_id) return false;
+  const base = modelPictureFor(projectId, rows, index, frame.sceneId);
+  const file = stillVersionFile(projectId, frame.sceneId, rows[index].id);
+  return Boolean(base.file) && fs.existsSync(file) && !sameFile(base.file, file);
+}
+
+function lastVersions(projectId: string, step: string) {
+  const rows = versionRows(projectId, step);
+  return rows.map((row, index) => ({
+    id: row.id,
+    accepted: Number(row.accepted) === 1,
+    createdAt: row.created_at,
+    payload: slimVersionPayload(step, parse(row.payload_json)),
+    ...(step === "visuals" ? { ourLogo: hasOurLogo(projectId, rows, index) } : {}),
+  }));
 }
 
 function tidyScript(script: Script | null) {
@@ -435,6 +503,198 @@ export function restoreStepVersion(
     .join(", ");
   db.prepare(`UPDATE projects SET ${fields} WHERE id = @id`).run({ ...updates, id: projectId });
   return serializeProject(getProject(projectId, userId));
+}
+
+const NO_BRAND_MARK = "Add a logo in Brand Kit first.";
+
+const LOGO_DRAWN_IN = "This logo is part of the picture and can’t be taken off. Make the picture again, or go back to an earlier version.";
+
+/** A finished picture we may change without AI: the one picked in the version list, else the current one. */
+function pictureForLogo(userId: string, projectId: string, sceneId: number, versionId = "") {
+  const picked = versionId
+    ? (db
+        .prepare("SELECT accepted FROM project_step_versions WHERE id = ? AND project_id = ? AND step = 'visuals'")
+        .get(versionId, projectId) as { accepted: number } | undefined)
+    : undefined;
+  if (versionId && !picked) throw Object.assign(new Error("That picture is gone."), { status: 404 });
+  if (picked && Number(picked.accepted) !== 1) restoreStepVersion(userId, projectId, "visuals", versionId, sceneId);
+  const project = getProject(projectId, userId);
+  if (!isImagePost(String(project.type))) {
+    throw Object.assign(new Error("Only pictures can take a logo."), { status: 400 });
+  }
+  if (project.status === "generating") {
+    throw Object.assign(new Error("Wait until the picture is ready."), { status: 409 });
+  }
+  const visuals = parse<Visual[]>(project.visuals_json) || [];
+  const frame = visuals.find((item) => item.sceneId === sceneId);
+  if (!frame || frame.placeholder || !hasStillFile(projectId, sceneId)) {
+    throw Object.assign(new Error("Make the picture first."), { status: 400 });
+  }
+  const accepted = db
+    .prepare("SELECT id FROM project_step_versions WHERE project_id = ? AND step = 'visuals' AND accepted = 1 ORDER BY created_at DESC LIMIT 1")
+    .get(projectId) as { id: string } | undefined;
+  if (!accepted) snapshotStills(projectId, saveStepVersion(projectId, "visuals", visuals, ""), visuals);
+  else if (!hasStillVersionFile(projectId, sceneId, accepted.id)) snapshotStills(projectId, accepted.id, [frame]);
+  return { visuals, frame };
+}
+
+function savePictureVersion(userId: string, projectId: string, visuals: Visual[]) {
+  const versionId = saveStepVersion(projectId, "visuals", visuals, "");
+  snapshotStills(projectId, versionId, visuals);
+  db.prepare("UPDATE projects SET visuals_json = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(visuals), projectId);
+  return serializeProject(getProject(projectId, userId));
+}
+
+/** Puts the Brand Kit logo on a picture that is already made, or moves ours to another corner. No AI, no credits; a new version. */
+export async function stampLogoOnPicture(userId: string, projectId: string, sceneId = 1, position = "", versionId = "") {
+  const { visuals, frame } = pictureForLogo(userId, projectId, sceneId, versionId);
+  const brand = brandFor(userId);
+  if (!brand) throw Object.assign(new Error(NO_BRAND_MARK), { status: 400 });
+  const corner = logoPositionOf({ ...brand, logo_position: position || brand.logo_position });
+  const still = stillFile(projectId, sceneId);
+  const before = fs.readFileSync(still);
+  // Always start from the model's picture, so logos never pile up.
+  const base = currentModelPicture(projectId, sceneId);
+  if (base.file) fs.copyFileSync(base.file, still);
+  const clean = keepCleanStill(projectId, sceneId);
+  if (!(await stampBrandMark(still, brand, corner))) {
+    fs.writeFileSync(still, before);
+    throw Object.assign(new Error(NO_BRAND_MARK), { status: 400 });
+  }
+  return savePictureVersion(
+    userId,
+    projectId,
+    visuals.map((item) => (item.sceneId === sceneId ? { ...item, clean, logoCorner: corner } : item))
+  );
+}
+
+/**
+ * For an AI edit of a picture that carries our logo: the model gets the picture without it, and we put it back after
+ * in the same corner. So the model never redraws the logo, and it can always come off for free.
+ */
+function logoToKeep(projectId: string, sceneId: number, versionId: string) {
+  const rows = versionRows(projectId, "visuals");
+  const index = versionId ? rows.findIndex((row) => row.id === versionId) : rows.findIndex((row) => Number(row.accepted) === 1);
+  if (index < 0 || !hasOurLogo(projectId, rows, index)) return null;
+  const frame = (parse<Visual[]>(rows[index].payload_json) || []).find((item) => item.sceneId === sceneId);
+  const base = modelPictureFor(projectId, rows, index, sceneId);
+  if (!base.file) return null;
+  return { file: base.file, corner: logoPositionOf({ logo_position: frame?.logoCorner } as BrandKit) };
+}
+
+async function putLogoBack(userId: string, projectId: string, visuals: Visual[], sceneId: number, corner: LogoPosition) {
+  const brand = brandFor(userId);
+  if (!brand || !hasStillFile(projectId, sceneId)) return visuals;
+  const clean = keepCleanStill(projectId, sceneId);
+  if (!(await stampBrandMark(stillFile(projectId, sceneId), brand, corner))) return visuals;
+  return visuals.map((item) => (item.sceneId === sceneId ? { ...item, clean, logoCorner: corner } : item));
+}
+
+/** Takes every logo we stamped off: back to the picture the model returned. A logo the model painted itself stays. */
+export function removeLogoFromPicture(userId: string, projectId: string, sceneId = 1, versionId = "") {
+  const { visuals, frame } = pictureForLogo(userId, projectId, sceneId, versionId);
+  const still = stillFile(projectId, sceneId);
+  const base = currentModelPicture(projectId, sceneId);
+  if (!base.file || (!frame.clean && sameFile(base.file, still))) {
+    throw Object.assign(new Error(LOGO_DRAWN_IN), { status: 400 });
+  }
+  fs.copyFileSync(base.file, still);
+  return savePictureVersion(
+    userId,
+    projectId,
+    visuals.map((item) => {
+      if (item.sceneId !== sceneId) return item;
+      const { clean: _clean, logoCorner: _corner, ...rest } = item;
+      return rest;
+    })
+  );
+}
+
+const CURRENT_PICTURE = "This is the current picture. Pick another one first.";
+
+/**
+ * Before a model picture goes, the logo versions made from it keep what they need: one equal to it takes its place,
+ * the others get their own clean copy, so "remove logo" still returns the right picture.
+ */
+function keepLogoLineage(projectId: string, rows: VersionRow[], index: number) {
+  const model = rows[index];
+  for (let i = index + 1; i < rows.length && !rows[i].generation_id; i++) {
+    const frames = parse<Visual[]>(rows[i].payload_json) || [];
+    let changed = false;
+    let promote = false;
+    const next = frames.map((frame) => {
+      if (frame.placeholder || frame.clean) return frame;
+      const base = modelPictureFor(projectId, rows, i, frame.sceneId);
+      const own = stillVersionFile(projectId, frame.sceneId, rows[i].id);
+      if (!base.file || !fs.existsSync(own)) return frame;
+      if (sameFile(base.file, own)) {
+        promote = true;
+        return frame;
+      }
+      changed = true;
+      return { ...frame, clean: keepCleanCopy(projectId, base.file) };
+    });
+    if (promote) db.prepare("UPDATE project_step_versions SET generation_id = ? WHERE id = ?").run(model.generation_id, rows[i].id);
+    if (changed) {
+      const json = JSON.stringify(next);
+      db.prepare("UPDATE project_step_versions SET payload_json = ? WHERE id = ?").run(json, rows[i].id);
+      if (Number(rows[i].accepted) === 1) db.prepare("UPDATE projects SET visuals_json = ? WHERE id = ?").run(json, projectId);
+    }
+  }
+}
+
+function removeVersionFiles(projectId: string, row: VersionRow) {
+  for (const frame of parse<Visual[]>(row.payload_json) || []) {
+    fs.rmSync(stillVersionFile(projectId, frame.sceneId, row.id), { force: true });
+    if (!frame.clean) continue;
+    const used = db
+      .prepare(
+        "SELECT 1 FROM project_step_versions WHERE project_id = ? AND id != ? AND payload_json LIKE ? UNION SELECT 1 FROM projects WHERE id = ? AND visuals_json LIKE ?"
+      )
+      .get(projectId, row.id, `%${frame.clean}%`, projectId, `%${frame.clean}%`);
+    if (!used) fs.rmSync(cleanStillFile(projectId, frame.clean), { force: true });
+  }
+}
+
+function deleteOnePictureVersion(projectId: string, versionId: string) {
+  const rows = versionRows(projectId, "visuals");
+  const index = rows.findIndex((row) => row.id === versionId);
+  if (index < 0) throw Object.assign(new Error("That picture is gone."), { status: 404 });
+  if (Number(rows[index].accepted) === 1) throw Object.assign(new Error(CURRENT_PICTURE), { status: 400 });
+  if (rows[index].generation_id) keepLogoLineage(projectId, rows, index);
+  db.prepare("DELETE FROM project_step_versions WHERE id = ?").run(versionId);
+  removeVersionFiles(projectId, rows[index]);
+}
+
+function pictureProject(userId: string, projectId: string) {
+  const project = getProject(projectId, userId);
+  if (!isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  if (project.status === "generating") throw Object.assign(new Error("Wait until the picture is ready."), { status: 409 });
+  return project;
+}
+
+/** Drops one picture from the version list. The current picture stays. */
+export function deletePictureVersion(userId: string, projectId: string, versionId: string) {
+  pictureProject(userId, projectId);
+  deleteOnePictureVersion(projectId, versionId);
+  db.prepare("UPDATE projects SET updated_at = datetime('now') WHERE id = ?").run(projectId);
+  return serializeProject(getProject(projectId, userId));
+}
+
+/** Keeps only the current picture in the version list. */
+export function keepOnlyCurrentPicture(userId: string, projectId: string) {
+  pictureProject(userId, projectId);
+  for (const row of versionRows(projectId, "visuals")) {
+    if (Number(row.accepted) !== 1) deleteOnePictureVersion(projectId, row.id);
+  }
+  db.prepare("UPDATE projects SET updated_at = datetime('now') WHERE id = ?").run(projectId);
+  return serializeProject(getProject(projectId, userId));
+}
+
+function currentModelPicture(projectId: string, sceneId: number) {
+  const rows = versionRows(projectId, "visuals");
+  const index = rows.findIndex((row) => Number(row.accepted) === 1);
+  return modelPictureFor(projectId, rows, index < 0 ? rows.length - 1 : index, sceneId);
 }
 
 function pickIdea(data: Idea & { invite?: unknown }): Idea {
@@ -571,6 +831,7 @@ export async function runStep(
     requestedLang || parsePictureLanguage(project.picture_language);
   const regenerate = Boolean(opts.regenerate) || keepStill;
   let keepStillPath = "";
+  let keepLogo: { file: string; corner: LogoPosition } | null = null;
 
   const alreadyDone =
     (step === "idea" && Boolean(project.idea_json)) ||
@@ -680,6 +941,8 @@ export async function runStep(
     if (!keepStillPath) {
       throw Object.assign(new Error("Make the picture first."), { status: 400 });
     }
+    keepLogo = logoToKeep(projectId, keepScene, keepStillVersionId);
+    if (keepLogo) fs.copyFileSync(keepLogo.file, keepStillPath);
   }
   if ((step === "visuals" || step === "voice" || step === "captions" || step === "render") && !script && !isImagePost(type)) {
     throw Object.assign(new Error("Generate the script first."), { status: 400 });
@@ -828,7 +1091,7 @@ export async function runStep(
         const scene = imageScript.scenes.find((item) => item.id === sceneId)!;
         const current = parse<Visual[]>(project.visuals_json) || [];
         const one = await generateOneVisual(scene, brand, kind, frameOpts);
-        const next = await persistStills(
+        let next = await persistStills(
           projectId,
           current.some((item) => item.sceneId === sceneId)
             ? current.map((item) => (item.sceneId === sceneId ? one.data : item))
@@ -838,6 +1101,7 @@ export async function runStep(
           stampContact,
           frameOpts.format
         );
+        if (keepLogo && !one.data.placeholder) next = await putLogoBack(userId, projectId, next, sceneId, keepLogo.corner);
         updates.visuals_json = JSON.stringify(next);
         updates.current_step = "visuals";
         provider = one.provider;

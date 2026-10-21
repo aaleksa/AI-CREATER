@@ -89,7 +89,15 @@ const empty = {
   ref_people_url: "",
   ref_product_url: "",
   font_url: "",
+  logo_position: "bottom-right",
 };
+
+const LOGO_POSITIONS = [
+  { id: "top-left", labelKey: "brand.cornerTopLeft" },
+  { id: "top-right", labelKey: "brand.cornerTopRight" },
+  { id: "bottom-left", labelKey: "brand.cornerBottomLeft" },
+  { id: "bottom-right", labelKey: "brand.cornerBottomRight" },
+];
 
 function applyKit(kit: BrandKitRow) {
   const hex = (value: string | undefined, fallback: string) =>
@@ -111,6 +119,7 @@ function applyKit(kit: BrandKitRow) {
     ref_people_url: kit.ref_people_url || "",
     ref_product_url: kit.ref_product_url || "",
     font_url: kit.font_url || "",
+    logo_position: LOGO_POSITIONS.some((item) => item.id === kit.logo_position) ? kit.logo_position : "bottom-right",
   };
 }
 
@@ -637,6 +646,28 @@ export default function Brand() {
                 <span className="hint">{logoSrc ? t("brand.logoSwitchHint") : canStamp ? t("brand.nameSwitchHint") : t("brand.needLogo")}</span>
               </span>
             </label>
+            {logoOnPhotos && canStamp && (
+              <div className="field" style={{ marginTop: 4 }}>
+                <label>{t("brand.corner")}</label>
+                <div className="pills" role="group" aria-label={t("brand.corner")}>
+                  {LOGO_POSITIONS.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      aria-pressed={form.logo_position === item.id}
+                      className={`pill ${form.logo_position === item.id ? "on" : ""}`}
+                      onClick={() => set("logo_position", item.id)}
+                    >
+                      {t(item.labelKey)}
+                    </button>
+                  ))}
+                </div>
+                <p className="hint pill-hint">{t("brand.cornerHint")}</p>
+                {contactOnPhotos && stampText && form.logo_position === "bottom-left" && (
+                  <p className="hint pill-hint">{t("brand.cornerContactMoves")}</p>
+                )}
+              </div>
+            )}
             <label className={`switch-row${stampText ? "" : " off"}`}>
               <input type="checkbox" role="switch" checked={contactOnPhotos && Boolean(stampText)} disabled={!stampText} onChange={(e) => setContactOnPhotos(e.target.checked)} />
               <span>
@@ -695,13 +726,17 @@ export default function Brand() {
             <p className="mock-line" style={{ fontFamily: typeFamily }}>
               “{t((tone || TONES[0]).exKey)}”
             </p>
-            {logoOnPhotos && logoSrc && <img src={logoSrc} alt="" className="mock-logo" />}
+            {logoOnPhotos && logoSrc && <img src={logoSrc} alt="" className={`mock-logo at-${form.logo_position}`} />}
             {logoOnPhotos && !logoSrc && canStamp && (
-              <span className="mock-wordmark" style={{ fontFamily: typeFamily, color: form.primary_color }}>
+              <span className={`mock-wordmark at-${form.logo_position}`} style={{ fontFamily: typeFamily, color: form.primary_color }}>
                 {form.business_name.trim()}
               </span>
             )}
-            {contactOnPhotos && stampText && <span className="mock-contact">{stampText}</span>}
+            {contactOnPhotos && stampText && (
+              <span className={`mock-contact at-${logoOnPhotos && canStamp && form.logo_position === "bottom-left" ? "bottom-right" : "bottom-left"}`}>
+                {stampText}
+              </span>
+            )}
           </div>
           <p className="hint" style={{ marginTop: 8 }}>{t("brand.previewNote")}</p>
 

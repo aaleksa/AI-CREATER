@@ -111,7 +111,7 @@ export type Project = {
   currentStep: string;
   idea: Idea | null;
   script: { durationSec: number; cta: string; scenes: ScriptScene[] } | null;
-  visuals: { sceneId: number; imageUrl: string; prompt: string; placeholder?: boolean }[] | null;
+  visuals: { sceneId: number; imageUrl: string; prompt: string; placeholder?: boolean; clean?: string }[] | null;
   voice: { voicePreset?: string; voice: string; script: string; notes: string } | null;
   captions: { cues: { start: number; end: number; text: string }[] } | null;
   audioUrl: string | null;
@@ -128,7 +128,9 @@ export type Project = {
   versions: {
     idea: StepVersion<Idea>[];
     script: StepVersion<{ durationSec: number; cta: string; scenes: ScriptScene[] }>[];
-    visuals?: StepVersion<{ sceneId: number; imageUrl: string; prompt: string; placeholder?: boolean }[]>[];
+    visuals?: (StepVersion<{ sceneId: number; imageUrl: string; prompt: string; placeholder?: boolean; clean?: string }[]> & {
+      ourLogo?: boolean;
+    })[];
   };
   previewUrl: string | null;
   previewExpiresAt: string | null;
@@ -222,6 +224,20 @@ export const api = {
       }),
     });
   },
+  stampLogo: (id: string, sceneId: number, position: string, versionId?: string) =>
+    request<{ project: Project }>(`/projects/${id}/logo`, {
+      method: "POST",
+      body: JSON.stringify({ sceneId, position, versionId }),
+    }),
+  removeLogo: (id: string, sceneId: number, versionId?: string) =>
+    request<{ project: Project }>(
+      `/projects/${id}/logo?sceneId=${sceneId}${versionId ? `&versionId=${encodeURIComponent(versionId)}` : ""}`,
+      { method: "DELETE" }
+    ),
+  deletePictureVersion: (id: string, versionId: string) =>
+    request<{ project: Project }>(`/projects/${id}/versions/visuals/${versionId}`, { method: "DELETE" }),
+  keepCurrentPicture: (id: string) =>
+    request<{ project: Project }>(`/projects/${id}/versions/visuals/keep-current`, { method: "POST" }),
   updateShot: (id: string, body: { confirm?: boolean; shot?: Shot }) =>
     request<{ project: Project }>(`/projects/${id}/shot`, { method: "POST", body: JSON.stringify(body) }),
   saveFeedback: (id: string, publishable: string, reasons: string[]) =>

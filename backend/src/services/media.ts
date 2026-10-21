@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
@@ -6,7 +7,17 @@ import { fileURLToPath } from "node:url";
 import OpenAI from "openai";
 import { Resvg } from "@resvg/resvg-js";
 import { config } from "../config.js";
-import { contactStampText, wantsContactStamp, wantsLogoStamp, type BrandKit, type CaptionCue, type Script, type Visual } from "./ai.js";
+import {
+  contactStampText,
+  logoPositionOf,
+  wantsContactStamp,
+  wantsLogoStamp,
+  type BrandKit,
+  type CaptionCue,
+  type LogoPosition,
+  type Script,
+  type Visual,
+} from "./ai.js";
 import { brandLogoPath } from "./brandAssets.js";
 import { writeWordmark } from "./brandFont.js";
 import { cropToFormat, type ImageFormat } from "./imageFormats.js";
@@ -116,7 +127,14 @@ export function removeStillFiles(projectId: string) {
   }
 }
 
-function overlayLogoFile(stillPath: string, logoPath: string, height = 120) {
+const CORNER: Record<LogoPosition, string> = {
+  "top-left": "36:36",
+  "top-right": "W-w-36:36",
+  "bottom-left": "36:H-h-36",
+  "bottom-right": "W-w-36:H-h-36",
+};
+
+function overlayLogoFile(stillPath: string, logoPath: string, height = 120, position: LogoPosition = "bottom-right") {
   if (!ffmpegPath || !fs.existsSync(stillPath) || !fs.existsSync(logoPath)) return Promise.resolve(false);
   const tmp = `${stillPath}.logo.jpg`;
   return new Promise<boolean>((resolve) => {
@@ -132,7 +150,7 @@ function overlayLogoFile(stillPath: string, logoPath: string, height = 120) {
         "-i",
         logoPath,
         "-filter_complex",
-        `[1:v]scale=-1:${height}[lg];[0:v][lg]overlay=W-w-36:H-h-36`,
+        `[1:v]scale=-1:${height}[lg];[0:v][lg]overlay=${CORNER[position]}`,
         tmp,
       ],
       { stdio: ["ignore", "ignore", "pipe"] }
@@ -166,7 +184,7 @@ function xmlEscape(text: string) {
 }
 
 /** One small line — "@name · site" — in a dark pill, bottom-left. We draw it, the model never does. */
-async function overlayContactFile(stillPath: string, text: string) {
+async function overlayContactFile(stillPath: string, text: string, position: LogoPosition = "bottom-left") {
   if (!text || !ffmpegPath || !fs.existsSync(stillPath)) return false;
   const size = 30;
   const width = Math.round(text.length * size * 0.46 + 56);
@@ -194,7 +212,7 @@ async function overlayContactFile(stillPath: string, text: string) {
       "-i",
       pill,
       "-filter_complex",
-      "[0:v][1:v]overlay=36:H-h-36",
+      `[0:v][1:v]overlay=${CORNER[position]}`,
       tmp,
     ]);
     if (fs.existsSync(tmp) && fs.statSync(tmp).size > 0) {
@@ -208,6 +226,21 @@ async function overlayContactFile(stillPath: string, text: string) {
     fs.rmSync(pill, { force: true });
     fs.rmSync(tmp, { force: true });
   }
+}
+
+/** Logo file, or the business name in the owner's font when there is no logo. Empty when the kit has neither. */
+function brandMarkFile(brand: BrandKit) {
+  if (!brand.user_id) return { file: "", height: 0 };
+  const logo = brandLogoPath(brand.user_id);
+  if (logo) return { file: logo, height: 120 };
+  const word = writeWordmark(brand.user_id, brand.business_name, brand.primary_color || "#1a1612", brand.secondary_color || "#f4efe8", brand.font);
+  return { file: word, height: word ? 76 : 0 };
+}
+
+export async function stampBrandMark(stillPath: string, brand: BrandKit, position: LogoPosition) {
+  const mark = brandMarkFile(brand);
+  if (!mark.file) return false;
+  return overlayLogoFile(stillPath, mark.file, mark.height, position);
 }
 
 export async function persistStills(
@@ -259,27 +292,50 @@ export async function persistStills(
       if (fresh.has(visual.sceneId)) await cropToFormat(stillFile(projectId, visual.sceneId), format);
     }
   }
-  const stamp = !skipLogoStamp && brand?.user_id && wantsLogoStamp(brand);
-  const logoFile = stamp ? brandLogoPath(brand.user_id!) : "";
-  const logo =
-    logoFile ||
-    (stamp
-      ? writeWordmark(brand.user_id!, brand.business_name, brand.primary_color || "#1a1612", brand.secondary_color || "#f4efe8", brand.font)
-      : "");
-  if (logo) {
-    for (const visual of next) {
-      if (visual.placeholder || !hasStillFile(projectId, visual.sceneId)) continue;
-      await overlayLogoFile(stillFile(projectId, visual.sceneId), logo, logoFile ? 120 : 76);
-    }
-  }
+  const mark = !skipLogoStamp && brand && wantsLogoStamp(brand) ? brandMarkFile(brand) : { file: "", height: 0 };
+  const logo = mark.file;
+  // Contact line before the logo, so the clean copy kept for "remove logo" still has it.
   if (stampContact && wantsContactStamp(brand)) {
     const text = contactStampText(brand);
+    // The contact line lives bottom-left; it moves right only when the logo took that corner.
+    const contactCorner = logo && logoPositionOf(brand) === "bottom-left" ? "bottom-right" : "bottom-left";
     for (const visual of next) {
       if (visual.placeholder || !hasStillFile(projectId, visual.sceneId)) continue;
-      await overlayContactFile(stillFile(projectId, visual.sceneId), text);
+      await overlayContactFile(stillFile(projectId, visual.sceneId), text, contactCorner);
+    }
+  }
+  if (logo) {
+    for (let i = 0; i < next.length; i++) {
+      const visual = next[i];
+      if (visual.placeholder || visual.clean || !hasStillFile(projectId, visual.sceneId)) continue;
+      const clean = keepCleanStill(projectId, visual.sceneId);
+      const corner = logoPositionOf(brand);
+      if (await overlayLogoFile(stillFile(projectId, visual.sceneId), logo, mark.height, corner)) {
+        next[i] = { ...visual, clean, logoCorner: corner };
+      }
     }
   }
   return next;
+}
+
+export function cleanStillFile(projectId: string, key: string) {
+  return path.join(projectMediaDir(projectId), `clean-${key.replace(/[^\w-]/g, "")}.jpg`);
+}
+
+export function hasCleanStill(projectId: string, key = "") {
+  const file = key ? cleanStillFile(projectId, key) : "";
+  return Boolean(file && fs.existsSync(file) && fs.statSync(file).size > 0);
+}
+
+/** Copy of the picture as it is now, before a logo goes on. Returns its key. */
+export function keepCleanStill(projectId: string, sceneId: number) {
+  return keepCleanCopy(projectId, stillFile(projectId, sceneId));
+}
+
+export function keepCleanCopy(projectId: string, source: string) {
+  const key = randomUUID();
+  fs.copyFileSync(source, cleanStillFile(projectId, key));
+  return key;
 }
 
 export function hasVoiceFile(projectId: string) {

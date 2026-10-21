@@ -84,11 +84,11 @@ export function brandFontPath(userId: string) {
 }
 
 export function brandFontSamplePath(userId: string) {
-  return path.join(dataDir, "media", "brand", userId, "font-sample.png");
+  return path.join(brandKitDir(userId), "font-sample.png");
 }
 
 export function brandWordmarkPath(userId: string) {
-  return path.join(dataDir, "media", "brand", userId, "wordmark.png");
+  return path.join(brandKitDir(userId), "wordmark.png");
 }
 
 export function writeBrandFont(userId: string, buffer: Buffer, ext: "ttf" | "otf") {

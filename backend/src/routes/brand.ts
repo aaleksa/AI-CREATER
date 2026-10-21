@@ -20,10 +20,16 @@ import {
   writeBrandRef,
 } from "../services/brandAssets.js";
 import { fontFamilyName, writeFontSample } from "../services/brandFont.js";
+import { LOGO_POSITIONS } from "../services/ai.js";
 import { maybeRefreshLearnedSummary, readyCount } from "../services/learning.js";
 
 function flag(value: unknown) {
   return value === true || value === 1 || value === "1";
+}
+
+function logoPosition(value: unknown) {
+  const text = String(value || "");
+  return (LOGO_POSITIONS as readonly string[]).includes(text) ? text : "bottom-right";
 }
 
 function hex(value: unknown, fallback: string) {
@@ -266,6 +272,7 @@ brandRouter.put("/", (req, res) => {
     vertical,
     vertical_note: vertical === "other" ? String(body.vertical_note ?? "").trim().slice(0, 80) : "",
     logo_on_photos: flag(body.logo_on_photos) ? 1 : 0,
+    logo_position: logoPosition(body.logo_position),
     contact_on_photos: flag(body.contact_on_photos) ? 1 : 0,
     address: String(body.address ?? "").replace(/\s+/g, " ").trim().slice(0, 160),
   };
@@ -276,13 +283,13 @@ brandRouter.put("/", (req, res) => {
         business_name=@business_name, logo_url=@logo_url, primary_color=@primary_color,
         secondary_color=@secondary_color, font=@font, tone_of_voice=@tone_of_voice, tone_note=@tone_note,
         website=@website, instagram=@instagram, vertical=@vertical, vertical_note=@vertical_note,
-        logo_on_photos=@logo_on_photos, contact_on_photos=@contact_on_photos, address=@address, updated_at=datetime('now')
+        logo_on_photos=@logo_on_photos, logo_position=@logo_position, contact_on_photos=@contact_on_photos, address=@address, updated_at=datetime('now')
        WHERE user_id=@user_id`
     ).run({ ...fields, user_id: req.user!.id });
   } else {
     db.prepare(
-      `INSERT INTO brand_kits (id, user_id, business_name, logo_url, primary_color, secondary_color, font, tone_of_voice, tone_note, website, instagram, vertical, vertical_note, logo_on_photos, contact_on_photos, address)
-       VALUES (@id, @user_id, @business_name, @logo_url, @primary_color, @secondary_color, @font, @tone_of_voice, @tone_note, @website, @instagram, @vertical, @vertical_note, @logo_on_photos, @contact_on_photos, @address)`
+      `INSERT INTO brand_kits (id, user_id, business_name, logo_url, primary_color, secondary_color, font, tone_of_voice, tone_note, website, instagram, vertical, vertical_note, logo_on_photos, logo_position, contact_on_photos, address)
+       VALUES (@id, @user_id, @business_name, @logo_url, @primary_color, @secondary_color, @font, @tone_of_voice, @tone_note, @website, @instagram, @vertical, @vertical_note, @logo_on_photos, @logo_position, @contact_on_photos, @address)`
     ).run({ id: uuid(), user_id: req.user!.id, ...fields });
   }
   writeFontSample(req.user!.id, fields.business_name, fields.font);

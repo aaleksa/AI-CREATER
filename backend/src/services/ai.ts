@@ -36,9 +36,18 @@ export type BrandKit = {
   ref_product_url?: string;
   font_url?: string;
   logo_on_photos?: boolean | number | string;
+  logo_position?: string;
   contact_on_photos?: boolean | number | string;
   address?: string;
 };
+
+export const LOGO_POSITIONS = ["top-left", "top-right", "bottom-left", "bottom-right"] as const;
+export type LogoPosition = (typeof LOGO_POSITIONS)[number];
+
+export function logoPositionOf(brand?: BrandKit | null): LogoPosition {
+  const value = String(brand?.logo_position || "");
+  return (LOGO_POSITIONS as readonly string[]).includes(value) ? (value as LogoPosition) : "bottom-right";
+}
 
 export function wantsLogoStamp(brand?: BrandKit | null) {
   return brand?.logo_on_photos === true || brand?.logo_on_photos === 1 || brand?.logo_on_photos === "1";
@@ -171,6 +180,10 @@ export type Visual = {
   imageUrl: string;
   prompt: string;
   placeholder?: boolean;
+  /** Set when we stamped the logo: key of the same picture without it, so the logo can be moved or taken off. */
+  clean?: string;
+  /** Corner our logo sits in, so an AI edit of the picture can put it back in the same place. */
+  logoCorner?: LogoPosition;
 };
 
 export type Voiceover = {
@@ -375,14 +388,14 @@ function brandContext(brand?: BrandKit | null) {
     brand.font && `Type feel (voice and designed posts only): ${brand.font}.`,
     brand.logo_url &&
       (wantsLogoStamp(brand)
-        ? "They uploaded their real logo. We will stamp that file on photos after generation. Do not paint a logo."
+        ? `They uploaded their real logo. We will stamp that file in the ${logoPositionOf(brand).replace("-", " ")} corner after generation. Do not paint a logo, and keep that corner free of words.`
         : "They uploaded their real logo so we know the mark. Do not paint it on photographs."),
     !brand.logo_url &&
       brand.user_id &&
       hasTitleFont(brand.user_id, brand.font) &&
       wantsLogoStamp(brand) &&
       brand.business_name &&
-      "We will stamp their business name in their own typeface on photos after generation. Do not paint the business name or a logo.",
+      `We will stamp their business name in their own typeface in the ${logoPositionOf(brand).replace("-", " ")} corner after generation. Do not paint the business name or a logo, and keep that corner free of words.`,
     brand.ref_place_url && `They uploaded a photo of their real place. Use that room only when the story is set in their own place; otherwise ignore it.`,
     brand.ref_people_url && `They uploaded a photo of a real person who works there. Prefer that person only when someone from the business belongs in the scene.`,
     brand.ref_product_url && `They uploaded a photo of their real product. Use that item only when the story needs it.`,

@@ -30,6 +30,12 @@ export const ERROR_UK: Record<string, string> = {
   "Same-picture language is only for invitations, information and offers.":
     "Інша мова на тій самій картинці — лише для запрошень, інформації та оферів.",
   "Make the picture first.": "Спочатку зробіть картинку.",
+  "Add a logo in Brand Kit first.": "Спочатку додайте логотип у Brand Kit.",
+  "This is the current picture. Pick another one first.": "Це вибрана картинка. Спершу виберіть іншу.",
+  "This logo is part of the picture and can’t be taken off. Make the picture again, or go back to an earlier version.":
+    "Цей логотип — частина самої картинки, його не прибрати. Зробіть картинку ще раз або поверніть попередню версію.",
+  "Only pictures can take a logo.": "Логотип можна поставити лише на картинку.",
+  "Wait until the picture is ready.": "Зачекайте, поки картинка буде готова.",
   "We couldn’t rewrite the words on this picture. Try again.":
     "Не вдалося переписати слова на цій картинці. Спробуйте ще раз.",
   "Project not found.": "Проєкт не знайдено.",

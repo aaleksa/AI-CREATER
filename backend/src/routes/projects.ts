@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_INVITE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, restoreStepVersion, runStep, saveFeedback, serializeProject, updateInvite, updateShot } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, stampLogoOnPicture, updateInvite, updateShot } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
 import { hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
 import { archiveState } from "../services/archive.js";
@@ -295,6 +295,52 @@ projectsRouter.post("/:id/versions/:step/:versionId/restore", (req, res) => {
   try {
     const project = restoreStepVersion(req.user!.id, String(req.params.id), step, String(req.params.versionId), sceneId);
     res.json({ project });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.post("/:id/logo", rateLimit(20, 60_000), async (req, res) => {
+  const sceneId = Number(req.body?.sceneId) || 1;
+  try {
+    const project = await stampLogoOnPicture(
+      req.user!.id,
+      String(req.params.id),
+      sceneId,
+      String(req.body?.position || ""),
+      String(req.body?.versionId || "").slice(0, 80)
+    );
+    res.json({ project });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.delete("/:id/logo", rateLimit(20, 60_000), (req, res) => {
+  const sceneId = Number(req.body?.sceneId ?? req.query.sceneId) || 1;
+  try {
+    const project = removeLogoFromPicture(req.user!.id, String(req.params.id), sceneId, String(req.query.versionId || "").slice(0, 80));
+    res.json({ project });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.delete("/:id/versions/visuals/:versionId", rateLimit(30, 60_000), (req, res) => {
+  try {
+    res.json({ project: deletePictureVersion(req.user!.id, String(req.params.id), String(req.params.versionId)) });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.post("/:id/versions/visuals/keep-current", rateLimit(10, 60_000), (req, res) => {
+  try {
+    res.json({ project: keepOnlyCurrentPicture(req.user!.id, String(req.params.id)) });
   } catch (error) {
     const { status, body } = publicError(error, `${req.method} ${req.path}`);
     res.status(status).json(body);

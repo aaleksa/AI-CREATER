@@ -560,6 +560,8 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
   cursor: pointer;
 }
 .compare-card.on { border-color: var(--accent-2); }
+.compare-item { display: flex; flex-direction: column; gap: 6px; }
+.compare-delete { align-self: flex-start; padding: 4px 10px; font-size: 13px; }
 .compare-still {
   display: block;
   width: 100%;
@@ -946,6 +948,10 @@ details.learned > summary { font-family: var(--serif); font-size: 20px; }
   font: 600 12px/1 Arial, sans-serif; color: #fff; background: rgba(20, 16, 12, .72);
   padding: 8px 12px; border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.post-mock .at-top-left { top: 6%; bottom: auto; left: 6%; right: auto; }
+.post-mock .at-top-right { top: 6%; bottom: auto; right: 6%; left: auto; }
+.post-mock .at-bottom-left { bottom: 6%; top: auto; left: 6%; right: auto; }
+.post-mock .at-bottom-right { bottom: 6%; top: auto; right: 6%; left: auto; }
 .checklist { margin-top: 18px; }
 .checklist-title { margin: 0 0 6px; font-weight: 600; }
 .checklist ul { list-style: none; margin: 0; padding: 0; }

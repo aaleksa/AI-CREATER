@@ -108,11 +108,18 @@ function doneThrough(project: Project, step: string) {
   return Boolean(map[step]);
 }
 
+/** Sent to the picture model as an edit instruction, never shown to the owner. */
+const REMOVE_LOGO_NOTE =
+  "Remove the logo and any business-name mark or watermark from this picture. Fill that spot with the same background so nothing looks erased. Keep every other word, the photo and the layout exactly as they are.";
+
 function PictureCompare({
   versions,
   srcs,
   liveSrc,
   onPreview,
+  onDelete,
+  onKeepCurrent,
+  busy,
   previewId,
   poster,
   ratio,
@@ -122,6 +129,9 @@ function PictureCompare({
   srcs: Record<string, string>;
   liveSrc?: string;
   onPreview: (versionId: string) => void;
+  onDelete: (versionId: string) => void;
+  onKeepCurrent: () => void;
+  busy: boolean;
   previewId: string | null;
   poster?: boolean;
   ratio?: string;
@@ -131,27 +141,44 @@ function PictureCompare({
   return (
     <div style={{ marginTop: 16 }}>
       <p className="hint">{t("studio.compareLast")}</p>
+      {versions.length > 2 && (
+        <button type="button" className="btn ghost compare-delete" disabled={busy} onClick={onKeepCurrent}>
+          {t("studio.keepCurrentOnly")}
+        </button>
+      )}
       <div className="compare-grid">
         {versions.map((version, index) => {
           const src = srcs[version.id] || (version.accepted ? liveSrc : "");
           const showing = previewId === version.id || (!previewId && version.accepted);
-          const label = version.accepted ? t("studio.current") : t("studio.takeN", { n: index + 1 });
+          const label = t("studio.takeN", { n: index + 1 });
           return (
-            <button
-              key={version.id}
-              type="button"
-              className={`compare-card pick${showing ? " on" : ""}`}
-              onClick={() => onPreview(version.id)}
-              aria-pressed={showing}
-              aria-label={showing ? `${label}. ${t("studio.selectedTake")}` : label}
-            >
-              <p className="hint">{showing ? `${t("studio.selectedTake")} · ${label}` : label}</p>
-              {src ? (
-                <img className={`compare-still${poster ? " poster" : ""}`} style={ratio ? { aspectRatio: ratio, objectFit: "contain" } : undefined} src={src} alt="" />
-              ) : (
-                <p className="hint">{t("studio.gone")}</p>
+            <div key={version.id} className="compare-item">
+              <button
+                type="button"
+                className={`compare-card pick${showing ? " on" : ""}`}
+                onClick={() => onPreview(version.id)}
+                aria-pressed={showing}
+                aria-label={showing ? `${label}. ${t("studio.selectedTake")}` : label}
+              >
+                <p className="hint">{showing ? `${t("studio.selectedTake")} · ${label}` : label}</p>
+                {src ? (
+                  <img className={`compare-still${poster ? " poster" : ""}`} style={ratio ? { aspectRatio: ratio, objectFit: "contain" } : undefined} src={src} alt="" />
+                ) : (
+                  <p className="hint">{t("studio.gone")}</p>
+                )}
+              </button>
+              {!showing && (
+                <button
+                  type="button"
+                  className="btn ghost compare-delete"
+                  disabled={busy}
+                  onClick={() => onDelete(version.id)}
+                  aria-label={`${t("studio.deleteTake")} · ${label}`}
+                >
+                  {t("studio.deleteTake")}
+                </button>
               )}
-            </button>
+            </div>
           );
         })}
       </div>
@@ -230,6 +257,7 @@ export default function Studio() {
   const [shareCopied, setShareCopied] = useState(false);
   const [archive, setArchive] = useState<ArchiveState | null>(null);
   const [kit, setKit] = useState<BrandKitRow | null>(null);
+  const [pickedCorner, setPickedCorner] = useState("");
   const [inviteDraft, setInviteDraft] = useState<InviteCard>(EMPTY_INVITE);
   const [inviteSaved, setInviteSaved] = useState(false);
   const [shotEditOpen, setShotEditOpen] = useState(false);
@@ -398,6 +426,12 @@ export default function Studio() {
   const makingPicture = Boolean(busy === "visuals" || (typeof busy === "string" && busy.startsWith("visual-")));
   const frameIsPlaceholder = Boolean(project?.visuals?.[scene]?.placeholder);
   const placeholderCount = project?.visuals?.filter((v) => v.placeholder).length ?? 0;
+  const logoCorner = pickedCorner || kit?.logo_position || "bottom-right";
+  const shownVersion = project?.versions?.visuals?.find((version) => version.id === (previewVersionId || acceptedVersionId));
+  const frameHasOurLogo = shownVersion ? Boolean(shownVersion.ourLogo) : Boolean(project?.visuals?.[scene]?.clean);
+  const hasBrandMark = Boolean(
+    kit && (kit.logo_url || ((kit.font_url || ["Nunito", "Montserrat"].includes(kit.font)) && String(kit.business_name || "").trim()))
+  );
   const caption = readableLine(
     project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title || ""
   );
@@ -569,6 +603,90 @@ export default function Studio() {
       withReason && regenReason ? { reason: regenReason, note: regenNote } : undefined,
       Boolean(archive?.atLimit && pendingRegen.step === "render" && project && !project.hasVideo)
     );
+  }
+
+  async function changeLogo(remove: boolean) {
+    if (!id || !project) return;
+    const sceneId = project.visuals?.[scene]?.sceneId ?? 1;
+    setBusy(remove ? "logo-off" : "logo");
+    setError("");
+    try {
+      const picked = previewVersionId || undefined;
+      const { project: nextProject } = remove
+        ? await api.removeLogo(id, sceneId, picked)
+        : await api.stampLogo(id, sceneId, logoCorner, picked);
+      setPreviewVersionId(null);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t(remove ? "studio.logoRemoveFail" : "studio.logoFail"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function tidyTakes(run: () => Promise<{ project: Project }>, confirmText: string) {
+    if (!id || !window.confirm(confirmText)) return;
+    setBusy("takes");
+    setError("");
+    try {
+      const { project: nextProject } = await run();
+      setPreviewVersionId(null);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failDeleteTake"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Clicking a take makes it the picture: free, no AI, and the list shows it as selected. */
+  async function pickTake(versionId: string) {
+    if (!id || !project || busy) return;
+    const version = project.versions?.visuals?.find((item) => item.id === versionId);
+    if (!version || version.accepted) {
+      setPreviewVersionId(null);
+      return;
+    }
+    setPreviewVersionId(versionId);
+    setBusy("pick");
+    setError("");
+    try {
+      const { project: nextProject } = await api.restoreVersion(id, "visuals", versionId);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failRestore"));
+    } finally {
+      setPreviewVersionId(null);
+      setBusy(null);
+    }
+  }
+
+  function deleteTake(versionId: string) {
+    if (!id) return;
+    void tidyTakes(() => api.deletePictureVersion(id, versionId), t("studio.deleteTakeConfirm"));
+  }
+
+  function keepCurrentOnly() {
+    if (!id || !project) return;
+    const others = (project.versions?.visuals || []).filter((version) => !version.accepted).length;
+    void tidyTakes(() => api.keepCurrentPicture(id), t("studio.keepCurrentConfirm", { n: others }));
+  }
+
+  /** Our stamped logo comes off for free; a logo the AI painted needs an AI edit of the same picture. */
+  async function removeAnyLogo() {
+    if (!id || !project) return;
+    if (frameHasOurLogo) {
+      await changeLogo(true);
+      return;
+    }
+    const sceneId = project.visuals?.[scene]?.sceneId ?? 1;
+    const price = extraPrice("visuals", sceneId);
+    if (!window.confirm(t("studio.logoRemoveAiConfirm", { credits: price.credits }))) return;
+    await execute("visuals", true, sceneId, undefined, false, {
+      keepStill: true,
+      copyEdit: REMOVE_LOGO_NOTE,
+      keepStillVersionId: workingVersionId,
+    });
   }
 
   async function restore(step: "idea" | "script" | "visuals", versionId: string, sceneId?: number) {
@@ -1103,6 +1221,61 @@ export default function Studio() {
                     )}
                   </div>
                 )}
+                {isImage && (
+                  <div style={{ marginTop: 16 }}>
+                    <p className="hint">{t(frameHasOurLogo ? "studio.logoOnIt" : "studio.logoAsk")}</p>
+                    {hasBrandMark && (
+                        <div className="pills" role="group" aria-label={t("brand.corner")}>
+                          {(["top-left", "top-right", "bottom-left", "bottom-right"] as const).map((corner) => (
+                            <button
+                              key={corner}
+                              type="button"
+                              aria-pressed={logoCorner === corner}
+                              className={`pill ${logoCorner === corner ? "on" : ""}`}
+                              onClick={() => setPickedCorner(corner)}
+                            >
+                              {t(
+                                corner === "top-left"
+                                  ? "brand.cornerTopLeft"
+                                  : corner === "top-right"
+                                    ? "brand.cornerTopRight"
+                                    : corner === "bottom-left"
+                                      ? "brand.cornerBottomLeft"
+                                      : "brand.cornerBottomRight"
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                    )}
+                    <div className="action-row" style={{ marginTop: 10 }}>
+                      {hasBrandMark && (
+                        <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => changeLogo(false)}>
+                          {busy === "logo" ? t("studio.logoAdding") : t(frameHasOurLogo ? "studio.logoMove" : "studio.logoAdd")}
+                        </button>
+                      )}
+                      <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={removeAnyLogo}>
+                        {busy === "logo-off" || (!frameHasOurLogo && makingPicture)
+                          ? t("studio.logoRemoving")
+                          : frameHasOurLogo
+                            ? t("studio.logoRemove")
+                            : t("studio.logoRemoveAi", { credits: extraPrice("visuals", project.visuals?.[scene]?.sceneId ?? 1).credits })}
+                      </button>
+                    </div>
+                    {!frameHasOurLogo && <p className="hint" style={{ marginTop: 6 }}>{t("studio.logoRemoveAiHint")}</p>}
+                    {hasBrandMark ? (
+                      <>
+                        <p className="hint" style={{ marginTop: 6 }}>{t("studio.logoUndo")}</p>
+                        <p className="hint">
+                          {t("studio.logoCornerHint")} <Link to="/app/brand">{t("nav.brand")}</Link>
+                        </p>
+                      </>
+                    ) : (
+                      <p className="hint">
+                        {t("studio.logoNeedKit")} <Link to="/app/brand">{t("nav.brand")}</Link>
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="ready-block">
                 {(project.versions?.visuals || []).length < 2 ? (
@@ -1115,7 +1288,10 @@ export default function Studio() {
                     previewId={previewVersionId}
                     poster={isPoster}
                     ratio={shapeRatio}
-                    onPreview={setPreviewVersionId}
+                    onPreview={pickTake}
+                    onDelete={deleteTake}
+                    onKeepCurrent={keepCurrentOnly}
+                    busy={Boolean(busy)}
                     t={t}
                   />
                 )}
