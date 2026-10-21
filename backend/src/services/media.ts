@@ -8,6 +8,7 @@ import { Resvg } from "@resvg/resvg-js";
 import { config } from "../config.js";
 import { contactStampText, wantsContactStamp, wantsLogoStamp, type BrandKit, type CaptionCue, type Script, type Visual } from "./ai.js";
 import { brandLogoPath } from "./brandAssets.js";
+import { writeWordmark } from "./brandFont.js";
 import { cropToFormat, type ImageFormat } from "./imageFormats.js";
 import { dataDir } from "../dataDir.js";
 
@@ -115,7 +116,7 @@ export function removeStillFiles(projectId: string) {
   }
 }
 
-function overlayLogoFile(stillPath: string, logoPath: string) {
+function overlayLogoFile(stillPath: string, logoPath: string, height = 120) {
   if (!ffmpegPath || !fs.existsSync(stillPath) || !fs.existsSync(logoPath)) return Promise.resolve(false);
   const tmp = `${stillPath}.logo.jpg`;
   return new Promise<boolean>((resolve) => {
@@ -131,7 +132,7 @@ function overlayLogoFile(stillPath: string, logoPath: string) {
         "-i",
         logoPath,
         "-filter_complex",
-        "[1:v]scale=-1:120[lg];[0:v][lg]overlay=W-w-36:H-h-36",
+        `[1:v]scale=-1:${height}[lg];[0:v][lg]overlay=W-w-36:H-h-36`,
         tmp,
       ],
       { stdio: ["ignore", "ignore", "pipe"] }
@@ -258,11 +259,17 @@ export async function persistStills(
       if (fresh.has(visual.sceneId)) await cropToFormat(stillFile(projectId, visual.sceneId), format);
     }
   }
-  const logo = !skipLogoStamp && brand?.user_id && wantsLogoStamp(brand) ? brandLogoPath(brand.user_id) : "";
+  const stamp = !skipLogoStamp && brand?.user_id && wantsLogoStamp(brand);
+  const logoFile = stamp ? brandLogoPath(brand.user_id!) : "";
+  const logo =
+    logoFile ||
+    (stamp
+      ? writeWordmark(brand.user_id!, brand.business_name, brand.primary_color || "#1a1612", brand.secondary_color || "#f4efe8", brand.font)
+      : "");
   if (logo) {
     for (const visual of next) {
       if (visual.placeholder || !hasStillFile(projectId, visual.sceneId)) continue;
-      await overlayLogoFile(stillFile(projectId, visual.sceneId), logo);
+      await overlayLogoFile(stillFile(projectId, visual.sceneId), logo, logoFile ? 120 : 76);
     }
   }
   if (stampContact && wantsContactStamp(brand)) {

@@ -6,7 +6,7 @@ import { dataDir } from "../dataDir.js";
 
 export const BRAND_REF_SLOTS = ["place", "people", "product"] as const;
 export type BrandRefSlot = (typeof BRAND_REF_SLOTS)[number];
-export type BrandImageSlot = "logo" | BrandRefSlot;
+export type BrandImageSlot = "logo" | "font" | BrandRefSlot;
 
 export function isBrandRefSlot(value: string): value is BrandRefSlot {
   return (BRAND_REF_SLOTS as readonly string[]).includes(value);
@@ -68,6 +68,44 @@ export function logoKindFromBytes(buffer: Buffer): "png" | "jpg" | "" {
   return "";
 }
 
+export function fontKindFromBytes(buffer: Buffer): "ttf" | "otf" | "" {
+  if (buffer.length < 12) return "";
+  const tag = buffer.readUInt32BE(0);
+  if (tag === 0x00010000 || tag === 0x74727565) return "ttf";
+  if (tag === 0x4f54544f) return "otf";
+  return "";
+}
+
+export function brandFontPath(userId: string) {
+  const dir = path.join(dataDir, "media", "brand", userId);
+  if (!fs.existsSync(dir)) return "";
+  const found = fs.readdirSync(dir).find((name) => /^font\.(ttf|otf)$/i.test(name));
+  return found ? path.join(dir, found) : "";
+}
+
+export function brandFontSamplePath(userId: string) {
+  return path.join(dataDir, "media", "brand", userId, "font-sample.png");
+}
+
+export function brandWordmarkPath(userId: string) {
+  return path.join(dataDir, "media", "brand", userId, "wordmark.png");
+}
+
+export function writeBrandFont(userId: string, buffer: Buffer, ext: "ttf" | "otf") {
+  removeBrandFont(userId);
+  const file = path.join(brandKitDir(userId), `font.${ext}`);
+  fs.writeFileSync(file, buffer);
+  return file;
+}
+
+export function removeBrandFont(userId: string) {
+  const dir = path.join(dataDir, "media", "brand", userId);
+  if (!fs.existsSync(dir)) return;
+  for (const name of fs.readdirSync(dir)) {
+    if (/^(font\.(ttf|otf)|font-sample\.png|wordmark\.png)$/i.test(name)) fs.rmSync(path.join(dir, name), { force: true });
+  }
+}
+
 function hasFile(file: string) {
   return Boolean(file && fs.existsSync(file) && fs.statSync(file).size > 0);
 }
@@ -78,6 +116,10 @@ export function hasBrandLogo(userId: string) {
 
 export function hasBrandRef(userId: string, slot: BrandRefSlot) {
   return hasFile(brandRefPath(userId, slot));
+}
+
+export function hasBrandFont(userId: string) {
+  return hasFile(brandFontPath(userId));
 }
 
 function writeNamed(userId: string, stem: string, buffer: Buffer, ext: string) {
@@ -126,6 +168,7 @@ export function brandImageUrls(userId: string) {
     ref_place_url: hasBrandRef(userId, "place") ? "/brand/ref/place" : "",
     ref_people_url: hasBrandRef(userId, "people") ? "/brand/ref/people" : "",
     ref_product_url: hasBrandRef(userId, "product") ? "/brand/ref/product" : "",
+    font_url: hasBrandFont(userId) ? "/brand/font" : "",
   };
 }
 

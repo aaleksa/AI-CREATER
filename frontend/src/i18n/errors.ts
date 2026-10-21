@@ -60,6 +60,7 @@ export const ERROR_UK: Record<string, string> = {
   "Generate the script first.": "Спочатку зробіть сценарій.",
   "Use a PNG or JPG under 2 MB. SVG is not allowed.": "PNG або JPG до 2 МБ. SVG не можна.",
   "Use a PNG or JPG under 2 MB.": "PNG або JPG до 2 МБ.",
+  "Use a TTF or OTF font file under 2 MB.": "Файл шрифту TTF або OTF до 2 МБ.",
   "You can add up to 3 example pictures.": "Можна додати до 3 прикладів.",
   "That file is too large. Keep it under 2 MB.": "Файл завеликий. До 2 МБ.",
   "No logo yet.": "Логотипу ще немає.",

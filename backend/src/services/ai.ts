@@ -5,6 +5,7 @@ import { canvasLine, padToNative, paintsExactSize, sizeFor, type ImageFormat } f
 import { COMFY_FAILED_MESSAGE, comfyEnabled, comfyFallsBackToOpenAI, comfyHandles, comfyPaint } from "./comfy.js";
 import { USER_ERRORS } from "./userErrors.js";
 import { listBrandRefFiles, logoKindFromBytes, type BrandImageFile } from "./brandAssets.js";
+import { fontSampleFile, hasTitleFont } from "./brandFont.js";
 import { guessPoster, type InviteCard } from "./invite.js";
 
 export type LearnedSummary = {
@@ -33,6 +34,7 @@ export type BrandKit = {
   ref_place_url?: string;
   ref_people_url?: string;
   ref_product_url?: string;
+  font_url?: string;
   logo_on_photos?: boolean | number | string;
   contact_on_photos?: boolean | number | string;
   address?: string;
@@ -375,6 +377,12 @@ function brandContext(brand?: BrandKit | null) {
       (wantsLogoStamp(brand)
         ? "They uploaded their real logo. We will stamp that file on photos after generation. Do not paint a logo."
         : "They uploaded their real logo so we know the mark. Do not paint it on photographs."),
+    !brand.logo_url &&
+      brand.user_id &&
+      hasTitleFont(brand.user_id, brand.font) &&
+      wantsLogoStamp(brand) &&
+      brand.business_name &&
+      "We will stamp their business name in their own typeface on photos after generation. Do not paint the business name or a logo.",
     brand.ref_place_url && `They uploaded a photo of their real place. Use that room only when the story is set in their own place; otherwise ignore it.`,
     brand.ref_people_url && `They uploaded a photo of a real person who works there. Prefer that person only when someone from the business belongs in the scene.`,
     brand.ref_product_url && `They uploaded a photo of their real product. Use that item only when the story needs it.`,
@@ -1232,8 +1240,21 @@ async function generateSceneFrame(
 
   const examples = keepStill ? [] : opts?.exampleRefs || [];
   const brandRefs = keepStill || kind === "poster" ? [] : brand?.user_id ? listBrandRefFiles(brand.user_id) : [];
-  const refs = [...examples, ...brandRefs];
-  const prompt = !keepStill && examples.length ? `${basePrompt}\n${exampleRefLine(examples.length, kind)}` : basePrompt;
+  const sample =
+    !keepStill && kind === "poster" && brand?.user_id && hasTitleFont(brand.user_id, brand.font)
+      ? fontSampleFile(brand.user_id, brand.business_name, brand.font)
+      : "";
+  const fontRef: BrandImageFile[] = sample ? [{ slot: "font", file: sample, type: "image/png", filename: "font-sample.png" }] : [];
+  const refs = [...examples, ...brandRefs, ...fontRef];
+  const prompt = [
+    basePrompt,
+    !keepStill && examples.length ? exampleRefLine(examples.length, kind) : "",
+    fontRef.length
+      ? "The last attached image is only a type specimen of the owner's brand font. Paint every title and word on the picture in this typeface — same letter shapes, weight and contrast. Do not paint the specimen sheet or its sample letters."
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
   // Local ComfyUI (only when COMFYUI_URL is set): plain text-to-picture. Pictures ComfyUI cannot make (designed flyers with
   // words, the user's example or brand photos, edits of an existing picture) always stay on OpenAI.
   if (!keepRequested && !refs.length && comfyEnabled() && comfyHandles(kind)) {

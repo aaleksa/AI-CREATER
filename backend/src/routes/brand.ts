@@ -3,17 +3,23 @@ import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { v4 as uuid } from "uuid";
 import {
+  brandFontPath,
   brandImageUrls,
   brandLogoType,
   brandRefType,
+  fontKindFromBytes,
+  hasBrandFont,
   hasBrandLogo,
   isBrandRefSlot,
   logoKindFromBytes,
+  removeBrandFont,
   removeBrandLogo,
   removeBrandRef,
+  writeBrandFont,
   writeBrandLogo,
   writeBrandRef,
 } from "../services/brandAssets.js";
+import { fontFamilyName, writeFontSample } from "../services/brandFont.js";
 import { maybeRefreshLearnedSummary, readyCount } from "../services/learning.js";
 
 function flag(value: unknown) {
@@ -88,6 +94,7 @@ function serializeBrand(row: Record<string, unknown> | undefined, userId: string
     ref_place_url: images.ref_place_url,
     ref_people_url: images.ref_people_url,
     ref_product_url: images.ref_product_url,
+    font_url: images.font_url,
     logo_on_photos: Number(row.logo_on_photos) === 1,
     contact_on_photos: Number(row.contact_on_photos) === 1,
     learned_summary,
@@ -197,6 +204,45 @@ brandRouter.delete("/logo", (req, res) => {
   res.json({ brandKit: serializeBrand(kitOf(req.user!.id), req.user!.id) });
 });
 
+const BAD_FONT = "Use a TTF or OTF font file under 2 MB.";
+
+brandRouter.get("/font", (req, res) => {
+  const file = brandFontPath(req.user!.id);
+  if (!file || !hasBrandFont(req.user!.id)) {
+    res.status(404).json({ error: "No font yet." });
+    return;
+  }
+  res.type(file.toLowerCase().endsWith(".otf") ? "font/otf" : "font/ttf");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.sendFile(file);
+});
+
+brandRouter.post("/font", (req, res) => {
+  const match = String(req.body?.font || "").match(/^data:[\w.+/-]*;base64,(.+)$/);
+  const buffer = match ? Buffer.from(match[1], "base64") : Buffer.alloc(0);
+  if (!buffer.length || buffer.length > 2 * 1024 * 1024) {
+    res.status(400).json({ error: BAD_FONT });
+    return;
+  }
+  const kind = fontKindFromBytes(buffer);
+  const family = kind ? fontFamilyName(buffer) : "";
+  if (!kind || !family) {
+    res.status(400).json({ error: BAD_FONT });
+    return;
+  }
+  const userId = req.user!.id;
+  writeBrandFont(userId, buffer, kind);
+  db.prepare("UPDATE brand_kits SET font = ?, updated_at = datetime('now') WHERE user_id = ?").run(family, userId);
+  writeFontSample(userId, String(kitOf(userId)?.business_name || ""));
+  res.json({ brandKit: serializeBrand(kitOf(userId), userId) });
+});
+
+brandRouter.delete("/font", (req, res) => {
+  removeBrandFont(req.user!.id);
+  db.prepare("UPDATE brand_kits SET font = 'Fraunces', updated_at = datetime('now') WHERE user_id = ?").run(req.user!.id);
+  res.json({ brandKit: serializeBrand(kitOf(req.user!.id), req.user!.id) });
+});
+
 brandRouter.post("/learning/reset", (req, res) => {
   db.prepare("UPDATE brand_kits SET learned_summary_json = NULL, updated_at = datetime('now') WHERE user_id = ?").run(req.user!.id);
   maybeRefreshLearnedSummary(req.user!.id, true);
@@ -212,7 +258,7 @@ brandRouter.put("/", (req, res) => {
     logo_url: hasBrandLogo(req.user!.id) ? "/brand/logo" : String(body.logo_url ?? ""),
     primary_color: hex(body.primary_color, "#C45C26"),
     secondary_color: hex(body.secondary_color, "#F4EFE8"),
-    font: String(body.font ?? "Fraunces"),
+    font: hasBrandFont(req.user!.id) ? String(kitOf(req.user!.id)?.font || "") : String(body.font ?? "Fraunces"),
     tone_of_voice: String(body.tone_of_voice ?? ""),
     tone_note: String(body.tone_note ?? "").trim().slice(0, 400),
     website: String(body.website ?? ""),
@@ -239,5 +285,6 @@ brandRouter.put("/", (req, res) => {
        VALUES (@id, @user_id, @business_name, @logo_url, @primary_color, @secondary_color, @font, @tone_of_voice, @tone_note, @website, @instagram, @vertical, @vertical_note, @logo_on_photos, @contact_on_photos, @address)`
     ).run({ id: uuid(), user_id: req.user!.id, ...fields });
   }
+  writeFontSample(req.user!.id, fields.business_name, fields.font);
   res.json({ brandKit: serializeBrand(kitOf(req.user!.id), req.user!.id) });
 });

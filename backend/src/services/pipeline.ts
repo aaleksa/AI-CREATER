@@ -229,6 +229,7 @@ function brandFor(userId: string): BrandKit | null {
     ref_place_url: images.ref_place_url,
     ref_people_url: images.ref_people_url,
     ref_product_url: images.ref_product_url,
+    font_url: images.font_url,
   };
 }
 

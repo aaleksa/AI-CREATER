@@ -252,6 +252,9 @@ export const api = {
   uploadLogo: (image: string) =>
     request<{ brandKit: BrandKitRow }>("/brand/logo", { method: "POST", body: JSON.stringify({ image }) }),
   deleteLogo: () => request<{ brandKit: BrandKitRow }>("/brand/logo", { method: "DELETE" }),
+  uploadFont: (font: string) =>
+    request<{ brandKit: BrandKitRow }>("/brand/font", { method: "POST", body: JSON.stringify({ font }) }),
+  deleteFont: () => request<{ brandKit: BrandKitRow }>("/brand/font", { method: "DELETE" }),
   uploadBrandRef: (slot: "place" | "people" | "product", image: string) =>
     request<{ brandKit: BrandKitRow }>(`/brand/ref/${slot}`, { method: "POST", body: JSON.stringify({ image }) }),
   deleteBrandRef: (slot: "place" | "people" | "product") =>

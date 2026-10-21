@@ -49,8 +49,8 @@ function goTo(id: string) {
 
 function snapshot(form: typeof empty, logoOnPhotos: boolean, contactOnPhotos: boolean) {
   // Photos and logo save on their own, so they do not count as unsaved.
-  const { logo_url, ref_place_url, ref_people_url, ref_product_url, ...rest } = form;
-  void logo_url; void ref_place_url; void ref_people_url; void ref_product_url;
+  const { logo_url, ref_place_url, ref_people_url, ref_product_url, font_url, ...rest } = form;
+  void logo_url; void ref_place_url; void ref_people_url; void ref_product_url; void font_url;
   return JSON.stringify({ ...rest, logoOnPhotos, contactOnPhotos });
 }
 
@@ -62,7 +62,9 @@ const TYPES = [
   { id: "other", labelKey: "brand.typeOther", hintKey: "brand.typeOtherHint" },
 ];
 
-const FONTS = ["Fraunces", "Outfit", "Playfair Display", "IBM Plex Sans"];
+const FONTS = ["Fraunces", "Outfit", "Playfair Display", "IBM Plex Sans", "Nunito", "Montserrat"];
+/** Shipped with the app (public/fonts), so the server can print the business name in them. */
+const BUILTIN_FONTS = ["Nunito", "Montserrat"];
 
 const REF_SLOTS = [
   { id: "place" as const, labelKey: "brand.refPlace", hintKey: "brand.refPlaceHint" },
@@ -86,6 +88,7 @@ const empty = {
   ref_place_url: "",
   ref_people_url: "",
   ref_product_url: "",
+  font_url: "",
 };
 
 function applyKit(kit: BrandKitRow) {
@@ -107,7 +110,36 @@ function applyKit(kit: BrandKitRow) {
     ref_place_url: kit.ref_place_url || "",
     ref_people_url: kit.ref_people_url || "",
     ref_product_url: kit.ref_product_url || "",
+    font_url: kit.font_url || "",
   };
+}
+
+const OWN_FONT = "AuteurBrandFont";
+
+/** Loads the uploaded font file into the page so the sketch uses the real letters. */
+function useKitFont(path: string, version: string) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    setReady(false);
+    if (!path) return;
+    let face: FontFace | null = null;
+    let live = true;
+    fetchMedia(path)
+      .then((blob) => blob.arrayBuffer())
+      .then((buffer) => new FontFace(OWN_FONT, buffer).load())
+      .then((loaded) => {
+        if (!live) return;
+        face = loaded;
+        document.fonts.add(loaded);
+        setReady(true);
+      })
+      .catch(() => setReady(false));
+    return () => {
+      live = false;
+      if (face) document.fonts.delete(face);
+    };
+  }, [path, version]);
+  return ready;
 }
 
 function useKitImage(path: string) {
@@ -148,6 +180,9 @@ export default function Brand() {
   const peopleSrc = useKitImage(form.ref_people_url);
   const productSrc = useKitImage(form.ref_product_url);
   const refSrc = { place: placeSrc, people: peopleSrc, product: productSrc };
+  const [fontVersion, setFontVersion] = useState(0);
+  const ownFont = useKitFont(form.font_url, `${form.font}:${fontVersion}`);
+  const typeFamily = ownFont ? `"${OWN_FONT}", ${form.font}` : form.font;
 
   function side(kit: BrandKitRow) {
     setLearnedFrom(kit.learned_summary?.basedOnProjects || 0);
@@ -265,6 +300,42 @@ export default function Brand() {
     }
   }
 
+  // The server sets the title type to the uploaded font's own name, so that counts as saved.
+  function applyFont(kit: BrandKitRow) {
+    const next = applyKit(kit);
+    setForm((f) => ({ ...f, font: next.font, font_url: next.font_url }));
+    setSavedSnap((snap) => (snap ? JSON.stringify({ ...JSON.parse(snap), font: next.font }) : snap));
+    setFontVersion((v) => v + 1);
+    side(kit);
+  }
+
+  function onFont(file: File | undefined) {
+    if (!file) return;
+    setError("");
+    if (file.size > 2 * 1024 * 1024 || !/\.(ttf|otf)$/i.test(file.name)) {
+      setError(t("brand.badFont"));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        applyFont((await api.uploadFont(String(reader.result || ""))).brandKit);
+      } catch (err) {
+        setError(err instanceof Error ? te(err.message) : t("brand.fallbackFont"));
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function removeFont() {
+    setError("");
+    try {
+      applyFont((await api.deleteFont()).brandKit);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("brand.fallbackRemoveFont"));
+    }
+  }
+
   async function onRef(slot: "place" | "people" | "product", file: File | undefined) {
     readKitFile(
       file,
@@ -309,6 +380,8 @@ export default function Brand() {
 
   const tone = toneOf(form.tone_of_voice);
   const stampText = contactLine(form.instagram, form.website);
+  const canStamp =
+    Boolean(logoSrc) || ((Boolean(form.font_url) || BUILTIN_FONTS.includes(form.font)) && Boolean(form.business_name.trim()));
   const lowContrast = contrast(form.primary_color, form.secondary_color) < 3;
   const checks = [
     { key: "colours", label: t("brand.checkColours"), done: form.primary_color.toUpperCase() !== DEFAULT_PRIMARY || form.secondary_color.toUpperCase() !== DEFAULT_SECONDARY, target: "primary_color" },
@@ -490,18 +563,40 @@ export default function Brand() {
                 />
               )}
             </div>
-            <details className="more">
-              <summary>{t("brand.moreOptions")}</summary>
-              <div className="field" style={{ marginTop: 12 }}>
-                <label htmlFor="font">{t("brand.font")}</label>
-                <p className="hint">{t("brand.fontHint")}</p>
-                <select id="font" value={form.font} onChange={(e) => set("font", e.target.value)}>
-                  {FONTS.map((font) => (
-                    <option key={font}>{font}</option>
-                  ))}
-                </select>
+            <div className="field" id="brand-font" tabIndex={-1}>
+              <label htmlFor={form.font_url ? "font-file" : "font"}>{t("brand.font")}</label>
+              {form.font_url ? (
+                <p className="hint">{t("brand.fontInUse", { name: form.font })}</p>
+              ) : (
+                <>
+                  <p className="hint">{t("brand.fontHint")}</p>
+                  <select id="font" value={form.font} onChange={(e) => set("font", e.target.value)}>
+                    {FONTS.map((font) => (
+                      <option key={font}>{font}</option>
+                    ))}
+                  </select>
+                </>
+              )}
+              <p className="hint" style={{ marginTop: 10 }}>
+                <b>{t("brand.fontOwn")}.</b> {t("brand.fontOwnHint")}
+              </p>
+              <div className="tile-actions">
+                <label className="btn ghost" htmlFor="font-file">{form.font_url ? t("brand.replaceFont") : t("brand.addFont")}</label>
+                {form.font_url && (
+                  <button className="btn ghost" type="button" onClick={removeFont}>{t("brand.removeFont")}</button>
+                )}
               </div>
-            </details>
+              <input
+                id="font-file"
+                className="sr-only"
+                type="file"
+                accept=".ttf,.otf,font/ttf,font/otf"
+                onChange={(e) => {
+                  onFont(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+            </div>
           </section>
 
           <section className="panel brand-section" id="brand-assets" tabIndex={-1}>
@@ -535,11 +630,11 @@ export default function Brand() {
               <input id="website" value={form.website} onChange={(e) => set("website", e.target.value)} placeholder="https://" />
             </div>
             <h3 className="where">{t("brand.whereTitle")}</h3>
-            <label className={`switch-row${logoSrc ? "" : " off"}`}>
-              <input type="checkbox" role="switch" checked={logoOnPhotos && Boolean(logoSrc)} disabled={!logoSrc} onChange={(e) => setLogoOnPhotos(e.target.checked)} />
+            <label className={`switch-row${canStamp ? "" : " off"}`}>
+              <input type="checkbox" role="switch" checked={logoOnPhotos && canStamp} disabled={!canStamp} onChange={(e) => setLogoOnPhotos(e.target.checked)} />
               <span>
-                <b>{t("brand.logoSwitch")}</b>
-                <span className="hint">{logoSrc ? t("brand.logoSwitchHint") : t("brand.needLogo")}</span>
+                <b>{logoSrc || !canStamp ? t("brand.logoSwitch") : t("brand.nameSwitch")}</b>
+                <span className="hint">{logoSrc ? t("brand.logoSwitchHint") : canStamp ? t("brand.nameSwitchHint") : t("brand.needLogo")}</span>
               </span>
             </label>
             <label className={`switch-row${stampText ? "" : " off"}`}>
@@ -593,14 +688,19 @@ export default function Brand() {
         <aside className="brand-aside">
           <p className="hint">{t("brand.previewHint")}</p>
           <div className="post-mock" style={{ background: form.secondary_color, color: "#1a1612" }}>
-            <p className="mock-name" style={{ fontFamily: form.font, color: form.primary_color }}>
+            <p className="mock-name" style={{ fontFamily: typeFamily, color: form.primary_color }}>
               {form.business_name.trim() || t("brand.businessPh")}
             </p>
             <hr style={{ borderTop: `3px solid ${form.primary_color}` }} />
-            <p className="mock-line" style={{ fontFamily: form.font }}>
+            <p className="mock-line" style={{ fontFamily: typeFamily }}>
               “{t((tone || TONES[0]).exKey)}”
             </p>
             {logoOnPhotos && logoSrc && <img src={logoSrc} alt="" className="mock-logo" />}
+            {logoOnPhotos && !logoSrc && canStamp && (
+              <span className="mock-wordmark" style={{ fontFamily: typeFamily, color: form.primary_color }}>
+                {form.business_name.trim()}
+              </span>
+            )}
             {contactOnPhotos && stampText && <span className="mock-contact">{stampText}</span>}
           </div>
           <p className="hint" style={{ marginTop: 8 }}>{t("brand.previewNote")}</p>
