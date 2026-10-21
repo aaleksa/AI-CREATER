@@ -19,7 +19,9 @@ import {
   stillPicturePrompt,
   emptyShot,
   keepWordsHonest,
+  LOGO_POSITIONS,
   logoPositionOf,
+  wantsLogoStamp,
   logoSpotRequest,
   rewriteStillLanguagePrompt,
   rewriteStillCopyPrompt,
@@ -61,7 +63,12 @@ import {
   videoFile,
   writeMusicFromUpload,
   type ReelMusic,
-  restampReelFrames,
+  unstampReelFrames,
+  writeReelEndCard,
+  writeReelLogoBadge,
+  type ReelLogoSettings,
+  CAPTION_STYLES,
+  type CaptionStyle,
   restoreStillSnapshot,
   snapshotStills,
   brandMarkBox,
@@ -452,6 +459,8 @@ export function serializeProject(row: Record<string, unknown>) {
     hasVideo: hasVideoFile(id),
     /** Changes when the video file is replaced (e.g. new music), so the page loads it again. */
     videoStamp: hasVideoFile(id) ? Math.round(fs.statSync(videoFile(id)).mtimeMs) : 0,
+    reelLogo: parse<Partial<ReelLogoSettings>>(row.reel_logo_json),
+    captionStyle: captionStyleOf(row),
     music: hasMusicFile(id)
       ? { name: String(row.music_name || ""), durationSec: Number(row.music_duration) || 0, ...reelMusicOf(row) }
       : null,
@@ -1187,7 +1196,8 @@ export async function runStep(
       providerTouched = true;
       const poster = isImagePost(type) && isTextPoster(type, imageIntent || "photo");
       const kind = poster ? "poster" : isImagePost(type) ? "still" : "video";
-      const skipLogoStamp = keepStill;
+      // A Reel's logo is one layer over the finished video, never painted into the frames.
+      const skipLogoStamp = keepStill || kind === "video";
       // The contact line goes on photo posts only: flyers already carry their own text, Reels have captions.
       const stampContact = kind === "still" && !keepStill;
       let paintedCopy = "";
@@ -1336,17 +1346,20 @@ export async function runStep(
       actualCost = result.cost;
     } else if (step === "render" && script) {
       providerTouched = true;
-      const frames = parse<Visual[]>(project.visuals_json) || [];
-      const owner = brandFor(userId);
-      if (owner) await restampReelFrames(projectId, frames, owner);
+      const layers = await reelLayers(projectId, project, brand, script);
+      if (layers.framesChanged) updates.visuals_json = JSON.stringify(layers.visuals);
       const rendered = await renderReel({
         projectId,
         script,
-        visuals: parse<Visual[]>(project.visuals_json),
+        visuals: layers.visuals,
         captions: captionsOff ? null : parse<{ cues: CaptionCue[] }>(project.captions_json),
         primaryColor: brand?.primary_color,
         silent: voiceOff,
         music: hasMusicFile(projectId) ? reelMusicOf(project) : null,
+        logo: layers.logo,
+        endCard: layers.endCard,
+        captionStyle: captionStyleOf(project),
+        brand,
       });
       updates.current_step = "create";
       updates.status = "ready";
@@ -1552,6 +1565,89 @@ export function editCaptions(userId: string, projectId: string, raw: unknown) {
     `UPDATE projects SET captions_json = ?, captions_off = 0, output_url = NULL, status = 'draft', updated_at = datetime('now') WHERE id = ?`
   ).run(JSON.stringify({ cues }), projectId);
   return serializeProject(getProject(projectId, userId));
+}
+
+const REEL_LOGO_SIZES = ["s", "m", "l"] as const;
+
+/** The owner's choice for this Reel, or what their Brand Kit says: logo on photos, its corner, medium, with an end card. */
+function reelLogoOf(row: Record<string, unknown>, brand: BrandKit | null): ReelLogoSettings {
+  const saved = parse<Partial<ReelLogoSettings>>(row.reel_logo_json as string) || {};
+  return {
+    show: typeof saved.show === "boolean" ? saved.show : wantsLogoStamp(brand),
+    corner: (LOGO_POSITIONS as readonly string[]).includes(String(saved.corner)) ? (saved.corner as LogoPosition) : logoPositionOf(brand),
+    size: (REEL_LOGO_SIZES as readonly string[]).includes(String(saved.size)) ? (saved.size as ReelLogoSettings["size"]) : "m",
+    endCard: typeof saved.endCard === "boolean" ? saved.endCard : true,
+  };
+}
+
+/** What goes over and after the scenes: clean frames, the small logo and the end card. */
+async function reelLayers(projectId: string, project: Record<string, unknown>, brand: BrandKit | null, script: Script) {
+  const frames = unstampReelFrames(projectId, parse<Visual[]>(project.visuals_json as string) || []);
+  const settings = reelLogoOf(project, brand);
+  const badge = brand && settings.show ? await writeReelLogoBadge(projectId, brand, settings.size) : null;
+  const endCard = brand && settings.endCard ? await writeReelEndCard(projectId, brand, script.cta) : null;
+  return { visuals: frames.visuals, framesChanged: frames.changed, logo: badge ? { ...badge, corner: settings.corner } : null, endCard };
+}
+
+/** Logo settings for a Reel. A finished video is made again straight away, free: nothing is generated. */
+export async function updateReelLogo(userId: string, projectId: string, raw: unknown) {
+  const project = getProject(projectId, userId);
+  if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
+  const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
+  const body = (raw || {}) as Partial<Record<keyof ReelLogoSettings, unknown>>;
+  const current = reelLogoOf(project, brand);
+  const next: ReelLogoSettings = {
+    show: typeof body.show === "boolean" ? body.show : current.show,
+    corner: (LOGO_POSITIONS as readonly string[]).includes(String(body.corner)) ? (body.corner as LogoPosition) : current.corner,
+    size: (REEL_LOGO_SIZES as readonly string[]).includes(String(body.size)) ? (body.size as ReelLogoSettings["size"]) : current.size,
+    endCard: typeof body.endCard === "boolean" ? body.endCard : current.endCard,
+  };
+  db.prepare(`UPDATE projects SET reel_logo_json = ? WHERE id = ?`).run(JSON.stringify(next), projectId);
+  await remakeReelVideo(userId, projectId, brand);
+  return serializeProject(getProject(projectId, userId));
+}
+
+function captionStyleOf(row: Record<string, unknown>): CaptionStyle {
+  const value = String(row.captions_style || "");
+  return (CAPTION_STYLES as readonly string[]).includes(value) ? (value as CaptionStyle) : "clean";
+}
+
+/** How the burned-in captions look. A finished video is made again straight away, free. */
+export async function updateCaptionStyle(userId: string, projectId: string, raw: unknown) {
+  const project = getProject(projectId, userId);
+  if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
+  const style = String((raw as { style?: unknown })?.style || "");
+  if (!(CAPTION_STYLES as readonly string[]).includes(style)) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  db.prepare(`UPDATE projects SET captions_style = ? WHERE id = ?`).run(style, projectId);
+  const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
+  if (Number(project.captions_off) !== 1) await remakeReelVideo(userId, projectId, brand);
+  return serializeProject(getProject(projectId, userId));
+}
+
+/** The same Reel made again from what is already there — frames, voice, captions, music — when only its look changed. */
+async function remakeReelVideo(userId: string, projectId: string, brand: BrandKit | null) {
+  const project = getProject(projectId, userId);
+  const script = parse<Script>(project.script_json);
+  if (script && hasVideoFile(projectId)) {
+    const layers = await reelLayers(projectId, project, brand, script);
+    await renderReel({
+      projectId,
+      script,
+      visuals: layers.visuals,
+      captions: Number(project.captions_off) === 1 ? null : parse<{ cues: CaptionCue[] }>(project.captions_json),
+      primaryColor: brand?.primary_color,
+      silent: Number(project.voice_off) === 1,
+      music: hasMusicFile(projectId) ? reelMusicOf(project) : null,
+      logo: layers.logo,
+      endCard: layers.endCard,
+      captionStyle: captionStyleOf(project),
+      brand,
+    });
+    if (layers.framesChanged) db.prepare(`UPDATE projects SET visuals_json = ? WHERE id = ?`).run(JSON.stringify(layers.visuals), projectId);
+  }
+  db.prepare(`UPDATE projects SET updated_at = datetime('now') WHERE id = ?`).run(projectId);
 }
 
 function reelMusicOf(row: Record<string, unknown>): ReelMusic {

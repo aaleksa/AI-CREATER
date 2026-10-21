@@ -20,7 +20,7 @@ import {
   type Visual,
 } from "./ai.js";
 import { brandLogoPath } from "./brandAssets.js";
-import { writeWordmark } from "./brandFont.js";
+import { brandFont, captionFontFile, writeWordmark } from "./brandFont.js";
 import { cropToFormat, imageDimensions, type ImageFormat } from "./imageFormats.js";
 import { dataDir } from "../dataDir.js";
 
@@ -138,24 +138,8 @@ const CORNER: Record<LogoPosition, string> = {
   "bottom-right": `W-w-${LOGO_MARGIN}:H-h-${LOGO_MARGIN}`,
 };
 
-function overlayLogoFile(stillPath: string, logoPath: string, height = 120, position: LogoPosition = "bottom-right", reel = false) {
-  return overlayLogo(stillPath, logoPath, `[1:v]scale=-1:${height}[lg];[0:v][lg]overlay=${reel ? reelCorner(stillPath, position) : CORNER[position]}`);
-}
-
-/**
- * A Reel frame is 2:3, the mp4 is 9:16: the sides get cut. Instagram also draws its bar at the top and the caption,
- * reply box and buttons at the bottom. The logo goes inside what stays visible and clear.
- */
-function reelCorner(stillPath: string, position: LogoPosition) {
-  const size = imageDimensions(stillPath);
-  if (!size) return CORNER[position];
-  const cut = Math.max(0, Math.round((size.w - Math.min(size.w, (size.h * 9) / 16)) / 2));
-  const side = cut + LOGO_MARGIN;
-  const top = Math.round(size.h * 0.12);
-  const bottom = Math.round(size.h * 0.22);
-  const x = position.endsWith("left") ? `${side}` : `W-w-${side}`;
-  const y = position.startsWith("top") ? `${top}` : `H-h-${bottom}`;
-  return `${x}:${y}`;
+function overlayLogoFile(stillPath: string, logoPath: string, height = 120, position: LogoPosition = "bottom-right") {
+  return overlayLogo(stillPath, logoPath, `[1:v]scale=-1:${height}[lg];[0:v][lg]overlay=${CORNER[position]}`);
 }
 
 /** The logo exactly where the owner dragged it, at the width they chose. */
@@ -308,24 +292,6 @@ export function brandMarkBox(brand: BrandKit, stillPath: string, corner: LogoPos
   };
 }
 
-/**
- * Reel frames stamped before the logo knew about the 9:16 crop: put it back from the clean copy, inside the part of the
- * frame the mp4 keeps. Frames without our logo are left alone.
- */
-export async function restampReelFrames(projectId: string, visuals: Visual[], brand: BrandKit) {
-  const mark = brandMarkFile(brand);
-  if (!mark.file) return;
-  for (const visual of visuals) {
-    if (visual.placeholder || !visual.clean || !visual.logoCorner) continue;
-    const clean = cleanStillFile(projectId, visual.clean);
-    if (!fs.existsSync(clean) || !hasStillFile(projectId, visual.sceneId)) continue;
-    const still = stillFile(projectId, visual.sceneId);
-    const before = fs.readFileSync(still);
-    fs.copyFileSync(clean, still);
-    if (!(await overlayLogoFile(still, mark.file, mark.height, visual.logoCorner, true))) fs.writeFileSync(still, before);
-  }
-}
-
 export async function stampBrandMark(stillPath: string, brand: BrandKit, position: LogoPosition, box?: LogoBox) {
   const mark = brandMarkFile(brand);
   if (!mark.file) return false;
@@ -399,7 +365,7 @@ export async function persistStills(
       if (visual.placeholder || visual.clean || !hasStillFile(projectId, visual.sceneId)) continue;
       const clean = keepCleanStill(projectId, visual.sceneId);
       const corner = logoPositionOf(brand);
-      if (await overlayLogoFile(stillFile(projectId, visual.sceneId), logo, mark.height, corner, !format)) {
+      if (await overlayLogoFile(stillFile(projectId, visual.sceneId), logo, mark.height, corner)) {
         next[i] = { ...visual, clean, logoCorner: corner };
       }
     }
@@ -650,25 +616,77 @@ export async function synthesizeSpeech(script: string, projectId: string) {
   return { provider: "auteur-studio", model: "silence", cost: 0 };
 }
 
-function srtTime(sec: number) {
+export const CAPTION_STYLES = ["clean", "box", "brand"] as const;
+export type CaptionStyle = (typeof CAPTION_STYLES)[number];
+
+function assTime(sec: number) {
   const s = Math.max(0, sec);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
-  const rest = s % 60;
-  const whole = Math.floor(rest);
-  const ms = Math.round((rest - whole) * 1000);
-  const pad = (n: number, w = 2) => String(n).padStart(w, "0");
-  return `${pad(h)}:${pad(m)}:${pad(whole)},${pad(ms, 3)}`;
+  const rest = s - h * 3600 - m * 60;
+  return `${h}:${String(m).padStart(2, "0")}:${rest.toFixed(2).padStart(5, "0")}`;
 }
 
-function writeSrt(cues: CaptionCue[], file: string) {
-  const body = cues
-    .map((cue, i) => {
-      const text = cue.text.replace(/\n/g, " ").slice(0, 80);
-      return `${i + 1}\n${srtTime(cue.start)} --> ${srtTime(cue.end)}\n${text}\n`;
-    })
-    .join("\n");
-  fs.writeFileSync(file, body, "utf8");
+/** ASS colour: &HAABBGGRR, where AA 00 is solid and FF is see-through. */
+function assColour(hex: string, opacity = 1) {
+  const rgb = hexRgb(hex) || [255, 255, 255];
+  const alpha = Math.round((1 - Math.max(0, Math.min(1, opacity))) * 255);
+  const two = (n: number) => n.toString(16).padStart(2, "0").toUpperCase();
+  return `&H${two(alpha)}${two(rgb[2])}${two(rgb[1])}${two(rgb[0])}`;
+}
+
+/**
+ * Captions the way Reels look: heavy type, centred, above Instagram's caption and buttons (and above a logo in a
+ * bottom corner). "clean" is white with a soft shadow, "box" sits on a dark see-through band, "brand" uses their
+ * title font on their main colour.
+ */
+function writeAss(cues: CaptionCue[], file: string, opts: { style: CaptionStyle; brand?: BrandKit | null; bottomPx: number }) {
+  const fontsDir = path.join(path.dirname(file), "caption-fonts");
+  fs.rmSync(fontsDir, { recursive: true, force: true });
+  fs.mkdirSync(fontsDir, { recursive: true });
+  const own = opts.style === "brand" && opts.brand?.user_id ? brandFont(opts.brand.user_id, opts.brand.font) : null;
+  const heavy = captionFontFile(opts.style === "box" ? "bold" : "extrabold");
+  const fontFile = own?.file || heavy;
+  let family = "Arial";
+  let heavyBold = 0;
+  if (fontFile) {
+    fs.copyFileSync(fontFile, path.join(fontsDir, path.basename(fontFile)));
+    // libass matches the plain family name (name ID 1): "Montserrat" + bold for Bold, "Montserrat ExtraBold" for ExtraBold.
+    if (own) family = own.family || "Arial";
+    else if (opts.style === "box") {
+      family = "Montserrat";
+      heavyBold = -1;
+    } else family = "Montserrat ExtraBold";
+  }
+  const primary = hexRgb(opts.brand?.primary_color) ? opts.brand!.primary_color! : "#1a1612";
+  const onPrimary = luminance(primary) > 0.6 ? "#1a1612" : "#ffffff";
+  const look =
+    opts.style === "box"
+      ? { size: 72, text: assColour("#ffffff"), outline: assColour("#0c0b0a", 0.62), back: assColour("#000000", 0), border: 3, outlineW: 16, shadow: 0, bold: heavyBold }
+      : opts.style === "brand"
+        ? { size: 74, text: assColour(onPrimary), outline: assColour(primary, 0.92), back: assColour("#000000", 0), border: 3, outlineW: 18, shadow: 0, bold: own ? -1 : 0 }
+        : { size: 86, text: assColour("#ffffff"), outline: assColour("#000000", 0.55), back: assColour("#000000", 0.35), border: 1, outlineW: 4, shadow: 3, bold: 0 };
+  const header = [
+    "[Script Info]",
+    "ScriptType: v4.00+",
+    "PlayResX: 1080",
+    "PlayResY: 1920",
+    "WrapStyle: 0",
+    "ScaledBorderAndShadow: yes",
+    "",
+    "[V4+ Styles]",
+    "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+    `Style: Cap,${family},${look.size},${look.text},${look.text},${look.outline},${look.back},${look.bold},0,0,0,100,100,0,0,${look.border},${look.outlineW},${look.shadow},2,90,90,${Math.round(opts.bottomPx)},1`,
+    "",
+    "[Events]",
+    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+  ];
+  const lines = cues.map((cue) => {
+    const text = cue.text.replace(/\s+/g, " ").trim().slice(0, 80).replace(/\\/g, "").replace(/[{}]/g, "");
+    return `Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},Cap,,0,0,0,,${text}`;
+  });
+  fs.writeFileSync(file, [...header, ...lines, ""].join("\n"), "utf8");
+  return fontsDir;
 }
 
 const FALLBACK_COLORS = ["C45C26", "6B3A22", "3D2A1C", "8A4A28", "2B1D14"];
@@ -725,6 +743,11 @@ export async function renderReel(params: {
   /** No voice: a quiet audio track instead, so Instagram and phones play it as a normal video. */
   silent?: boolean;
   music?: ReelMusic | null;
+  /** The small logo over the scenes, and the end card after them. */
+  logo?: ReelLogoLayer | null;
+  endCard?: ReelEndCard | null;
+  captionStyle?: CaptionStyle;
+  brand?: BrandKit | null;
 }) {
   if (!params.silent && !hasVoiceFile(params.projectId)) {
     throw Object.assign(new Error("Record the voice first."), { status: 400 });
@@ -749,14 +772,24 @@ async function encodeReel(params: {
   primaryColor?: string;
   silent?: boolean;
   music?: ReelMusic | null;
+  logo?: ReelLogoLayer | null;
+  endCard?: ReelEndCard | null;
+  captionStyle?: CaptionStyle;
+  brand?: BrandKit | null;
 }) {
   const dir = projectMediaDir(params.projectId);
   const scenes = params.script.scenes.length ? params.script.scenes : [{ id: 1, time: "0–30s", onScreen: "", voiceover: "", visualPrompt: "" }];
   const duration = Math.max(3, Math.round((params.script.durationSec || 30) / scenes.length));
   const hex = (params.primaryColor || "#C45C26").replace("#", "") || "C45C26";
+  const n = scenes.length;
+  const endCard = params.endCard && fs.existsSync(params.endCard.file) ? params.endCard.file : "";
+  // With an end card the scenes play in full and the card follows; without one we keep the script's length.
+  const mainSec = endCard ? duration * n : Math.min(params.script.durationSec || 30, duration * n);
+  const totalSec = mainSec + (endCard ? END_CARD_SEC : 0);
 
   const inputs: string[] = [];
-  for (let i = 0; i < scenes.length; i++) {
+  let next = 0;
+  for (let i = 0; i < n; i++) {
     const visual = params.visuals?.find((v) => v.sceneId === scenes[i].id) || params.visuals?.[i];
     const image = await sceneImage(visual, i, dir);
     if (image) {
@@ -765,43 +798,70 @@ async function encodeReel(params: {
       const color = FALLBACK_COLORS[i % FALLBACK_COLORS.length] || hex;
       inputs.push("-f", "lavfi", "-i", `color=c=0x${color}:s=1080x1920:d=${duration}`);
     }
+    next += 1;
   }
-  const n = scenes.length;
+  const endIndex = endCard ? next++ : -1;
+  if (endCard) inputs.push("-loop", "1", "-t", String(END_CARD_SEC), "-i", endCard);
+
   const withMusic = Boolean(params.music && hasMusicFile(params.projectId));
-  const lengthSec = Math.min(params.script.durationSec || 30, duration * n);
-  if (!params.silent) inputs.push("-i", voiceFile(params.projectId));
-  else if (!withMusic) inputs.push("-f", "lavfi", "-t", String(params.script.durationSec || 30), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100");
+  let voiceIndex: number | null = null;
+  let quietIndex = -1;
+  if (!params.silent) {
+    voiceIndex = next++;
+    inputs.push("-i", voiceFile(params.projectId));
+  } else if (!withMusic) {
+    quietIndex = next++;
+    inputs.push("-f", "lavfi", "-t", String(totalSec), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100");
+  }
+  const musicIndex = withMusic ? next++ : -1;
   if (withMusic) inputs.push(...musicInputArgs(params.projectId, params.music!));
-  const audioFilter = withMusic
-    ? `;${reelAudioFilter({ voiceIndex: params.silent ? null : n, musicIndex: params.silent ? n : n + 1, lengthSec, music: params.music! })}`
-    : "";
-  const audioMap = withMusic ? "[aout]" : `${n}:a`;
+  const logo = params.logo && fs.existsSync(params.logo.file) ? params.logo : null;
+  const logoIndex = logo ? next++ : -1;
+  if (logo) inputs.push("-loop", "1", "-t", String(totalSec), "-i", logo.file);
 
-  const concat = scenes.map((_, i) => `[v${i}]`).join("");
-  const scaled = scenes
-    .map((_, i) => `[${i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30[v${i}]`)
-    .join(";");
-  let filter = `${scaled};${concat}concat=n=${n}:v=1:a=0,format=yuv420p[vout]`;
-
-  const srt = path.join(dir, "captions.srt");
-  if (params.captions?.cues?.length) writeSrt(params.captions.cues, srt);
-
-  const vfExtras: string[] = [];
-  if (params.captions?.cues?.length) {
-    const escaped = srt.replaceAll("\\", "/").replaceAll(":", "\\:").replaceAll("'", "\\'");
-    vfExtras.push(`subtitles='${escaped}'`);
+  let audioFilter = "";
+  let audioMap = "";
+  if (withMusic) {
+    audioFilter = `;${reelAudioFilter({ voiceIndex, musicIndex, lengthSec: totalSec, music: params.music! })}`;
+    audioMap = "[aout]";
+  } else if (voiceIndex != null && endCard) {
+    // The voice ends before the card; pad it so the card is not cut off.
+    audioFilter = `;[${voiceIndex}:a]apad,atrim=0:${totalSec.toFixed(2)}[aout]`;
+    audioMap = "[aout]";
+  } else {
+    audioMap = `${voiceIndex ?? quietIndex}:a`;
   }
 
-  if (vfExtras.length) {
-    filter = `${scaled};${concat}concat=n=${n}:v=1:a=0,${vfExtras.join(",")},format=yuv420p[vout]`;
-  }
+  const fit = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30";
+  const parts = scenes.map((_, i) => `[${i}:v]${fit}[v${i}]`);
+  if (endCard) parts.push(`[${endIndex}:v]${fit},fade=t=in:st=0:d=0.35:color=0x${params.endCard!.ground.replace("#", "")}[vend]`);
+  const concatIn = scenes.map((_, i) => `[v${i}]`).join("") + (endCard ? "[vend]" : "");
+  const segments = `${parts.join(";")};${concatIn}concat=n=${n + (endCard ? 1 : 0)}:v=1:a=0`;
+
+  const logoNow = params.logo && fs.existsSync(params.logo.file) ? params.logo : null;
+  // Above Instagram's caption and buttons; above our logo when it sits in a bottom corner.
+  const bottomPx = logoNow && logoNow.corner.startsWith("bottom") ? REEL_BOTTOM + logoNow.h + 36 : Math.round(1920 * 0.24);
+  const assFile = path.join(dir, "captions.ass");
+  const subtitles = params.captions?.cues?.length ? assFile : "";
+  const fontsDir = subtitles ? writeAss(params.captions!.cues, assFile, { style: params.captionStyle || "clean", brand: params.brand, bottomPx }) : "";
+  const esc = (file: string) => file.replaceAll("\\", "/").replaceAll(":", "\\:").replaceAll("'", "\\'");
+
+  const videoFilter = (withSubtitles: boolean) => {
+    const subs = withSubtitles && subtitles ? `,subtitles='${esc(subtitles)}':fontsdir='${esc(fontsDir)}'` : "";
+    if (!logo) return `${segments}${subs},format=yuv420p[vout]`;
+    // The small logo sits on the scenes only; the end card carries the big one.
+    return (
+      `${segments}[vcat];[${logoIndex}:v]format=rgba,fade=t=in:st=0.3:d=0.6:alpha=1[lg];` +
+      `[vcat][lg]overlay=${reelLogoXY(logo)}:enable='lt(t,${mainSec.toFixed(2)})'${subs},format=yuv420p[vout]`
+    );
+  };
 
   const out = videoFile(params.projectId);
-  const args = [
+  const encode = (withSubtitles: boolean) => [
     "-y",
     ...inputs,
     "-filter_complex",
-    filter + audioFilter,
+    videoFilter(withSubtitles) + audioFilter,
     "-map",
     "[vout]",
     "-map",
@@ -814,37 +874,18 @@ async function encodeReel(params: {
     "aac",
     "-shortest",
     "-t",
-    String(params.script.durationSec || 30),
+    totalSec.toFixed(2),
     "-movflags",
     "+faststart",
     out,
   ];
 
   try {
-    await run(ffmpegPath, args);
+    await run(ffmpegPath, encode(true));
   } catch (first) {
-    const plain = [
-      "-y",
-      ...inputs,
-      "-filter_complex",
-      `${scaled};${concat}concat=n=${n}:v=1:a=0,format=yuv420p[vout]${audioFilter}`,
-      "-map",
-      "[vout]",
-      "-map",
-      audioMap,
-      "-c:v",
-      "libx264",
-      "-pix_fmt",
-      "yuv420p",
-      "-c:a",
-      "aac",
-      "-shortest",
-      "-t",
-      String(params.script.durationSec || 30),
-      out,
-    ];
+    if (!subtitles) throw first;
     try {
-      await run(ffmpegPath, plain);
+      await run(ffmpegPath, encode(false));
     } catch {
       throw first;
     }
@@ -854,4 +895,217 @@ async function encodeReel(params: {
     throw new Error("Renderer did not produce a video file.");
   }
   return { provider: "auteur-renderer", model: "ffmpeg-1080x1920", cost: 0.01 };
+}
+
+/* ---------- Logo on a Reel: one layer over the video, plus an end card ---------- */
+
+export type ReelLogoSize = "s" | "m" | "l";
+export type ReelLogoSettings = { show: boolean; corner: LogoPosition; size: ReelLogoSize; endCard: boolean };
+export type ReelLogoLayer = { file: string; w: number; h: number; corner: LogoPosition };
+export type ReelEndCard = { file: string; ground: string };
+
+const END_CARD_SEC = 2.5;
+/** Largest logo box on a 1080×1920 Reel, in pixels: wide logos are held by the width, tall ones by the height. */
+const REEL_LOGO_BOX: Record<ReelLogoSize, [number, number]> = { s: [170, 110], m: [230, 150], l: [300, 200] };
+const REEL_SIDE = 48;
+/** Instagram's own bar covers the top; caption, reply box and buttons cover the bottom. */
+const REEL_TOP = Math.round(1920 * 0.12);
+const REEL_BOTTOM = Math.round(1920 * 0.22);
+
+function reelLogoXY(logo: ReelLogoLayer) {
+  const x = logo.corner.endsWith("left") ? REEL_SIDE : 1080 - REEL_SIDE - logo.w;
+  const y = logo.corner.startsWith("top") ? REEL_TOP : 1920 - REEL_BOTTOM - logo.h;
+  return `${x}:${y}`;
+}
+
+function runCapture(bin: string, args: string[]) {
+  return new Promise<Buffer>((resolve, reject) => {
+    const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const chunks: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.on("error", reject);
+    child.on("close", (code) => (code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(`${bin} exited ${code}`))));
+  });
+}
+
+/** How the mark looks: its average brightness (0–1) over the visible pixels, and whether it has a see-through background. */
+async function markTone(file: string) {
+  try {
+    const raw = await runCapture(ffmpegPath, ["-v", "error", "-i", file, "-vf", "scale=48:48", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"]);
+    let sum = 0;
+    let count = 0;
+    let clear = 0;
+    for (let i = 0; i + 3 < raw.length; i += 4) {
+      const alpha = raw[i + 3];
+      if (alpha < 128) {
+        clear += 1;
+        continue;
+      }
+      sum += (0.2126 * raw[i] + 0.7152 * raw[i + 1] + 0.0722 * raw[i + 2]) / 255;
+      count += 1;
+    }
+    const pixels = raw.length / 4 || 1;
+    return { light: count ? sum / count : 0.5, seeThrough: clear / pixels > 0.08 };
+  } catch {
+    return { light: 0.5, seeThrough: true };
+  }
+}
+
+function svgPng(svg: string, fonts: string[] = [], family = "Arial") {
+  return new Resvg(svg, {
+    font: { loadSystemFonts: true, fontFiles: [...fonts, ...SANS_FONTS], defaultFontFamily: family },
+  })
+    .render()
+    .asPng();
+}
+
+/**
+ * The small logo for the whole Reel, on a soft rounded plate so it reads on any photo: a light plate for dark or
+ * colourful logos, a dark one for white logos. A business name set in their font already sits on its own pill.
+ */
+export async function writeReelLogoBadge(projectId: string, brand: BrandKit, size: ReelLogoSize): Promise<Omit<ReelLogoLayer, "corner"> | null> {
+  if (!brand.user_id) return null;
+  const logo = brandLogoPath(brand.user_id);
+  const mark = logo || writeWordmark(brand.user_id, brand.business_name, brand.primary_color || "#1a1612", brand.secondary_color || "#f4efe8", brand.font);
+  const dims = mark ? imageDimensions(mark) : null;
+  if (!mark || !dims || !dims.w || !dims.h) return null;
+  const [boxW, boxH] = REEL_LOGO_BOX[size] || REEL_LOGO_BOX.m;
+  const scale = Math.min(boxW / dims.w, boxH / dims.h);
+  const w = Math.max(2, Math.round((dims.w * scale) / 2) * 2);
+  const h = Math.max(2, Math.round((dims.h * scale) / 2) * 2);
+  const dir = projectMediaDir(projectId);
+  const out = path.join(dir, "reel-logo.png");
+  if (!logo) {
+    await run(ffmpegPath, ["-y", "-v", "error", "-i", mark, "-vf", `scale=${w}:${h}`, out]);
+    return { file: out, w, h };
+  }
+  const tone = await markTone(mark);
+  const pad = Math.max(14, Math.round(Math.min(w, h) * 0.16));
+  const plateW = w + pad * 2;
+  const plateH = h + pad * 2;
+  const fill = tone.light > 0.62 ? "#121010" : "#ffffff";
+  const opacity = tone.light > 0.62 ? 0.5 : 0.82;
+  const plate = path.join(dir, "reel-logo-plate.png");
+  fs.writeFileSync(
+    plate,
+    svgPng(`<svg xmlns="http://www.w3.org/2000/svg" width="${plateW}" height="${plateH}" viewBox="0 0 ${plateW} ${plateH}">
+  <rect width="${plateW}" height="${plateH}" rx="${Math.min(28, Math.round(plateH / 4))}" fill="${fill}" fill-opacity="${opacity}"/>
+</svg>`)
+  );
+  try {
+    await run(ffmpegPath, ["-y", "-v", "error", "-i", plate, "-i", mark, "-filter_complex", `[1:v]scale=${w}:${h}[m];[0:v][m]overlay=${pad}:${pad}`, out]);
+  } finally {
+    fs.rmSync(plate, { force: true });
+  }
+  return { file: out, w: plateW, h: plateH };
+}
+
+function hexRgb(hex = "") {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const v = parseInt(m[1], 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+
+function luminance(hex = "") {
+  const rgb = hexRgb(hex);
+  return rgb ? (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255 : 0.5;
+}
+
+function wrapLines(text: string, perLine: number, maxLines: number) {
+  const words = text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    if ((line + " " + word).trim().length > perLine && line) {
+      lines.push(line);
+      line = word;
+    } else line = (line + " " + word).trim();
+  }
+  if (line) lines.push(line);
+  if (lines.length > maxLines) {
+    const kept = lines.slice(0, maxLines);
+    kept[maxLines - 1] = `${kept[maxLines - 1].replace(/[.,;:!?…]*$/, "")}…`;
+    return kept;
+  }
+  return lines;
+}
+
+/**
+ * The last 2.5 seconds: their logo large, the call to action and where to find them. Light paper for ordinary logos,
+ * a dark ground for white ones, so the logo always reads.
+ */
+export async function writeReelEndCard(projectId: string, brand: BrandKit, cta: string): Promise<ReelEndCard | null> {
+  if (!brand.user_id) return null;
+  const logo = brandLogoPath(brand.user_id);
+  const name = String(brand.business_name || "").replace(/\s+/g, " ").trim().slice(0, 40);
+  if (!logo && !name) return null;
+  const tone = logo ? await markTone(logo) : { light: 0, seeThrough: true };
+  const primary = hexRgb(brand.primary_color) ? brand.primary_color! : "#1a1612";
+  const paper = hexRgb(brand.secondary_color) && luminance(brand.secondary_color) > 0.8 ? brand.secondary_color! : "#f6f1ea";
+  const dark = tone.light > 0.62;
+  const ground = dark ? (luminance(primary) < 0.35 ? primary : "#1a1612") : paper;
+  const ink = dark ? "#f4efe8" : luminance(primary) < 0.45 ? primary : "#1a1612";
+  const muted = dark ? "rgba(244,239,232,0.72)" : "rgba(26,22,18,0.62)";
+  const font = brandFont(brand.user_id, brand.font);
+  const family = font ? xmlEscape(font.family) : "Arial";
+  const ctaLines = wrapLines(String(cta || ""), 20, 3);
+  const contact = contactStampText(brand);
+  const logoTop = 560;
+  const logoBox: [number, number] = [620, 420];
+  let textTop = logoTop + logoBox[1] + 170;
+  const texts: string[] = [];
+  const accent = dark ? "rgba(244,239,232,0.6)" : luminance(primary) > 0.85 ? ink : primary;
+  if (!logo) {
+    const nameLines = wrapLines(name, 14, 2);
+    nameLines.forEach((line, i) => texts.push(`<text x="540" y="${logoTop + 180 + i * 120}" text-anchor="middle" font-family="${family}" font-size="104" fill="${ink}">${xmlEscape(line)}</text>`));
+    textTop = logoTop + 180 + nameLines.length * 120 + 130;
+  }
+  if (ctaLines.length) texts.push(`<rect x="500" y="${textTop - 110}" width="80" height="8" rx="4" fill="${accent}"/>`);
+  ctaLines.forEach((line, i) => texts.push(`<text x="540" y="${textTop + i * 92}" text-anchor="middle" font-family="${family}" font-size="72" fill="${ink}">${xmlEscape(line)}</text>`));
+  if (contact) {
+    const y = textTop + ctaLines.length * 92 + (ctaLines.length ? 56 : 0);
+    texts.push(`<text x="540" y="${y}" text-anchor="middle" font-family="Arial, Helvetica, DejaVu Sans, sans-serif" font-size="40" fill="${muted}">${xmlEscape(contact)}</text>`);
+  }
+  const dir = projectMediaDir(projectId);
+  const ground_png = path.join(dir, "reel-end-ground.png");
+  const out = path.join(dir, "reel-end.png");
+  fs.writeFileSync(
+    ground_png,
+    svgPng(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920"><rect width="1080" height="1920" fill="${ground}"/>${texts.join("")}</svg>`,
+      font ? [font.file] : [],
+      font ? font.family : "Arial"
+    )
+  );
+  try {
+    if (logo) {
+      const dims = imageDimensions(logo);
+      if (!dims || !dims.w || !dims.h) return null;
+      const scale = Math.min(logoBox[0] / dims.w, logoBox[1] / dims.h);
+      const w = Math.round((dims.w * scale) / 2) * 2;
+      const h = Math.round((dims.h * scale) / 2) * 2;
+      const y = logoTop + Math.round((logoBox[1] - h) / 2);
+      await run(ffmpegPath, ["-y", "-v", "error", "-i", ground_png, "-i", logo, "-filter_complex", `[1:v]scale=${w}:${h}[m];[0:v][m]overlay=${(1080 - w) / 2}:${y}`, out]);
+    } else {
+      fs.copyFileSync(ground_png, out);
+    }
+  } finally {
+    fs.rmSync(ground_png, { force: true });
+  }
+  return fs.existsSync(out) ? { file: out, ground } : null;
+}
+
+/** Reel frames carry no logo any more (it is one layer over the video): put back the clean copy of any stamped frame. */
+export function unstampReelFrames(projectId: string, visuals: Visual[]) {
+  let changed = false;
+  const next = visuals.map((visual) => {
+    if (visual.placeholder || !visual.clean || !visual.logoCorner) return visual;
+    const clean = cleanStillFile(projectId, visual.clean);
+    if (fs.existsSync(clean) && hasStillFile(projectId, visual.sceneId)) fs.copyFileSync(clean, stillFile(projectId, visual.sceneId));
+    changed = true;
+    const { logoCorner: _corner, logoBox: _box, ...rest } = visual;
+    return rest as Visual;
+  });
+  return { visuals: next, changed };
 }
