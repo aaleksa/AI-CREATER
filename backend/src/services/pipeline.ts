@@ -529,8 +529,17 @@ export function restoreStepVersion(
   }
 
   if (Number(version.accepted) === 1) return serializeProject(project);
+  const current = parse<Script>(project.script_json);
+  const older = step === "script" ? parse<Script>(String(version.payload_json)) : null;
+  const sameScenes =
+    !isImagePost(String(project.type)) &&
+    Boolean(current && older) &&
+    current!.scenes.length === older!.scenes.length &&
+    current!.scenes.every((scene, i) => scene.id === older!.scenes[i].id);
   db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = ?").run(projectId, step);
   db.prepare("UPDATE project_step_versions SET accepted = 1 WHERE id = ?").run(version.id);
+  // Same scenes (e.g. an earlier hand edit): only what depends on the words is made again; the frames stay.
+  if (sameScenes) return editScript(userId, projectId, older, { saveVersion: false });
   const field = step === "idea" ? "idea_json" : "script_json";
   const wipe = downstreamWipe(step);
   const updates = {
@@ -1346,7 +1355,7 @@ export async function runStep(
       model = result.model;
       actualCost = result.cost;
     } else if (step === "render" && script) {
-      providerTouched = true;
+      // ffmpeg only, no AI: a failed render gives the credits back.
       const layers = await reelLayers(projectId, project, brand, script);
       if (layers.framesChanged) updates.visuals_json = JSON.stringify(layers.visuals);
       const rendered = await renderReel({
@@ -1381,7 +1390,14 @@ export async function runStep(
 
     // One new frame in a finished Reel: keep the video and make it again with that frame (ffmpeg only, free).
     const newFrame = sceneId ? (parse<Visual[]>(String(updates.visuals_json || "")) || []).find((v) => v.sceneId === sceneId) : undefined;
-    const remakeVideo = step === "visuals" && Boolean(sceneId) && !isImagePost(type) && hasVideoFile(projectId) && Boolean(newFrame) && !newFrame?.placeholder;
+    const remakeVideo =
+      step === "visuals" &&
+      Boolean(sceneId) &&
+      !isImagePost(type) &&
+      hasVideoFile(projectId) &&
+      Boolean(newFrame) &&
+      !newFrame?.placeholder &&
+      (voiceOff || hasVoiceFile(projectId));
     if (remakeVideo) {
       delete updates.current_step;
     } else if (regenerate || sceneId) {
@@ -1435,7 +1451,16 @@ export async function runStep(
       if (frames?.length) snapshotStills(projectId, versionId, frames);
     }
     if (String(updates.status || "") === "ready") maybeRefreshLearnedSummary(userId);
-    if (remakeVideo) await remakeOrDrop(userId, projectId, brand);
+    if (remakeVideo) {
+      // The frame is already new; a video that could not catch up is dropped, so it is made again as the step.
+      try {
+        await remakeReelVideo(userId, projectId, brand);
+      } catch (error) {
+        console.error("reel remake after frame failed", error instanceof Error ? error.message : error);
+        removeVideoFile(projectId);
+        db.prepare(`UPDATE projects SET output_url = NULL, status = 'draft', updated_at = datetime('now') WHERE id = ?`).run(projectId);
+      }
+    }
 
     return serializeProject(getProject(projectId, userId));
   } catch (error) {
@@ -1505,7 +1530,7 @@ export function setVoiceOff(userId: string, projectId: string, off: boolean) {
  * The owner's own wording for the script. Changed voiceover drops the voice; changed words make captions and video
  * again. A changed "what I want in the frame" touches nothing else — that frame changes when it is redone.
  */
-export function editScript(userId: string, projectId: string, raw: unknown) {
+export function editScript(userId: string, projectId: string, raw: unknown, opts: { saveVersion?: boolean } = {}) {
   const project = getProject(projectId, userId);
   if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
@@ -1533,7 +1558,7 @@ export function editScript(userId: string, projectId: string, raw: unknown) {
   const wordsChanged = voiceChanged || next.cta !== script.cta || next.scenes.some((scene, i) => scene.onScreen !== script.scenes[i].onScreen);
   const wishChanged = next.scenes.some((scene, i) => (scene.frameWish || "") !== (script.scenes[i].frameWish || ""));
   if (!wordsChanged && !wishChanged) return serializeProject(project);
-  saveStepVersion(projectId, "script", next, "");
+  if (opts.saveVersion !== false) saveStepVersion(projectId, "script", next, "");
   if (!wordsChanged) {
     db.prepare(`UPDATE projects SET script_json = ?, updated_at = datetime('now') WHERE id = ?`).run(JSON.stringify(next), projectId);
     return serializeProject(getProject(projectId, userId));
@@ -1580,6 +1605,7 @@ export async function editCaptions(userId: string, projectId: string, raw: unkno
     .sort((a, b) => a.start - b.start);
   if (!cues.length) throw Object.assign(new Error("Keep at least one caption line with a start and an end."), { status: 400 });
   if (hasVideoFile(projectId)) {
+    assertCanRemake(projectId, project);
     db.prepare(`UPDATE projects SET captions_json = ?, captions_off = 0, updated_at = datetime('now') WHERE id = ?`).run(JSON.stringify({ cues }), projectId);
     await remakeOrDrop(userId, projectId, Number(project.use_brand) === 0 ? null : brandFor(userId));
     return serializeProject(getProject(projectId, userId));
@@ -1626,6 +1652,7 @@ export async function updateReelLogo(userId: string, projectId: string, raw: unk
   if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
   const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
+  assertCanRemake(projectId, project);
   const body = (raw || {}) as Partial<Record<keyof ReelLogoSettings, unknown>>;
   const current = reelLogoOf(project, brand);
   const next: ReelLogoSettings = {
@@ -1652,20 +1679,28 @@ export async function updateCaptionStyle(userId: string, projectId: string, raw:
   if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
   const style = String((raw as { style?: unknown })?.style || "");
   if (!(CAPTION_STYLES as readonly string[]).includes(style)) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  if (Number(project.captions_off) !== 1) assertCanRemake(projectId, project);
   db.prepare(`UPDATE projects SET captions_style = ? WHERE id = ?`).run(style, projectId);
   const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
   if (Number(project.captions_off) !== 1) await remakeReelVideo(userId, projectId, brand);
   return serializeProject(getProject(projectId, userId));
 }
 
-/** Make the finished Reel again; if that fails, drop it so the owner makes it as the normal step. */
+/** The voice is kept 7 days after the last change; without it a finished Reel cannot be re-made for free. */
+const REMAKE_NO_VOICE = "The voice for this Reel is no longer kept (we keep it 7 days), so the video can't be updated for free. Make the voice again, then the video.";
+
+function assertCanRemake(projectId: string, project: Record<string, unknown>) {
+  if (!hasVideoFile(projectId)) return;
+  if (Number(project.voice_off) !== 1 && !hasVoiceFile(projectId)) throw Object.assign(new Error(REMAKE_NO_VOICE), { status: 409 });
+}
+
+/** Make the finished Reel again. The old video stays if that fails — the owner can try again. */
 async function remakeOrDrop(userId: string, projectId: string, brand: BrandKit | null) {
   try {
     await remakeReelVideo(userId, projectId, brand);
   } catch (error) {
     console.error("reel remake failed", error instanceof Error ? error.message : error);
-    removeVideoFile(projectId);
-    db.prepare(`UPDATE projects SET output_url = NULL, status = 'draft', updated_at = datetime('now') WHERE id = ?`).run(projectId);
+    throw Object.assign(new Error("We couldn't update the video. Try again in a minute."), { status: 409 });
   }
 }
 
@@ -1703,6 +1738,7 @@ function musicProject(userId: string, projectId: string) {
   if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   if (!project.script_json) throw Object.assign(new Error("Generate the script first."), { status: 400 });
   if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
+  assertCanRemake(projectId, project);
   return project;
 }
 
@@ -1758,6 +1794,7 @@ export async function setCaptionsOff(userId: string, projectId: string, off: boo
   if ((Number(project.captions_off) === 1) === off) return serializeProject(project);
   const script = parse<Script>(project.script_json);
   if (hasVideoFile(projectId) && script && (off || Number(project.voice_off) === 1)) {
+    assertCanRemake(projectId, project);
     db.prepare(`UPDATE projects SET captions_off = ?, captions_json = ?, updated_at = datetime('now') WHERE id = ?`).run(
       off ? 1 : 0,
       off ? null : JSON.stringify({ cues: sceneCaptions(script) }),

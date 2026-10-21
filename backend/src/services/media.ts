@@ -1102,7 +1102,9 @@ export function unstampReelFrames(projectId: string, visuals: Visual[]) {
   const next = visuals.map((visual) => {
     if (visual.placeholder || !visual.clean || !visual.logoCorner) return visual;
     const clean = cleanStillFile(projectId, visual.clean);
-    if (fs.existsSync(clean) && hasStillFile(projectId, visual.sceneId)) fs.copyFileSync(clean, stillFile(projectId, visual.sceneId));
+    // No clean copy left (removed after 7 days): keep the stamped frame as it is rather than lose track of its logo.
+    if (!fs.existsSync(clean) || !hasStillFile(projectId, visual.sceneId)) return visual;
+    fs.copyFileSync(clean, stillFile(projectId, visual.sceneId));
     changed = true;
     const { logoCorner: _corner, logoBox: _box, ...rest } = visual;
     return rest as Visual;

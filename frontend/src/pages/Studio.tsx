@@ -1022,9 +1022,7 @@ export default function Studio() {
     }
     const price = extraPrice(step, sceneId);
     if (price.extra) {
-      const ok = window.confirm(
-        t("studio.confirm2x", { credits: price.credits })
-      );
+      const ok = window.confirm(t(step === "render" ? "studio.confirm2xVideo" : "studio.confirm2x", { credits: price.credits }));
       if (!ok) return;
     } else if (regenerate && !sceneId && (step === "idea" || step === "script")) {
       const ok = window.confirm(
