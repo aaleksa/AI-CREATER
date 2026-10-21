@@ -274,6 +274,10 @@ button.step:hover { border-color: var(--accent-2); }
 .review-frames figure { margin: 0; }
 .review-frames img, .review-frames .example-loading { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 10px; display: block; }
 .review-frames figcaption { margin-top: 4px; text-align: center; overflow-wrap: anywhere; }
+.review-frames figure { display: grid; gap: 4px; justify-items: center; }
+.review-frame-pick { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: pointer; border-radius: 10px; }
+.review-frames figure.on .review-frame-pick img { box-shadow: 0 0 0 2px var(--accent-2); }
+.review-frames figure .btn.tiny { width: 100%; padding: 5px 6px; }
 
 .studio {
   display: grid;
@@ -414,6 +418,8 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
 .sound-card .voice-off-note { margin-top: 10px; }
 .sound-card .music-block { margin-top: 10px; }
 .redo-card .btn { padding: 6px 12px; font-size: 13px; }
+.free-note { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); display: grid; gap: 4px; }
+.free-note p { margin: 0; font-size: 13px; line-height: 1.45; }
 @font-face { font-family: "Montserrat Caption"; src: url("/fonts/Montserrat-ExtraBold.ttf") format("truetype"); font-weight: 800; font-display: swap; }
 @font-face { font-family: "Montserrat Caption"; src: url("/fonts/Montserrat-Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
 .reel-stage .phone { container-type: inline-size; }

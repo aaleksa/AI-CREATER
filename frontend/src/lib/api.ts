@@ -40,7 +40,7 @@ export type BrandKitRow = Record<string, string> & {
   vertical_note?: string;
   logo_on_photos?: boolean;
 };
-export type ReelLogo = { show: boolean; corner: "top-left" | "top-right" | "bottom-left" | "bottom-right"; size: "s" | "m" | "l"; endCard: boolean };
+export type ReelLogo = { show: boolean; corner: "top-left" | "top-right" | "bottom-left" | "bottom-right"; size: "s" | "m" | "l"; endCard: boolean; plate: boolean };
 /** Our logo placed by hand: left, top and width as fractions of the picture. */
 export type LogoBox = { x: number; y: number; w: number };
 export type Shot = {

@@ -314,6 +314,7 @@ export default function Studio() {
   const [musicDraft, setMusicDraft] = useState<{ volume: number; start: number } | null>(null);
   const [briefOpen, setBriefOpen] = useState(false);
   const [reelMark, setReelMark] = useState<{ src: string; w: number; h: number; dark: boolean } | null>(null);
+  const [reelMarkChecked, setReelMarkChecked] = useState("");
   const [scenesOpen, setScenesOpen] = useState<boolean | null>(null);
   const [brief, setBrief] = useState("");
   const refSrcs = useProjectImageSrcs(project?.refs);
@@ -418,11 +419,15 @@ export default function Studio() {
         img.onload = () => {
           if (cancelled) return;
           setReelMark({ src: url, w: img.naturalWidth, h: img.naturalHeight, dark: markIsLight(img) });
+          setReelMarkChecked(markKey);
         };
         img.src = url;
       })
       .catch(() => {
         if (!cancelled) setReelMark(null);
+      })
+      .finally(() => {
+        if (!cancelled) setReelMarkChecked(markKey);
       });
     return () => {
       cancelled = true;
@@ -557,6 +562,7 @@ export default function Studio() {
     const mult = used >= included ? (project?.extraAttemptMultiplier ?? 2) : 1;
     return { extra: used >= included, credits: base * mult };
   };
+  const prices = { video: extraPrice("render").credits, voice: extraPrice("voice").credits, caps: extraPrice("captions").credits };
   const rawFrame = project?.visuals?.[scene]?.imageUrl || "";
   const currentFrame =
     (project?.visuals?.[scene] && imageSrcs[project.visuals[scene].sceneId]) ||
@@ -598,8 +604,14 @@ export default function Studio() {
     corner: project?.reelLogo?.corner || ((REEL_CORNERS as readonly string[]).includes(String(kit?.logo_position)) ? (kit?.logo_position as ReelLogo["corner"]) : "bottom-right"),
     size: project?.reelLogo?.size || "m",
     endCard: project?.reelLogo?.endCard ?? true,
+    plate: project?.reelLogo?.plate ?? true,
   };
-  const reelHasMark = !isImage && project?.useBrand !== false && Boolean(kit?.logo_url || kit?.business_name);
+  // A logo, or the business name set in their font: only then is there anything to put on the Reel.
+  const reelHasMark = !isImage && project?.useBrand !== false && Boolean(reelMark);
+  const reelBrandOff = !isImage && project?.useBrand === false;
+  const reelMarkLoading = !reelHasMark && !reelBrandOff && Boolean(kit?.logo_url || kit?.business_name) && reelMarkChecked === "";
+  // The end card also works with just the business name.
+  const reelCanEndCard = !isImage && !reelBrandOff && Boolean(kit?.logo_url || kit?.business_name);
   const caption = readableLine(
     project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title || ""
   );
@@ -870,7 +882,7 @@ export default function Studio() {
 
   async function translateReel(lang: "en" | "uk") {
     if (!id || !project?.script) return;
-    if ((project.audioUrl || project.captions || project.hasVideo) && !window.confirm(t("studio.reelLangConfirm"))) return;
+    if ((project.audioUrl || project.captions || project.hasVideo) && !window.confirm(t("studio.reelLangConfirm", prices))) return;
     setBusy(`lang-${lang}`);
     setError("");
     try {
@@ -887,7 +899,7 @@ export default function Studio() {
   async function saveScriptDraft() {
     if (!id || !project?.script || !scriptDraft) return;
     const voiceChanged = scriptDraft.scenes.some((sc) => sc.voiceover.trim() !== (project.script?.scenes.find((x) => x.id === sc.id)?.voiceover || "").trim());
-    const ask = voiceChanged && project.audioUrl ? t("studio.scriptEditVoiceConfirm") : project.captions || project.hasVideo ? t("studio.scriptEditConfirm") : "";
+    const ask = voiceChanged && project.audioUrl ? t("studio.scriptEditVoiceConfirm", prices) : project.captions || project.hasVideo ? t("studio.scriptEditConfirm", prices) : "";
     if (ask && !window.confirm(ask)) return;
     setBusy("edit-script");
     setError("");
@@ -904,7 +916,6 @@ export default function Studio() {
 
   async function saveCapsDraft() {
     if (!id || !capsDraft) return;
-    if (project?.hasVideo && !window.confirm(t("studio.captionsToggleConfirm"))) return;
     setBusy("edit-captions");
     setError("");
     try {
@@ -920,7 +931,8 @@ export default function Studio() {
 
   async function toggleCaptions(off: boolean) {
     if (!id) return;
-    if (project?.hasVideo && !window.confirm(t("studio.captionsToggleConfirm"))) return;
+    // Back on under a voice: the captions come from the voice again (AI), then the video is made again.
+    if (!off && project?.hasVideo && !project.voiceOff && !window.confirm(t("studio.captionsToggleConfirm", prices))) return;
     setBusy(off ? "captions-off" : "captions-on");
     setError("");
     try {
@@ -936,8 +948,8 @@ export default function Studio() {
 
   async function toggleVoice(off: boolean) {
     if (!id) return;
-    if (!off && !window.confirm(t("studio.voiceOnConfirm"))) return;
-    if (off && project?.captions && !window.confirm(t("studio.voiceOffConfirm"))) return;
+    if (!off && !window.confirm(t("studio.voiceOnConfirm", prices))) return;
+    if (off && project?.captions && !window.confirm(t("studio.voiceOffConfirm", prices))) return;
     setBusy(off ? "voice-off" : "voice-on");
     setError("");
     try {
@@ -1452,7 +1464,7 @@ export default function Studio() {
                     <span>{caption}</span>
                   </div>
                 )}
-                {!isImage && reelMark && reelHasMark && reelLogo.show && !project.visuals?.some((v) => v.logoCorner) && <ReelLogoPreview mark={reelMark} logo={reelLogo} plate={Boolean(kit?.logo_url)} />}
+                {!isImage && reelMark && reelHasMark && reelLogo.show && !project.visuals?.some((v) => v.logoCorner) && <ReelLogoPreview mark={reelMark} logo={reelLogo} plate={Boolean(kit?.logo_url) && reelLogo.plate} />}
               </>
             )}
           </div>
@@ -1474,7 +1486,7 @@ export default function Studio() {
             >
               <summary className="edit-block-head">
                 <h3>{t("studio.scenesTitle", { n: project.script.scenes.length })}</h3>
-                <p className="hint">{t(project.visuals ? "studio.scenesHintFrames" : "studio.scenesHint")}</p>
+                <p className="hint">{t(project.hasVideo ? "studio.scenesHintVideo" : project.visuals ? "studio.scenesHintFrames" : "studio.scenesHint", prices)}</p>
               </summary>
             <div className="scenes">
               {project.script.scenes.map((s, i) => (
@@ -1494,7 +1506,7 @@ export default function Studio() {
                         onClick={() => run("visuals", true, s.id)}
                       >
                         {busy === `visual-${s.id}`
-                          ? t("studio.makingShort")
+                          ? t(project.hasVideo ? "studio.reshootVideo" : "studio.makingShort")
                           : extraPrice("visuals", s.id).extra
                             ? t("studio.anotherFrame", { credits: extraPrice("visuals", s.id).credits })
                             : t("studio.regenFrame", { credits: extraPrice("visuals", s.id).credits })}
@@ -1527,7 +1539,17 @@ export default function Studio() {
                 {next ? t("studio.reviewBack", { label: stepLabel(next.id) }) : t("studio.reviewBackDone")}
               </button>
               <h2>{t("studio.reviewTitle", { label: stepLabel(viewStep) })}</h2>
-              <p className="hint">{t(viewStep === "script" || viewStep === "captions" ? "studio.reviewHintEdit" : "studio.reviewHint")}</p>
+              <p className="hint">
+                {t(
+                  viewStep === "script" || viewStep === "captions"
+                    ? "studio.reviewHintEdit"
+                    : viewStep === "visuals" && !isImage
+                      ? project.hasVideo
+                        ? "studio.reviewHintFramesVideo"
+                        : "studio.reviewHintFrames"
+                      : "studio.reviewHint"
+                )}
+              </p>
             </div>
             {viewStep === "idea" && project.idea && (
               <>
@@ -1566,7 +1588,7 @@ export default function Studio() {
                   <span>{t("studio.scriptCta")}</span>
                   <input value={scriptDraft.cta} maxLength={200} onChange={(e) => setScriptDraft({ ...scriptDraft, cta: e.target.value })} />
                 </label>
-                <p className="hint">{t("studio.scriptEditHint")}</p>
+                <p className="hint">{t("studio.scriptEditHint", prices)}</p>
                 <div className="action-row">
                   <button type="button" className="btn" disabled={Boolean(busy)} onClick={saveScriptDraft}>
                     {busy === "edit-script" ? t("studio.voiceOffSaving") : t("studio.editSave")}
@@ -1628,12 +1650,33 @@ export default function Studio() {
                 <p className="lede">{t("studio.reviewPicture")}</p>
               ) : (
                 <div className="review-frames">
-                  {(project.visuals || []).map((v, i) => (
-                    <figure key={v.sceneId}>
-                      {imageSrcs[v.sceneId] ? <img src={imageSrcs[v.sceneId]} alt="" /> : <span className="example-loading" />}
-                      <figcaption className="hint">{t("studio.reviewScene", { n: i + 1 })}</figcaption>
-                    </figure>
-                  ))}
+                  {(project.visuals || []).map((v, i) => {
+                    const at = Math.max(0, project.script?.scenes.findIndex((sc) => sc.id === v.sceneId) ?? i);
+                    return (
+                      <figure key={v.sceneId} className={scene === at ? "on" : undefined}>
+                        <button type="button" className="review-frame-pick" onClick={() => setScene(at)} aria-label={t("studio.reviewScene", { n: i + 1 })}>
+                          {imageSrcs[v.sceneId] ? <img src={imageSrcs[v.sceneId]} alt="" /> : <span className="example-loading" />}
+                        </button>
+                        <figcaption className="hint">{t("studio.reviewScene", { n: i + 1 })}</figcaption>
+                        <button
+                          type="button"
+                          className="btn ghost tiny"
+                          disabled={Boolean(busy) || Boolean(pendingRegen)}
+                          onClick={() => {
+                            setScene(at);
+                            setViewStep(null);
+                            run("visuals", true, v.sceneId);
+                          }}
+                        >
+                          {busy === `visual-${v.sceneId}`
+                            ? t("studio.makingShort")
+                            : extraPrice("visuals", v.sceneId).extra
+                              ? t("studio.anotherFrame", { credits: extraPrice("visuals", v.sceneId).credits })
+                              : t("studio.regenFrame", { credits: extraPrice("visuals", v.sceneId).credits })}
+                        </button>
+                      </figure>
+                    );
+                  })}
                 </div>
               ))}
             {viewStep === "voice" && project.voiceOff && <p className="lede">{t("studio.voiceOffNow")}</p>}
@@ -1688,7 +1731,7 @@ export default function Studio() {
                 >
                   + {t("studio.capsAdd")}
                 </button>
-                <p className="hint">{t("studio.capsEditHint")}</p>
+                <p className="hint">{t("studio.capsEditHint", prices)}</p>
                 <div className="action-row">
                   <button type="button" className="btn" disabled={Boolean(busy)} onClick={saveCapsDraft}>
                     {busy === "edit-captions" ? t("studio.voiceOffSaving") : t("studio.editSave")}
@@ -2261,6 +2304,7 @@ export default function Studio() {
           {project.hasVideo && (
             <>
               <p className="ok">{t("studio.reelReady", { credits: project.creditsUsed })}</p>
+              <p className="hint">{t("studio.reelReadyFree")}</p>
               <p className="hint">{t("studio.reelKeep")}</p>
               <div className="row" style={{ marginTop: 18 }}>
                 {videoSrc && (
@@ -2388,6 +2432,12 @@ export default function Studio() {
                     .join(" · ")}
                 </p>
               </summary>
+              <div className="free-note">
+                <p>
+                  <b>{t("studio.freeTitle")}</b> {t("studio.freeList")}
+                </p>
+                <p className="hint">{t("studio.paidList", prices)}</p>
+              </div>
               {project.voiceOff && (
                 <div className="voice-off-note">
                   <p className="hint" style={{ margin: 0 }}>{t("studio.voiceOffNow")}</p>
@@ -2400,7 +2450,15 @@ export default function Studio() {
                 <div className="voice-off-note">
                   <p className="hint" style={{ margin: 0 }}>{t("studio.captionsOffNow")}</p>
                   <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleCaptions(false)}>
-                    {t("studio.captionsOn")}
+                    {busy === "captions-on" ? t("studio.reelLogoSaving") : t("studio.captionsOn")}
+                  </button>
+                </div>
+              )}
+              {!project.captionsOff && project.captions && project.hasVideo && (
+                <div className="voice-off-note">
+                  <p className="hint" style={{ margin: 0 }}>{t("studio.captionsOnNow")}</p>
+                  <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleCaptions(true)}>
+                    {busy === "captions-off" ? t("studio.reelLogoSaving") : t("studio.captionsRemove")}
                   </button>
                 </div>
               )}
@@ -2408,7 +2466,7 @@ export default function Studio() {
               <div className="music-block">
                 <p className="music-title">{t("studio.capStyleTitle")}</p>
                 <div className="pill-row" role="group" aria-label={t("studio.capStyleTitle")}>
-                  {(["clean", "box", ...(reelHasMark || kit?.primary_color ? ["brand"] : [])] as ("clean" | "box" | "brand")[]).map((style) => (
+                  {(["clean", "box", ...(!reelBrandOff && kit ? ["brand"] : [])] as ("clean" | "box" | "brand")[]).map((style) => (
                     <button
                       key={style}
                       type="button"
@@ -2428,12 +2486,17 @@ export default function Studio() {
             )}
             <div className="music-block">
               <p className="music-title">{t("studio.reelLogoTitle")}</p>
-              {!reelHasMark ? (
-                <p className="hint" style={{ margin: 0 }}>
-                  {t("studio.reelLogoNeedKit")} <Link to="/app/brand">{t("nav.brand")}</Link>
-                </p>
-              ) : (
+              {reelBrandOff ? (
+                <p className="hint" style={{ margin: 0 }}>{t("studio.reelLogoNoBrand")}</p>
+              ) : reelMarkLoading ? null : (
                 <>
+                  {!reelHasMark && (
+                    <p className="hint" style={{ margin: 0 }}>
+                      {t(reelCanEndCard ? "studio.reelLogoNeedFile" : "studio.reelLogoNeedKit")} <Link to="/app/brand">{t("nav.brand")}</Link>
+                    </p>
+                  )}
+                  {reelHasMark && (
+                  <>
                   <label className="check-row">
                     <input type="checkbox" checked={reelLogo.show} disabled={Boolean(busy)} onChange={(e) => saveReelLogo({ show: e.target.checked })} />
                     <span>{t("studio.reelLogoShow")}</span>
@@ -2470,15 +2533,30 @@ export default function Studio() {
                           </button>
                         ))}
                       </div>
+                      {Boolean(kit?.logo_url) && (
+                        <>
+                          <label className="check-row">
+                            <input type="checkbox" checked={reelLogo.plate} disabled={Boolean(busy)} onChange={(e) => saveReelLogo({ plate: e.target.checked })} />
+                            <span>{t("studio.reelLogoPlate")}</span>
+                          </label>
+                          <p className="hint" style={{ margin: 0 }}>{t("studio.reelLogoPlateHint")}</p>
+                        </>
+                      )}
                     </>
                   )}
-                  <label className="check-row">
-                    <input type="checkbox" checked={reelLogo.endCard} disabled={Boolean(busy)} onChange={(e) => saveReelLogo({ endCard: e.target.checked })} />
-                    <span>{t("studio.reelEndCard")}</span>
-                  </label>
-                  <p className="hint" style={{ margin: 0 }}>
-                    {busy === "reel-logo" ? t("studio.reelLogoSaving") : t(project.hasVideo ? "studio.reelLogoFreeNow" : "studio.reelLogoLater")}
-                  </p>
+                  </>
+                  )}
+                  {reelCanEndCard && (
+                    <>
+                      <label className="check-row">
+                        <input type="checkbox" checked={reelLogo.endCard} disabled={Boolean(busy)} onChange={(e) => saveReelLogo({ endCard: e.target.checked })} />
+                        <span>{t(reelHasMark ? "studio.reelEndCard" : "studio.reelEndCardName")}</span>
+                      </label>
+                      <p className="hint" style={{ margin: 0 }}>
+                        {busy === "reel-logo" ? t("studio.reelLogoSaving") : t(project.hasVideo ? "studio.reelLogoFreeNow" : "studio.reelLogoLater")}
+                      </p>
+                    </>
+                  )}
                 </>
               )}
             </div>

@@ -453,9 +453,9 @@ projectsRouter.post("/:id/script/translate", rateLimit(10, 60_000), async (req, 
   }
 });
 
-projectsRouter.patch("/:id/captions", (req, res) => {
+projectsRouter.patch("/:id/captions", rateLimit(10, 60_000), async (req, res) => {
   try {
-    res.json({ project: editCaptions(req.user!.id, String(req.params.id), req.body) });
+    res.json({ project: await editCaptions(req.user!.id, String(req.params.id), req.body) });
   } catch (error) {
     const { status, body } = publicError(error, `${req.method} ${req.path}`);
     res.status(status).json(body);
@@ -480,9 +480,9 @@ projectsRouter.patch("/:id/reel-logo", rateLimit(10, 60_000), async (req, res) =
   }
 });
 
-projectsRouter.post("/:id/captions-off", (req, res) => {
+projectsRouter.post("/:id/captions-off", rateLimit(10, 60_000), async (req, res) => {
   try {
-    res.json({ project: setCaptionsOff(req.user!.id, String(req.params.id), req.body?.off !== false) });
+    res.json({ project: await setCaptionsOff(req.user!.id, String(req.params.id), req.body?.off !== false) });
   } catch (error) {
     const { status, body } = publicError(error, `${req.method} ${req.path}`);
     res.status(status).json(body);

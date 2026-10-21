@@ -900,7 +900,7 @@ async function encodeReel(params: {
 /* ---------- Logo on a Reel: one layer over the video, plus an end card ---------- */
 
 export type ReelLogoSize = "s" | "m" | "l";
-export type ReelLogoSettings = { show: boolean; corner: LogoPosition; size: ReelLogoSize; endCard: boolean };
+export type ReelLogoSettings = { show: boolean; corner: LogoPosition; size: ReelLogoSize; endCard: boolean; plate: boolean };
 export type ReelLogoLayer = { file: string; w: number; h: number; corner: LogoPosition };
 export type ReelEndCard = { file: string; ground: string };
 
@@ -963,7 +963,7 @@ function svgPng(svg: string, fonts: string[] = [], family = "Arial") {
  * The small logo for the whole Reel, on a soft rounded plate so it reads on any photo: a light plate for dark or
  * colourful logos, a dark one for white logos. A business name set in their font already sits on its own pill.
  */
-export async function writeReelLogoBadge(projectId: string, brand: BrandKit, size: ReelLogoSize): Promise<Omit<ReelLogoLayer, "corner"> | null> {
+export async function writeReelLogoBadge(projectId: string, brand: BrandKit, size: ReelLogoSize, withPlate = true): Promise<Omit<ReelLogoLayer, "corner"> | null> {
   if (!brand.user_id) return null;
   const logo = brandLogoPath(brand.user_id);
   const mark = logo || writeWordmark(brand.user_id, brand.business_name, brand.primary_color || "#1a1612", brand.secondary_color || "#f4efe8", brand.font);
@@ -975,7 +975,7 @@ export async function writeReelLogoBadge(projectId: string, brand: BrandKit, siz
   const h = Math.max(2, Math.round((dims.h * scale) / 2) * 2);
   const dir = projectMediaDir(projectId);
   const out = path.join(dir, "reel-logo.png");
-  if (!logo) {
+  if (!logo || !withPlate) {
     await run(ffmpegPath, ["-y", "-v", "error", "-i", mark, "-vf", `scale=${w}:${h}`, out]);
     return { file: out, w, h };
   }
