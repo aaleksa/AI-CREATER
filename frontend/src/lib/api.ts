@@ -124,6 +124,10 @@ export type Project = {
   voiceOff?: boolean;
   /** Reel made without burned-in captions. */
   captionsOff?: boolean;
+  /** The owner's own track under the Reel: volume 0–100, starts from `start` seconds of the track. */
+  music?: { name: string; durationSec: number; volume: number; start: number } | null;
+  /** Changes when the video file is replaced, so the player loads it again. */
+  videoStamp?: number;
   hasImages: boolean;
   creditsUsed: number;
   stepAttempts: Record<string, number>;
@@ -252,6 +256,25 @@ export const api = {
     request<{ project: Project }>(`/projects/${id}/versions/visuals/keep-current`, { method: "POST" }),
   editScript: (id: string, body: { cta?: string; scenes: { id: number; onScreen: string; voiceover: string }[] }) =>
     request<{ project: Project }>(`/projects/${id}/script`, { method: "PATCH", body: JSON.stringify(body) }),
+  uploadMusic: async (id: string, file: File) => {
+    const locale = currentLocale();
+    let res: Response;
+    try {
+      res = await fetch(`/projects/${id}/music`, {
+        method: "POST",
+        headers: localeHeaders({ "Content-Type": file.type || "application/octet-stream", "X-File-Name": encodeURIComponent(file.name) }),
+        body: file,
+      });
+    } catch {
+      throw new ApiError(translateError(locale, "We can’t reach the studio. Check your internet and try again."), 503);
+    }
+    const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string; project?: Project };
+    if (!res.ok) throw new ApiError(translateError(locale, data.error || "Something went wrong. Try again in a minute."), res.status, data.code);
+    return data as { project: Project };
+  },
+  updateMusic: (id: string, body: { volume?: number; start?: number }) =>
+    request<{ project: Project }>(`/projects/${id}/music`, { method: "PATCH", body: JSON.stringify(body) }),
+  removeMusic: (id: string) => request<{ project: Project }>(`/projects/${id}/music`, { method: "DELETE" }),
   translateScript: (id: string, lang: "en" | "uk") =>
     request<{ project: Project }>(`/projects/${id}/script/translate`, { method: "POST", body: JSON.stringify({ lang }) }),
   editCaptions: (id: string, cues: { start: number; end: number; text: string }[]) =>

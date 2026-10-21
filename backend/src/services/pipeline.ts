@@ -49,12 +49,18 @@ import {
   keepCleanCopy,
   keepCleanStill,
   hasStillVersionFile,
+  hasMusicFile,
   hasVideoFile,
   hasVoiceFile,
   persistStills,
+  remixReelAudio,
+  removeMusicFile,
   removeVideoFile,
   removeVoiceFile,
   renderReel,
+  videoFile,
+  writeMusicFromUpload,
+  type ReelMusic,
   restampReelFrames,
   restoreStillSnapshot,
   snapshotStills,
@@ -444,6 +450,11 @@ export function serializeProject(row: Record<string, unknown>) {
     captionsOff: Number(row.captions_off) === 1,
     outputUrl: hasVideoFile(id) ? `/projects/${id}/file` : row.output_url || null,
     hasVideo: hasVideoFile(id),
+    /** Changes when the video file is replaced (e.g. new music), so the page loads it again. */
+    videoStamp: hasVideoFile(id) ? Math.round(fs.statSync(videoFile(id)).mtimeMs) : 0,
+    music: hasMusicFile(id)
+      ? { name: String(row.music_name || ""), durationSec: Number(row.music_duration) || 0, ...reelMusicOf(row) }
+      : null,
     hasImages: isImagePost(String(row.type)) && Boolean(parse(row.visuals_json)),
     creditsUsed: row.credits_used,
     stepAttempts: stepAttemptCounts(id),
@@ -1335,6 +1346,7 @@ export async function runStep(
         captions: captionsOff ? null : parse<{ cues: CaptionCue[] }>(project.captions_json),
         primaryColor: brand?.primary_color,
         silent: voiceOff,
+        music: hasMusicFile(projectId) ? reelMusicOf(project) : null,
       });
       updates.current_step = "create";
       updates.status = "ready";
@@ -1540,6 +1552,59 @@ export function editCaptions(userId: string, projectId: string, raw: unknown) {
     `UPDATE projects SET captions_json = ?, captions_off = 0, output_url = NULL, status = 'draft', updated_at = datetime('now') WHERE id = ?`
   ).run(JSON.stringify({ cues }), projectId);
   return serializeProject(getProject(projectId, userId));
+}
+
+function reelMusicOf(row: Record<string, unknown>): ReelMusic {
+  const volume = Number(row.music_volume);
+  return { volume: Number.isFinite(volume) ? volume : 50, start: Math.max(0, Number(row.music_start) || 0) };
+}
+
+function musicProject(userId: string, projectId: string) {
+  const project = getProject(projectId, userId);
+  if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  if (!project.script_json) throw Object.assign(new Error("Generate the script first."), { status: 400 });
+  if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
+  return project;
+}
+
+/** A finished Reel gets the new sound straight away (picture copied as it is, no credits). */
+async function remixAfterMusicChange(userId: string, projectId: string) {
+  const project = getProject(projectId, userId);
+  await remixReelAudio({
+    projectId,
+    music: hasMusicFile(projectId) ? reelMusicOf(project) : null,
+    silent: Number(project.voice_off) === 1,
+  });
+  db.prepare(`UPDATE projects SET updated_at = datetime('now') WHERE id = ?`).run(projectId);
+  return serializeProject(getProject(projectId, userId));
+}
+
+/** The owner's own track under the Reel. */
+export async function setMusic(userId: string, projectId: string, buf: Buffer, rawName: unknown) {
+  musicProject(userId, projectId);
+  const seconds = await writeMusicFromUpload(projectId, buf);
+  const name = String(rawName || "").replace(/[\u0000-\u001f]/g, "").trim().slice(0, 120) || "music";
+  db.prepare(`UPDATE projects SET music_name = ?, music_duration = ?, music_start = 0 WHERE id = ?`).run(name, seconds, projectId);
+  return remixAfterMusicChange(userId, projectId);
+}
+
+export async function updateMusic(userId: string, projectId: string, raw: unknown) {
+  const project = musicProject(userId, projectId);
+  if (!hasMusicFile(projectId)) throw Object.assign(new Error("Add a music file first."), { status: 400 });
+  const body = (raw || {}) as { volume?: unknown; start?: unknown };
+  const current = reelMusicOf(project);
+  const volume = body.volume === undefined ? current.volume : Math.round(Math.max(0, Math.min(100, Number(body.volume) || 0)));
+  const longest = Math.max(0, (Number(project.music_duration) || 0) - 1);
+  const start = body.start === undefined ? current.start : Math.round(Math.max(0, Math.min(longest, Number(body.start) || 0)) * 10) / 10;
+  db.prepare(`UPDATE projects SET music_volume = ?, music_start = ? WHERE id = ?`).run(volume, start, projectId);
+  return remixAfterMusicChange(userId, projectId);
+}
+
+export async function removeMusic(userId: string, projectId: string) {
+  musicProject(userId, projectId);
+  removeMusicFile(projectId);
+  db.prepare(`UPDATE projects SET music_name = '', music_duration = 0, music_start = 0 WHERE id = ?`).run(projectId);
+  return remixAfterMusicChange(userId, projectId);
 }
 
 /** Reel with or without burned-in captions. Either way the video must be made again. */

@@ -88,6 +88,11 @@ export const ERROR_UK: Record<string, string> = {
   "Something went wrong. Try again in a minute.": "Щось пішло не так. Спробуйте за хвилину.",
   "Something went wrong. Refresh the page and try again.": "Щось пішло не так. Оновіть сторінку й спробуйте ще раз.",
   "This file isn’t ready yet.": "Файл ще не готовий.",
+  "Upload an MP3, M4A, WAV or OGG music file.": "Завантажте музику у форматі MP3, M4A, WAV або OGG.",
+  "Music file is too big. Keep it under 20 MB.": "Файл музики завеликий. До 20 МБ.",
+  "We couldn’t read this music file. Try an MP3 or M4A.": "Не вдалося прочитати цей файл музики. Спробуйте MP3 або M4A.",
+  "Add a music file first.": "Спершу додайте файл музики.",
+  "That file is too big.": "Файл завеликий.",
   "Confirm your email first — we sent you a link. Your 400 free credits arrive right after.":
     "Спочатку підтвердіть пошту — ми надіслали посилання. Одразу після цього отримаєте 400 безкоштовних кредитів.",
   "We just sent a link. Check your inbox and spam, or try again in a minute.":

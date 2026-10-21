@@ -243,6 +243,8 @@ export default function Studio() {
   const [scene, setScene] = useState(0);
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const [musicSrc, setMusicSrc] = useState<string | null>(null);
+  const [musicDraft, setMusicDraft] = useState<{ volume: number; start: number } | null>(null);
   const [brief, setBrief] = useState("");
   const refSrcs = useProjectImageSrcs(project?.refs);
   const [briefSaved, setBriefSaved] = useState(false);
@@ -328,7 +330,31 @@ export default function Studio() {
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [id, project?.hasVideo]);
+  }, [id, project?.hasVideo, project?.videoStamp]);
+
+  const musicKey = project?.music ? `${project.music.name}|${project.music.durationSec}` : "";
+  useEffect(() => {
+    setMusicDraft(null);
+    if (!id || !musicKey) {
+      setMusicSrc(null);
+      return;
+    }
+    let cancelled = false;
+    let url = "";
+    fetchMedia(`/projects/${id}/music`)
+      .then((blob) => {
+        if (cancelled) return;
+        url = URL.createObjectURL(blob);
+        setMusicSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setMusicSrc(null);
+      });
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [id, musicKey]);
 
   useEffect(() => {
     if (!id || !project?.audioUrl) {
@@ -660,6 +686,53 @@ export default function Studio() {
     const { box, markRatio, pictureRatio } = placing;
     const next = e.shiftKey ? { ...box, w: box.w + delta[0] - delta[1] } : { ...box, x: box.x + delta[0], y: box.y + delta[1] };
     setPlacing({ ...placing, box: fitBox(next, markRatio, pictureRatio) });
+  }
+
+  async function pickMusic(file: File | undefined) {
+    if (!id || !file) return;
+    if (file.size > 20 * 1024 * 1024) {
+      setError(t("studio.musicTooBig"));
+      return;
+    }
+    setBusy("music");
+    setError("");
+    try {
+      const { project: nextProject } = await api.uploadMusic(id, file);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveMusic() {
+    if (!id || !musicDraft) return;
+    setBusy("music");
+    setError("");
+    try {
+      const { project: nextProject } = await api.updateMusic(id, musicDraft);
+      setMusicDraft(null);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function dropMusic() {
+    if (!id) return;
+    setBusy("music-off");
+    setError("");
+    try {
+      const { project: nextProject } = await api.removeMusic(id);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function translateReel(lang: "en" | "uk") {
@@ -2104,6 +2177,85 @@ export default function Studio() {
               <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleVoice(false)}>
                 {t("studio.voiceOn")}
               </button>
+            </div>
+          )}
+          {!isImage && project.script && !viewStep && (
+            <div className="music-block">
+              <p className="music-title">{t("studio.musicTitle")}</p>
+              {!project.music ? (
+                <>
+                  <p className="hint" style={{ margin: 0 }}>{t("studio.musicHint")}</p>
+                  <label className={`btn ghost${busy ? " disabled" : ""}`}>
+                    {busy === "music" ? t("studio.musicUploading") : t("studio.musicAdd")}
+                    <input
+                      type="file"
+                      accept="audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,.mp3,.m4a,.aac,.wav,.ogg,.flac"
+                      hidden
+                      disabled={Boolean(busy)}
+                      onChange={(e) => {
+                        pickMusic(e.target.files?.[0]);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <p className="hint" style={{ margin: 0 }}>
+                    <b>{project.music.name}</b> · {t("studio.musicLength", { sec: Math.round(project.music.durationSec) })}
+                  </p>
+                  {musicSrc && <audio controls src={musicSrc} style={{ width: "100%" }} />}
+                  <label className="music-row">
+                    <span>{t("studio.musicVolume", { n: (musicDraft || project.music).volume })}</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={(musicDraft || project.music).volume}
+                      disabled={Boolean(busy)}
+                      onChange={(e) => setMusicDraft({ ...(musicDraft || project.music!), volume: Number(e.target.value) })}
+                    />
+                  </label>
+                  <label className="music-row">
+                    <span>{t("studio.musicStart")}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={Math.max(0, Math.floor(project.music.durationSec - 1))}
+                      step={1}
+                      value={(musicDraft || project.music).start}
+                      disabled={Boolean(busy)}
+                      onChange={(e) => setMusicDraft({ ...(musicDraft || project.music!), start: Math.max(0, Number(e.target.value) || 0) })}
+                    />
+                  </label>
+                  <p className="hint" style={{ margin: 0 }}>{t(project.voiceOff ? "studio.musicAlone" : "studio.musicUnderVoice")}</p>
+                  <div className="row">
+                    {musicDraft && (
+                      <button className="btn accent" type="button" disabled={Boolean(busy)} onClick={saveMusic}>
+                        {busy === "music" ? t("studio.musicSaving") : t(project.hasVideo ? "studio.musicApplyVideo" : "studio.musicApply")}
+                      </button>
+                    )}
+                    <label className={`btn ghost${busy ? " disabled" : ""}`}>
+                      {t("studio.musicReplace")}
+                      <input
+                        type="file"
+                        accept="audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,.mp3,.m4a,.aac,.wav,.ogg,.flac"
+                        hidden
+                        disabled={Boolean(busy)}
+                        onChange={(e) => {
+                          pickMusic(e.target.files?.[0]);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                    <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={dropMusic}>
+                      {busy === "music-off" ? t("studio.musicSaving") : t("studio.musicRemove")}
+                    </button>
+                  </div>
+                </>
+              )}
+              <p className="hint" style={{ margin: 0 }}>{t(project.hasVideo ? "studio.musicFreeNow" : "studio.musicLater")}</p>
             </div>
           )}
           {pendingRegen && STEP_REASONS[pendingRegen.step] && (

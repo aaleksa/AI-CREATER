@@ -1,10 +1,10 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_INVITE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, logoBaseFile, logoLayout, logoMarkFile, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, editCaptions, editScript, translateReelScript, setCaptionsOff, setVoiceOff, stampLogoOnPicture, updateInvite, updateShot } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, logoBaseFile, logoLayout, logoMarkFile, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, editCaptions, editScript, translateReelScript, setMusic, updateMusic, removeMusic, setCaptionsOff, setVoiceOff, stampLogoOnPicture, updateInvite, updateShot } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
-import { hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
+import { hasMusicFile, hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, MUSIC_MAX_BYTES, musicFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
 import { archiveState } from "../services/archive.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 import { publicError, USER_ERRORS } from "../services/userErrors.js";
@@ -186,6 +186,56 @@ projectsRouter.get("/:id/audio", (req, res) => {
   }
   res.type("audio/mpeg");
   res.sendFile(voiceFile(id));
+});
+
+projectsRouter.get("/:id/music", (req, res) => {
+  const id = String(req.params.id);
+  const row = db.prepare("SELECT id FROM projects WHERE id = ? AND user_id = ?").get(id, req.user!.id);
+  if (!row || !hasMusicFile(id)) {
+    res.status(404).json({ error: "No music." });
+    return;
+  }
+  res.type("audio/mp4");
+  res.sendFile(musicFile(id));
+});
+
+projectsRouter.post(
+  "/:id/music",
+  rateLimit(10, 60_000),
+  express.raw({ type: () => true, limit: MUSIC_MAX_BYTES }),
+  async (req, res) => {
+    try {
+      const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      let name = "";
+      try {
+        name = decodeURIComponent(String(req.get("X-File-Name") || ""));
+      } catch {
+        name = "";
+      }
+      res.json({ project: await setMusic(req.user!.id, String(req.params.id), buf, name) });
+    } catch (error) {
+      const { status, body } = publicError(error, `${req.method} ${req.path}`);
+      res.status(status).json(body);
+    }
+  }
+);
+
+projectsRouter.patch("/:id/music", rateLimit(30, 60_000), async (req, res) => {
+  try {
+    res.json({ project: await updateMusic(req.user!.id, String(req.params.id), req.body) });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.delete("/:id/music", rateLimit(30, 60_000), async (req, res) => {
+  try {
+    res.json({ project: await removeMusic(req.user!.id, String(req.params.id)) });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
 });
 
 projectsRouter.delete("/:id", (req, res) => {

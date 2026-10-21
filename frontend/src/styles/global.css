@@ -1107,3 +1107,11 @@ details.options > .brand-toggle, details.options > .examples { margin-top: 14px;
 .draft-cue input { min-width: 0; }
 @media (max-width: 560px) { .draft-cue { grid-template-columns: 64px 64px 1fr auto; } }
 .reel-lang { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.music-block { display: grid; gap: 10px; margin-top: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
+.music-title { margin: 0; font-weight: 600; }
+.music-block label.btn { justify-self: start; cursor: pointer; }
+.music-block .row label.btn { justify-self: auto; }
+.music-block label.btn.disabled { opacity: .45; pointer-events: none; }
+.music-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: .9rem; }
+.music-row input[type="range"] { flex: 1; min-width: 160px; }
+.music-row input[type="number"] { width: 90px; }
