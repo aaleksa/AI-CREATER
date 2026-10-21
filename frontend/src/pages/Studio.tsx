@@ -315,6 +315,11 @@ export default function Studio() {
   const [musicSrc, setMusicSrc] = useState<string | null>(null);
   const [musicDraft, setMusicDraft] = useState<{ volume: number; start: number } | null>(null);
   const [briefOpen, setBriefOpen] = useState(false);
+  const [busySince, setBusySince] = useState(0);
+  const [busyTick, setBusyTick] = useState(0);
+  const [doneNote, setDoneNote] = useState("");
+  const lastBusy = useRef<string | null>(null);
+  const reasonRef = useRef<HTMLDivElement>(null);
   const [reelMark, setReelMark] = useState<{ src: string; w: number; h: number; dark: boolean } | null>(null);
   const [reelMarkChecked, setReelMarkChecked] = useState("");
   const [scenesOpen, setScenesOpen] = useState<boolean | null>(null);
@@ -439,6 +444,34 @@ export default function Studio() {
       if (url) URL.revokeObjectURL(url);
     };
   }, [id, markKey]);
+
+  useEffect(() => {
+    if (!busy) return;
+    setBusySince(Date.now());
+    setBusyTick(0);
+    setDoneNote("");
+    const timer = window.setInterval(() => setBusyTick((n) => n + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [busy]);
+
+  useEffect(() => {
+    const finished = lastBusy.current;
+    lastBusy.current = busy;
+    if (busy || !finished || error) return;
+    const note = doneText(finished);
+    if (!note) return;
+    setDoneNote(note);
+    const timer = window.setTimeout(() => setDoneNote(""), 6000);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy]);
+
+  // "Why didn't it work?" comes first: bring it into view, or the redo seems to do nothing.
+  useEffect(() => {
+    if (!pendingRegen) return;
+    const timer = window.setTimeout(() => reasonRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+    return () => window.clearTimeout(timer);
+  }, [pendingRegen]);
 
   const musicKey = project?.music ? `${project.music.name}|${project.music.durationSec}` : "";
   useEffect(() => {
@@ -617,6 +650,32 @@ export default function Studio() {
   const reelMarkLoading = !reelHasMark && !reelBrandOff && Boolean(kit?.logo_url || kit?.business_name) && reelMarkChecked === "";
   // The end card also works with just the business name.
   const reelCanEndCard = !isImage && !reelBrandOff && Boolean(kit?.logo_url || kit?.business_name);
+  const sceneNumber = (sceneId: number) => Math.max(0, project?.script?.scenes.findIndex((sc) => sc.id === sceneId) ?? 0) + 1;
+  const VIDEO_UPDATES = ["remake", "reel-logo", "caption-style", "music", "music-off", "captions-on", "captions-off", "edit-captions"];
+  function busyText(key: string | null) {
+    if (!key) return "";
+    const frame = /^visual-(\d+)$/.exec(key);
+    if (frame) return t(project?.hasVideo && !isImage ? "studio.busyFrameVideo" : "studio.busyFrame", { n: sceneNumber(Number(frame[1])) });
+    if (key === "visuals") return t(isImage ? "studio.busyPicture" : "studio.busyFrames");
+    if (key === "render") return t("studio.busyRender");
+    if (key === "voice") return t("studio.busyVoice");
+    if (key === "captions") return t("studio.busyCaptions");
+    if (key === "idea" || key === "script") return t("studio.busyText");
+    if (key === "lang-en" || key === "lang-uk") return t("studio.busyTranslate");
+    if (!isImage && project?.hasVideo && VIDEO_UPDATES.includes(key)) return t("studio.busyVideo");
+    return "";
+  }
+  function doneText(key: string) {
+    const frame = /^visual-(\d+)$/.exec(key);
+    if (frame) return t(project?.hasVideo && !isImage ? "studio.doneFrameVideo" : "studio.doneFrame", { n: sceneNumber(Number(frame[1])) });
+    if (key === "render") return t("studio.doneRender");
+    if (!isImage && project?.hasVideo && VIDEO_UPDATES.includes(key)) return t("studio.doneVideo");
+    return "";
+  }
+  const busyNote = busyText(busy);
+  const elapsed = busyNote ? Math.max(busyTick, Math.floor((Date.now() - busySince) / 1000)) : 0;
+  const elapsedLabel =
+    elapsed < 60 ? t("studio.elapsedSec", { s: elapsed }) : t("studio.elapsedMin", { m: Math.floor(elapsed / 60), s: String(elapsed % 60).padStart(2, "0") });
   const caption = readableLine(
     project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title || ""
   );
@@ -1451,7 +1510,14 @@ export default function Studio() {
         <div className={isImage ? "studio-preview" : "reel-stage"}>
           <div ref={phoneRef} className={`phone${isImage ? " post" : ""}${isPoster ? " poster" : ""}${isInvite ? " invite" : ""}`} style={{ ...(shapeRatio ? { aspectRatio: shapeRatio } : {}), ...(typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : {}) }}>
             {project.hasVideo && videoSrc ? (
-              <video className="phone-video" src={videoSrc} controls playsInline />
+              <>
+                <video className="phone-video" src={videoSrc} controls playsInline />
+                {busyNote && (
+                  <div className="phone-busy" aria-hidden>
+                    <span className="spinner" />
+                  </div>
+                )}
+              </>
             ) : (
               <>
                 {frame && !frame.startsWith("linear") && (
@@ -1484,6 +1550,11 @@ export default function Studio() {
                 {frameIsPlaceholder && (
                   <div className="caption" style={{ top: 18, bottom: "auto", fontSize: 14, fontFamily: "var(--sans, inherit)" }}>
                     {t("studio.placeholderFail")}
+                  </div>
+                )}
+                {!isImage && busyNote && (
+                  <div className="phone-busy" aria-hidden>
+                    <span className="spinner" />
                   </div>
                 )}
                 {!isImage && (
@@ -2731,7 +2802,7 @@ export default function Studio() {
             </details>
           )}
           {pendingRegen && STEP_REASONS[pendingRegen.step] && (
-            <div style={{ marginTop: 16 }}>
+            <div ref={reasonRef} className="reason-box" style={{ marginTop: 16 }}>
               <p className="lede">{t("studio.whyFail")}</p>
               <div className="field" style={{ marginTop: 8 }}>
                 <select value={regenReason} onChange={(e) => setRegenReason(e.target.value)}>
@@ -2811,6 +2882,27 @@ export default function Studio() {
           </p>
         </div>
       </div>
+      {!busy && pendingRegen && STEP_REASONS[pendingRegen.step] ? (
+        <div className="busy-toast wait" role="status" aria-live="polite">
+          <span aria-hidden>↑</span>
+          <span>
+            {pendingRegen.sceneId
+              ? t("studio.waitReasonFrame", { n: sceneNumber(pendingRegen.sceneId) })
+              : t("studio.waitReason")}
+          </span>
+        </div>
+      ) : busyNote ? (
+        <div className="busy-toast" role="status" aria-live="polite">
+          <span className="spinner" />
+          <span>{busyNote}</span>
+          <span className="busy-time">{elapsedLabel}</span>
+        </div>
+      ) : doneNote ? (
+        <div className="busy-toast done" role="status" aria-live="polite">
+          <span aria-hidden>✓</span>
+          <span>{doneNote}</span>
+        </div>
+      ) : null}
     </div>
   );
 }
