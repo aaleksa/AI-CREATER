@@ -424,10 +424,10 @@ projectsRouter.get("/:id/logo/base", (req, res) => {
   }
 });
 
-projectsRouter.delete("/:id/logo", rateLimit(20, 60_000), (req, res) => {
+projectsRouter.delete("/:id/logo", rateLimit(20, 60_000), async (req, res) => {
   const sceneId = Number(req.body?.sceneId ?? req.query.sceneId) || 1;
   try {
-    const project = removeLogoFromPicture(req.user!.id, String(req.params.id), sceneId, String(req.query.versionId || "").slice(0, 80));
+    const project = await removeLogoFromPicture(req.user!.id, String(req.params.id), sceneId, String(req.query.versionId || "").slice(0, 80));
     res.json({ project });
   } catch (error) {
     const { status, body } = publicError(error, `${req.method} ${req.path}`);

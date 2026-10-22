@@ -97,7 +97,7 @@ import {
   voiceDurationSec,
 } from "./media.js";
 import { assertArchiveRoom, evictOverLimit } from "./archive.js";
-import { inviteFrom, parseInvite, preferBriefInvite } from "./invite.js";
+import { inviteFrom, parseInvite, preferBriefInvite, type InviteCard } from "./invite.js";
 import { parseStepFeedback, recordStepRejection } from "./feedback.js";
 import { maybeRefreshLearnedSummary } from "./learning.js";
 import { previewState } from "./share.js";
@@ -141,6 +141,34 @@ export function readCreateImageIntent(type: string, raw: unknown): { intent: Ima
   return { error: "Choose photo, invitation, information or offer." };
 }
 
+/** The language a picture version was made in, read from its prompt; null when the prompt does not say. */
+function languageOfPrompt(prompt: string): PictureLanguage | null {
+  if (/Translate the text in this image to English|Translate the whole brief into English first/.test(prompt)) return "en";
+  if (/Translate the text in this image to Ukrainian|Translate the whole brief into Ukrainian first/.test(prompt)) return "uk";
+  if (/Same language as the request/.test(prompt)) return "";
+  return null;
+}
+
+/**
+ * The words' language of the picture shown now: the chosen version's own, or (for an edit, a new shape or a logo
+ * version) the one it was made from. Null when nothing says — then the post's setting stands.
+ */
+function chosenPictureLanguage(projectId: string): PictureLanguage | null {
+  const rows = db
+    .prepare("SELECT accepted, payload_json FROM project_step_versions WHERE project_id = ? AND step = 'visuals' ORDER BY rowid")
+    .all(projectId) as { accepted: number; payload_json: string }[];
+  let index = -1;
+  rows.forEach((row, i) => {
+    if (Number(row.accepted) === 1) index = i;
+  });
+  for (let i = index; i >= 0; i--) {
+    const frame = (parse<Visual[]>(rows[i].payload_json) || []).find((item) => item.sceneId === 1);
+    const lang = languageOfPrompt(String(frame?.prompt || ""));
+    if (lang !== null) return lang;
+  }
+  return null;
+}
+
 export function parsePictureLanguage(raw: unknown): PictureLanguage {
   if (raw === "en" || raw === "uk") return raw;
   return "";
@@ -175,7 +203,8 @@ function imageCarousel(
   intent: ImageIntent | "" = "photo",
   feedback?: { reason?: string; note?: string },
   brand?: BrandKit | null,
-  pictureLanguage: PictureLanguage = ""
+  pictureLanguage: PictureLanguage = "",
+  invite?: InviteCard | null
 ): Script {
   const kind = intent || "photo";
   return {
@@ -196,7 +225,8 @@ function imageCarousel(
           kind,
           feedback,
           brand,
-          pictureLanguage
+          pictureLanguage,
+          invite
         ),
       },
     ],
@@ -435,6 +465,13 @@ function continuationOf(projectId: string, project: Record<string, unknown>, scr
  * generation, so we walk back to the nearest version the model made.
  */
 function modelPictureFor(projectId: string, rows: VersionRow[], index: number, sceneId: number) {
+  // A logo version keeps the clean copy of the picture it was stamped on: that one wins, so a version brought back
+  // from further up the list is not swapped for whichever generated picture sits nearest above it.
+  for (let i = Math.min(index, rows.length - 1); i >= 0; i--) {
+    const own = (parse<Visual[]>(rows[i]?.payload_json || "") || []).find((item) => item.sceneId === sceneId);
+    if (own?.clean && hasCleanStill(projectId, own.clean)) return { file: cleanStillFile(projectId, own.clean), frame: own };
+    if (rows[i]?.generation_id) break;
+  }
   let base = rows[0];
   for (let i = index; i >= 0; i--) {
     if (rows[i]?.generation_id) {
@@ -528,7 +565,8 @@ export function serializeProject(row: Record<string, unknown>) {
     type: row.type,
     prompt: row.prompt,
     imageIntent: row.image_intent || "",
-    pictureLanguage: parsePictureLanguage(row.picture_language),
+    pictureLanguage:
+      isTextPoster(String(row.type), String(row.image_intent || "")) ? chosenPictureLanguage(id) ?? parsePictureLanguage(row.picture_language) : parsePictureLanguage(row.picture_language),
     imageFormat: String(row.type) === "image_post" ? resolveImageFormat(isTextPoster(String(row.type), String(row.image_intent || "photo")) ? "poster" : "still", row.image_format) : "",
     useBrand: Number(row.use_brand) !== 0,
     refs: exampleRefList(id),
@@ -561,7 +599,7 @@ export function serializeProject(row: Record<string, unknown>) {
     music: hasMusicFile(id)
       ? { name: String(row.music_name || ""), durationSec: Number(row.music_duration) || 0, ...reelMusicOf(row) }
       : null,
-    hasImages: isImagePost(String(row.type)) && Boolean(parse(row.visuals_json)),
+    hasImages: isImagePost(String(row.type)) && Boolean(parse(row.visuals_json)) && hasStillFile(id, 1),
     creditsUsed: row.credits_used,
     stepAttempts: stepAttemptCounts(id),
     frameAttempts: frameAttemptCounts(id),
@@ -617,6 +655,10 @@ export async function restoreStepVersion(
     db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = 'visuals'").run(projectId);
     db.prepare("UPDATE project_step_versions SET accepted = 1 WHERE id = ?").run(version.id);
     const ready = isImagePost(String(project.type));
+    const chosenLang = ready ? chosenPictureLanguage(projectId) : null;
+    if (chosenLang !== null && isTextPoster(String(project.type), String(project.image_intent || ""))) {
+      db.prepare("UPDATE projects SET picture_language = ? WHERE id = ?").run(chosenLang, projectId);
+    }
     db.prepare(
       `UPDATE projects SET visuals_json = ?, output_url = ?, status = ?, updated_at = datetime('now') WHERE id = ?`
     ).run(JSON.stringify(next), ready ? `/projects/${projectId}/image/1` : null, ready ? "ready" : "draft", projectId);
@@ -833,14 +875,14 @@ const NO_BRAND_MARK = "Add a logo in Brand Kit first.";
 const LOGO_DRAWN_IN = "This logo is part of the picture and can’t be taken off. Make the picture again, or go back to an earlier version.";
 
 /** A finished picture we may change without AI: the one picked in the version list, else the current one. */
-function pictureForLogo(userId: string, projectId: string, sceneId: number, versionId = "") {
+async function pictureForLogo(userId: string, projectId: string, sceneId: number, versionId = "") {
   const picked = versionId
     ? (db
         .prepare("SELECT accepted FROM project_step_versions WHERE id = ? AND project_id = ? AND step = 'visuals'")
         .get(versionId, projectId) as { accepted: number } | undefined)
     : undefined;
   if (versionId && !picked) throw Object.assign(new Error("That picture is gone."), { status: 404 });
-  if (picked && Number(picked.accepted) !== 1) restoreStepVersion(userId, projectId, "visuals", versionId, sceneId);
+  if (picked && Number(picked.accepted) !== 1) await restoreStepVersion(userId, projectId, "visuals", versionId, sceneId);
   const project = getProject(projectId, userId);
   if (!isImagePost(String(project.type))) {
     throw Object.assign(new Error("Only pictures can take a logo."), { status: 400 });
@@ -877,7 +919,7 @@ export async function stampLogoOnPicture(
   versionId = "",
   rawBox?: unknown
 ) {
-  const { visuals } = pictureForLogo(userId, projectId, sceneId, versionId);
+  const { visuals } = await pictureForLogo(userId, projectId, sceneId, versionId);
   const brand = brandFor(userId);
   if (!brand) throw Object.assign(new Error(NO_BRAND_MARK), { status: 400 });
   const box = rawBox === undefined || rawBox === null ? undefined : readLogoBox(rawBox);
@@ -978,8 +1020,8 @@ async function putLogoBack(userId: string, projectId: string, visuals: Visual[],
 }
 
 /** Takes every logo we stamped off: back to the picture the model returned. A logo the model painted itself stays. */
-export function removeLogoFromPicture(userId: string, projectId: string, sceneId = 1, versionId = "") {
-  const { visuals, frame } = pictureForLogo(userId, projectId, sceneId, versionId);
+export async function removeLogoFromPicture(userId: string, projectId: string, sceneId = 1, versionId = "") {
+  const { visuals, frame } = await pictureForLogo(userId, projectId, sceneId, versionId);
   const still = stillFile(projectId, sceneId);
   const base = currentModelPicture(projectId, sceneId);
   if (!base.file || (!frame.clean && sameFile(base.file, still))) {
@@ -1217,8 +1259,11 @@ export async function runStep(
     .slice(0, 400);
   const requestedLang = parsePictureLanguage(opts.pictureLanguage);
   const reformat = keepStill ? parseImageFormat(opts.reformat) : "";
+  // A new try follows the picture chosen now: bringing back a Ukrainian version after an English one means Ukrainian.
   const pictureLanguage =
-    requestedLang || parsePictureLanguage(project.picture_language);
+    requestedLang ||
+    ((isTextPoster(type, String(project.image_intent || "")) ? chosenPictureLanguage(projectId) : null) ??
+      parsePictureLanguage(project.picture_language));
   const regenerate = Boolean(opts.regenerate) || keepStill;
   let keepStillPath = "";
   let keepLogo: { file: string; corner: LogoPosition; box?: LogoBox } | null = null;
@@ -1251,11 +1296,7 @@ export async function runStep(
       throw Object.assign(new Error("We’re already making this. Wait a moment."), { status: 409 });
     }
   }
-  db.prepare(
-    `UPDATE ai_generations
-     SET status = 'failed', finished_at = datetime('now')
-     WHERE project_id = ? AND type = ? AND status = 'running' AND started_at < ?`
-  ).run(projectId, step, new Date(Date.now() - 3 * 60 * 1000).toISOString());
+  failStaleRuns(projectId, step);
   const inflight = db
     .prepare(`SELECT id FROM ai_generations WHERE project_id = ? AND type = ? AND status = 'running'`)
     .get(projectId, step);
@@ -1382,7 +1423,17 @@ export async function runStep(
     throw Object.assign(new Error("Generate the script first."), { status: 400 });
   }
   const imageScript =
-    isImagePost(type) && idea ? imageCarousel(prompt, idea, imageIntent, feedback, brand, pictureLanguage) : script;
+    isImagePost(type) && idea
+      ? imageCarousel(
+          prompt,
+          idea,
+          imageIntent,
+          feedback,
+          brand,
+          pictureLanguage,
+          imageIntent === "invite" && project.invite_json ? parseInvite(parse(project.invite_json)) : null
+        )
+      : script;
   if (step === "visuals" && sceneId && imageScript && !imageScript.scenes.find((item) => item.id === sceneId)) {
     throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   }
@@ -1766,12 +1817,51 @@ export async function runStep(
     // Nothing came out, so nothing is paid — even when the AI was called (that cost is ours).
     if (reserved > 0) refundCredits(userId, reserved, `Refund ${step} — ${providerTouched ? "the AI did not deliver" : "AI was not called"}`);
     db.prepare(
-      `UPDATE projects SET status = CASE WHEN status = 'generating' THEN 'draft' ELSE status END, updated_at = datetime('now') WHERE id = ?`
-    ).run(projectId);
+      `UPDATE projects SET status = CASE WHEN status = 'generating' THEN ? ELSE status END, updated_at = datetime('now') WHERE id = ?`
+    ).run(settledStatus(projectId), projectId);
     const failed = forOwner(error, `Step ${step} (${projectId})`, stepFailedText(step, type)) as Error & { code?: string };
     if (reserved > 0 && !failed.code) failed.code = "credits_refunded";
     throw failed;
   }
+}
+
+/** What a project is once nothing runs: ready when its picture or video is there, a draft otherwise. */
+function settledStatus(projectId: string) {
+  const row = db.prepare("SELECT type, visuals_json FROM projects WHERE id = ?").get(projectId) as { type: string; visuals_json: string | null } | undefined;
+  if (!row) return "draft";
+  if (isImagePost(String(row.type))) return row.visuals_json && hasStillFile(projectId, 1) ? "ready" : "draft";
+  return hasVideoFile(projectId) ? "ready" : "draft";
+}
+
+/**
+ * Runs that never finished (the server stopped, or the AI hung): marked failed, their credits given back and the
+ * project freed, so nothing stays "generating" and nothing is paid for a result that never came.
+ */
+export function failStaleRuns(projectId?: string, step?: string, olderThanMs = 10 * 60 * 1000) {
+  const since = new Date(Date.now() - olderThanMs).toISOString();
+  const rows = db
+    .prepare(
+      `SELECT id, user_id, project_id, type, credits_used FROM ai_generations
+       WHERE status = 'running' AND started_at < ? ${projectId ? "AND project_id = ?" : ""} ${step ? "AND type = ?" : ""}`
+    )
+    .all(...([since, projectId, step].filter((value) => value !== undefined) as string[])) as {
+    id: string;
+    user_id: string;
+    project_id: string;
+    type: string;
+    credits_used: number;
+  }[];
+  for (const run of rows) {
+    db.prepare(`UPDATE ai_generations SET status = 'failed', credits_used = 0, finished_at = datetime('now') WHERE id = ?`).run(run.id);
+    if (Number(run.credits_used) > 0) refundCredits(run.user_id, Number(run.credits_used), `Refund ${run.type} — the run never finished`);
+    if (run.project_id) {
+      db.prepare(`UPDATE projects SET status = CASE WHEN status = 'generating' THEN ? ELSE status END WHERE id = ?`).run(
+        settledStatus(run.project_id),
+        run.project_id
+      );
+    }
+  }
+  return rows.length;
 }
 
 function stepFailedText(step: keyof typeof CREDIT_COSTS, type: string) {

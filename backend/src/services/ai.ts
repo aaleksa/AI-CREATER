@@ -1002,6 +1002,23 @@ function addressLine(brand?: BrandKit | null) {
   return `Their business address is "${address}". If this picture invites people to an event or offer at their business and the request names no place or address, print this address once as the place line, spelled exactly as given. If the request already names a place or address, use that and do not add this one. If the picture is not about visiting them, do not print it. Never invent a different address.`;
 }
 
+/** The invitation's details as the owner checked them: printed exactly, never reworded or translated. */
+function inviteDetailsLine(invite?: InviteCard | null) {
+  if (!invite) return "";
+  const rows = [
+    ["Title", invite.name],
+    ["Date", invite.date],
+    ["Time", invite.time],
+    ["Place", invite.place],
+    ["Address", invite.address],
+  ].filter(([, value]) => String(value || "").trim());
+  if (!rows.length) return "";
+  return [
+    "Invitation details the owner confirmed — print these exactly as written (same spelling, numbers and language; do not translate or reword):",
+    ...rows.map(([label, value]) => `${label}: ${String(value).trim()}`),
+  ].join("\n");
+}
+
 export function stillPicturePrompt(
   brief: string,
   idea: Idea,
@@ -1011,7 +1028,8 @@ export function stillPicturePrompt(
   kind = "photo",
   feedback?: RegenNote,
   brand?: BrandKit | null,
-  pictureLanguage: PictureLanguage = ""
+  pictureLanguage: PictureLanguage = "",
+  invite?: InviteCard | null
 ) {
   const asked = brief
     .replace(/\*\*/g, "")
@@ -1030,6 +1048,7 @@ export function stillPicturePrompt(
     confirmed.length
       ? ["The owner approved this shot. Follow it exactly:", ...confirmed].join("\n")
       : idea.visualDirection && `Photograph this: ${idea.visualDirection}`,
+    kind === "invite" && inviteDetailsLine(invite),
     `Facts from their request (do not add a different scene):\n${asked}`,
     withCopy ? brandLook(brand, "designed") : brandLook(brand, "photo"),
     withCopy && addressLine(brand),

@@ -142,14 +142,16 @@ export default function Home() {
               onClick={() => {
                 setType(id);
                 setError("");
+                // The owner's own words stay; only an untouched example is swapped for this format's example.
+                const untouched = !prompt.trim() || [...Object.values(kindExamples), ...Object.values(examples)].includes(prompt);
                 if (id === "image_post") {
                   setImageIntent("photo");
                   if (!shapeTouched) setImageFormat("square");
                   setPictureLanguage("");
-                  setPrompt(kindExamples.photo);
+                  if (untouched) setPrompt(kindExamples.photo);
                   return;
                 }
-                setPrompt(examples[id as keyof typeof examples] || prompt);
+                if (untouched) setPrompt(examples[id as keyof typeof examples] || prompt);
               }}
               style={type === id && ready ? { borderColor: "var(--accent-2)" } : undefined}
             >
@@ -210,6 +212,25 @@ export default function Home() {
             {t(`shapes.${imageFormat}Where`)} · {t(`shapes.${imageFormat}Hint`)}
           </p>
           <p className="hint">{t("shapes.why")}</p>
+          {isPoster && (
+            <div className="pic-lang">
+              <p className="step-label" style={{ marginTop: 18 }}>{t("home.picLangAsk")}</p>
+              <div className="pills" role="group" aria-label={t("home.picLangAsk")}>
+                {PIC_LANGS.map((id) => (
+                  <button
+                    key={id || "brief"}
+                    type="button"
+                    aria-pressed={pictureLanguage === id}
+                    className={`pill ${pictureLanguage === id ? "on" : ""}`}
+                    onClick={() => setPictureLanguage(id)}
+                  >
+                    {t(`home.picLang.${id || "brief"}`)}
+                  </button>
+                ))}
+              </div>
+              <p className="hint pill-hint" aria-live="polite">{t(`home.picLangHint.${pictureLanguage || "brief"}`)}</p>
+            </div>
+          )}
         </section>
       )}
 
@@ -242,30 +263,11 @@ export default function Home() {
             onLabel={t("home.useBrand")}
             onHint={t("home.useBrandHint")}
             offLabel={t("home.skipBrand")}
-            offHint={t("home.skipBrandHint")}
-            usingLabel={t("home.brandUsing")}
+            offHint={t(isImage ? "home.skipBrandHint" : "home.skipBrandHintReel")}
+            usingLabel={t(isImage ? "home.brandUsing" : "home.brandUsingReel")}
             kit={kit}
           />
 
-          {isPoster && (
-            <div className="brand-toggle">
-              <p className="hint">{t("home.picLangAsk")}</p>
-              <div className="pills" role="group" aria-label={t("home.picLangAsk")}>
-                {PIC_LANGS.map((id) => (
-                  <button
-                    key={id || "brief"}
-                    type="button"
-                    aria-pressed={pictureLanguage === id}
-                    className={`pill ${pictureLanguage === id ? "on" : ""}`}
-                    onClick={() => setPictureLanguage(id)}
-                  >
-                    {t(`home.picLang.${id || "brief"}`)}
-                  </button>
-                ))}
-              </div>
-              <p className="hint pill-hint" aria-live="polite">{t(`home.picLangHint.${pictureLanguage || "brief"}`)}</p>
-            </div>
-          )}
 
           <ExampleImages
             items={exampleFiles}
