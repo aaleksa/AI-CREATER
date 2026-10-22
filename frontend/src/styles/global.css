@@ -1267,7 +1267,8 @@ details.options > .brand-toggle, details.options > .examples { margin-top: 14px;
 .mini-note .reel-lang .btn { padding: 6px 12px; font-size: 13px; }
 
 .finish-row { display: grid; gap: 4px; margin-top: 10px; }
-.finish-row .btn { justify-self: start; }
+.finish-row .btn, .finish-row .link-btn { justify-self: start; }
+.finish-row .link-btn { font-size: 13px; }
 
 .version-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .version-keeps { font-size: 12px; color: var(--accent-2); }
@@ -1310,3 +1311,6 @@ details.options > .brand-toggle, details.options > .examples { margin-top: 14px;
 .lang-note-more[open] summary::before { content: "▾ "; }
 .lang-note-more .hint { margin: 6px 0 0; font-size: 12px; }
 .lang-note:not(.mixed) .lang-note-title { font-weight: 500; color: var(--muted); }
+.sound-updating { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 6px 10px; border-radius: 10px; font-size: 12px; color: var(--ink); background: var(--surface-2, rgba(127,127,127,.1)); }
+.sound-updating .busy-time { margin-left: auto; color: var(--muted); }
+.sound-updating .spinner { width: 14px; height: 14px; }
