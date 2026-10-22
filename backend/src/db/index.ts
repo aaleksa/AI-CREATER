@@ -47,6 +47,8 @@ addColumn("ALTER TABLE projects ADD COLUMN music_volume INTEGER NOT NULL DEFAULT
 addColumn("ALTER TABLE projects ADD COLUMN music_start REAL NOT NULL DEFAULT 0");
 addColumn("ALTER TABLE projects ADD COLUMN reel_logo_json TEXT");
 addColumn("ALTER TABLE projects ADD COLUMN captions_style TEXT NOT NULL DEFAULT 'clean'");
+addColumn("ALTER TABLE projects ADD COLUMN titles_json TEXT");
+addColumn("ALTER TABLE projects ADD COLUMN voice_choice TEXT NOT NULL DEFAULT ''");
 addColumn("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0");
 addColumn("ALTER TABLE brand_kits ADD COLUMN contact_on_photos INTEGER NOT NULL DEFAULT 0");
 addColumn("ALTER TABLE brand_kits ADD COLUMN address TEXT NOT NULL DEFAULT ''");

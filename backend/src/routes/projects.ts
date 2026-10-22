@@ -2,9 +2,9 @@ import express, { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_INVITE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, logoBaseFile, logoLayout, logoMarkFile, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, editCaptions, editScript, translateReelScript, setMusic, updateMusic, removeMusic, updateReelLogo, updateCaptionStyle, refreshReelVideo, forkReel, setCaptionsOff, setVoiceOff, stampLogoOnPicture, updateInvite, updateShot } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, logoBaseFile, logoLayout, logoMarkFile, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, editCaptions, editScript, translateReelScript, setMusic, updateMusic, removeMusic, updateReelLogo, updateCaptionStyle, updateReelTitles, refreshReelVideo, forkReel, setVoiceChoice, setCaptionsOff, setVoiceOff, stampLogoOnPicture, updateInvite, updateShot } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
-import { hasMusicFile, hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, MUSIC_MAX_BYTES, musicFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
+import { voiceSampleFile, voiceChoiceOf, VOICE_CHOICES, hasMusicFile, hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, MUSIC_MAX_BYTES, musicFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
 import { archiveState } from "../services/archive.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 import { publicError, USER_ERRORS } from "../services/userErrors.js";
@@ -88,6 +88,24 @@ function ownProject(req: { params: Record<string, unknown>; user?: { id: string 
     .prepare("SELECT id FROM projects WHERE id = ? AND user_id = ?")
     .get(String(req.params.id), req.user!.id) as { id: string } | undefined;
 }
+
+projectsRouter.get("/voice-samples/:voice", rateLimit(30, 60_000), async (req, res) => {
+  const voice = String(req.params.voice);
+  if (!(VOICE_CHOICES as readonly string[]).includes(voice)) {
+    res.status(404).json({ error: "No such voice." });
+    return;
+  }
+  try {
+    const file = await voiceSampleFile(voiceChoiceOf(voice), req.query.lang === "en" ? "en" : "uk");
+    if (!file) throw new Error("no sample");
+    res.type("audio/mpeg");
+    res.setHeader("Cache-Control", "private, max-age=86400");
+    res.sendFile(file);
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
 
 projectsRouter.get("/:id/refs/:slot", (req, res) => {
   const row = ownProject(req);
@@ -480,9 +498,27 @@ projectsRouter.post("/:id/remake", rateLimit(6, 60_000), async (req, res) => {
   }
 });
 
+projectsRouter.patch("/:id/voice-choice", rateLimit(30, 60_000), (req, res) => {
+  try {
+    res.json({ project: setVoiceChoice(req.user!.id, String(req.params.id), req.body?.voice) });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
 projectsRouter.patch("/:id/captions-style", rateLimit(10, 60_000), async (req, res) => {
   try {
     res.json({ project: await updateCaptionStyle(req.user!.id, String(req.params.id), req.body) });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.patch("/:id/titles", rateLimit(10, 60_000), async (req, res) => {
+  try {
+    res.json({ project: await updateReelTitles(req.user!.id, String(req.params.id), req.body) });
   } catch (error) {
     const { status, body } = publicError(error, `${req.method} ${req.path}`);
     res.status(status).json(body);

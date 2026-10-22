@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type LogoBox, type Project, type ReelLogo, type Shot } from "../lib/api";
+import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type LogoBox, type Project, type ReelLogo, type ReelTitles, type Shot, VOICE_CHOICES, type VoiceChoice } from "../lib/api";
 import { copyText } from "../lib/copy";
 import { downloadName, shapeLabel } from "../lib/fileName";
 import { prepareImage } from "../lib/imageUpload";
@@ -199,6 +199,56 @@ function hexLight(hex: string) {
 
 /** Longest call to action the end card shows at a readable size (the server keeps the same limit). */
 const CTA_MAX = 90;
+/** Pick who reads the Reel; each voice can be heard first (a short sample, made once). */
+function VoicePicker({
+  value,
+  onPick,
+  disabled,
+  lang,
+  t,
+}: {
+  value: VoiceChoice;
+  onPick: (voice: VoiceChoice) => void;
+  disabled: boolean;
+  lang: "uk" | "en";
+  t: (path: string, vars?: Record<string, string | number>) => string;
+}) {
+  const [playing, setPlaying] = useState<VoiceChoice | "">("");
+  const audio = useRef<HTMLAudioElement | null>(null);
+  async function listen(voice: VoiceChoice) {
+    audio.current?.pause();
+    setPlaying(voice);
+    try {
+      const blob = await fetchMedia(`/projects/voice-samples/${voice}?lang=${lang}`);
+      const url = URL.createObjectURL(blob);
+      const player = new Audio(url);
+      audio.current = player;
+      player.onended = () => {
+        setPlaying("");
+        URL.revokeObjectURL(url);
+      };
+      await player.play();
+    } catch {
+      setPlaying("");
+    }
+  }
+  return (
+    <div className="voice-picker" role="radiogroup" aria-label={t("studio.voicePick")}>
+      {VOICE_CHOICES.map((voice) => (
+        <div key={voice} className={`voice-option${value === voice ? " on" : ""}`}>
+          <button type="button" role="radio" aria-checked={value === voice} className="voice-pick" disabled={disabled} onClick={() => onPick(voice)}>
+            <b>{t(`studio.voice_${voice}`)}</b>
+            <span className="hint">{t(`studio.voiceHint_${voice}`)}</span>
+          </button>
+          <button type="button" className="btn ghost tiny" onClick={() => listen(voice)} aria-label={t("studio.voiceListen")}>
+            {playing === voice ? "…" : "▶"}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const REEL_CORNERS = ["top-left", "top-right", "bottom-left", "bottom-right"] as const;
 /** Same boxes the renderer uses on a 1080×1920 Reel. */
 const REEL_LOGO_BOX = { s: [170, 110], m: [230, 150], l: [300, 200] } as const;
@@ -338,7 +388,8 @@ export default function Studio() {
   const [musicSrc, setMusicSrc] = useState<string | null>(null);
   const [musicDraft, setMusicDraft] = useState<{ volume: number; start: number } | null>(null);
   const [briefOpen, setBriefOpen] = useState(false);
-  const [soundTab, setSoundTab] = useState<"captions" | "logo" | "music" | "voice">("captions");
+  const [soundTab, setSoundTab] = useState<"captions" | "titles" | "logo" | "music" | "voice">("voice");
+  const [soundOpen, setSoundOpen] = useState<boolean | null>(null);
   const [paidOpen, setPaidOpen] = useState(false);
   const [busySince, setBusySince] = useState(0);
   const [busyTick, setBusyTick] = useState(0);
@@ -772,6 +823,10 @@ export default function Studio() {
   const reelMarkLoading = !reelHasMark && !reelBrandOff && Boolean(kit?.logo_url || kit?.business_name) && reelMarkChecked === "";
   // The end card also works with just the business name.
   const reelCanEndCard = !isImage && !reelBrandOff && Boolean(kit?.logo_url || kit?.business_name);
+  const reelLangIsUk = (() => {
+    const text = (project?.script?.scenes || []).map((sc) => sc.voiceover).join(" ");
+    return (text.match(/[\u0400-\u04FF]/g) || []).length >= (text.match(/[A-Za-z]/g) || []).length;
+  })();
   const sceneNumber = (sceneId: number) => Math.max(0, project?.script?.scenes.findIndex((sc) => sc.id === sceneId) ?? 0) + 1;
   const VIDEO_UPDATES = ["remake", "reel-logo", "caption-style", "music", "music-off", "captions-on", "captions-off", "edit-captions"];
   // Changes to a finished Reel after which the server makes the video again (or takes it down when a new voice is needed).
@@ -805,8 +860,20 @@ export default function Studio() {
   const elapsed = busyNote ? Math.max(busyTick, Math.floor((Date.now() - busySince) / 1000)) : 0;
   const elapsedLabel =
     elapsed < 60 ? t("studio.elapsedSec", { s: elapsed }) : t("studio.elapsedMin", { m: Math.floor(elapsed / 60), s: String(elapsed % 60).padStart(2, "0") });
+  // The phone shows what the video will: with a voice, the scene's headline at the top and the caption line that
+  // starts in that scene at the bottom; without a voice, the scene's words are the caption.
+  const sceneCount = Math.max(1, project?.script?.scenes?.length || 1);
+  const sceneLen = Math.max(3, Math.round((project?.script?.durationSec || 30) / sceneCount));
+  const allCues = project?.captions?.cues || [];
+  const sceneCue = allCues.some((cue) => Number.isInteger(cue.scene))
+    ? allCues.find((cue) => cue.scene === scene)
+    : allCues.find((cue) => cue.start >= scene * sceneLen - 0.05 && cue.start < (scene + 1) * sceneLen);
+  const reelTitles = { show: true, style: "clean" as const, size: "m" as const, ...project?.reelTitles };
+  const sceneTitle = !isImage && !project?.voiceOff && reelTitles.show ? readableLine(project?.script?.scenes?.[scene]?.onScreen || "") : "";
   const caption = readableLine(
-    project?.captions?.cues?.[scene]?.text || project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title || ""
+    project?.voiceOff
+      ? project?.script?.scenes?.[scene]?.onScreen || project?.idea?.title || ""
+      : sceneCue?.text || project?.script?.scenes?.[scene]?.voiceover?.split(/(?<=[.!?…])\s/)[0] || project?.idea?.title || ""
   );
 
   async function execute(
@@ -1079,12 +1146,37 @@ export default function Studio() {
     }
   }
 
+  async function pickVoice(voice: VoiceChoice) {
+    if (!id || !project || project.voiceChoice === voice) return;
+    setError("");
+    try {
+      const { project: nextProject } = await api.setVoiceChoice(id, voice);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    }
+  }
+
   async function saveCaptionStyle(style: "clean" | "box" | "brand") {
     if (!id || !project || (project.captionStyle || "clean") === style) return;
     setBusy("caption-style");
     setError("");
     try {
       const { project: nextProject } = await api.updateCaptionStyle(id, style);
+      setProject(nextProject);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveReelTitles(change: Partial<ReelTitles>) {
+    if (!id || !project) return;
+    setBusy("reel-titles");
+    setError("");
+    try {
+      const { project: nextProject } = await api.updateReelTitles(id, change);
       setProject(nextProject);
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
@@ -1231,7 +1323,12 @@ export default function Studio() {
 
   async function toggleVoice(off: boolean) {
     if (!id) return;
-    if (!off) {
+    const beforeVoiceStep = !project?.visuals?.length;
+    if (!off && beforeVoiceStep) {
+      /* only the choice is kept; the voice is made (and paid) on its step */
+    } else if (!off && project?.voiceTakeSaved) {
+      if (!window.confirm(t("studio.voiceBackConfirm"))) return;
+    } else if (!off) {
       const parts = [t("studio.redoVoice", { n: prices.voice })];
       let total = prices.voice;
       if (!project?.captionsOff) {
@@ -1244,7 +1341,7 @@ export default function Studio() {
       }
       if (!window.confirm(t("studio.voiceOnConfirm", { list: parts.join(", "), total, videoNote: project?.hasVideo ? t("studio.videoDownNote") : "" }))) return;
     }
-    if (off && project?.audioUrl && !window.confirm(t("studio.voiceOffConfirm"))) return;
+    if (off && project?.audioUrl && !beforeVoiceStep && !window.confirm(t("studio.voiceOffConfirm"))) return;
     setBusy(off ? "voice-off" : "voice-on");
     setError("");
     try {
@@ -1617,6 +1714,389 @@ export default function Studio() {
     </nav>
   );
 
+  // Reel settings: set up first (open until the video exists), changed any time after — free.
+  const soundCard = (
+    <details
+      className="edit-block sound-card"
+      open={soundOpen ?? !project.hasVideo}
+      onToggle={(e) => setSoundOpen((e.currentTarget as HTMLDetailsElement).open)}
+    >
+      <summary className="edit-block-head">
+        <h3>{t("studio.soundTitle")}</h3>
+        <p className="hint">
+          {[
+            reelHasMark ? t(reelLogo.show ? "studio.soundLogoOn" : "studio.soundLogoOff") : "",
+            t(project.voiceOff ? "studio.soundVoiceOff" : project.audioUrl ? "studio.soundVoiceOn" : "studio.soundVoiceNot"),
+            t(project.captionsOff ? "studio.soundCapsOff" : project.captions ? "studio.soundCapsOn" : "studio.soundCapsNot"),
+            !project.voiceOff && !reelTitles.show ? t("studio.soundTitlesOff") : "",
+            project.music ? t("studio.soundMusicOn", { name: project.music.name }) : t("studio.soundMusicNot"),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      </summary>
+      {!project.hasVideo && <p className="hint sound-setup">{t("studio.soundSetupHint")}</p>}
+      <div className="sound-tabs" role="tablist" aria-label={t("studio.soundTitle")}>
+        {(
+          [
+            ["voice", t("studio.tabVoice"), t(project.voiceOff ? "studio.soundVoiceOff" : project.audioUrl ? "studio.soundVoiceOn" : "studio.soundVoiceNot")],
+            ["captions", t("studio.tabCaptions"), project.captionsOff ? t("studio.soundCapsOff") : project.captions ? t(`studio.capStyle_${project.captionStyle || "clean"}`) : t("studio.soundCapsNot")],
+            ["titles", t("studio.tabTitles"), project.voiceOff ? t("studio.titlesNone") : reelTitles.show ? t(`studio.capStyle_${reelTitles.style}`) : t("studio.titlesHidden")],
+            ["logo", t("studio.tabLogo"), reelBrandOff || !reelHasMark ? t("studio.tabLogoNone") : reelLogo.show ? t(`studio.reelCorner_${reelLogo.corner.replace("-", "_")}`) : t("studio.soundLogoOff")],
+            ["music", t("studio.tabMusic"), project.music ? project.music.name : t("studio.soundMusicNot")],
+          ] as const
+        ).map(([key, label, state]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={soundTab === key}
+            className={`sound-tab${soundTab === key ? " on" : ""}`}
+            onClick={() => setSoundTab(key)}
+          >
+            <span>{label}</span>
+            <small>{state}</small>
+          </button>
+        ))}
+      </div>
+      <div className="sound-pane" role="tabpanel">
+        {soundTab === "captions" && (
+          <>
+      {project.captionsOff && (
+        <div className="voice-off-note">
+          <p className="hint" style={{ margin: 0 }}>{t("studio.captionsOffNow")}</p>
+          <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleCaptions(false)}>
+            {busy === "captions-on" ? t("studio.reelLogoSaving") : t("studio.captionsOn")}
+          </button>
+        </div>
+      )}
+      {!project.captionsOff && !project.captions && (
+        <div className="voice-off-note">
+          <p className="hint" style={{ margin: 0 }}>{t(project.voiceOff ? "studio.captionsLaterNoVoice" : "studio.captionsLater", { caps: prices.caps })}</p>
+          <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleCaptions(true)}>
+            {busy === "captions-off" ? t("studio.reelLogoSaving") : t("studio.captionsOff")}
+          </button>
+        </div>
+      )}
+      {!project.captionsOff && project.captions && project.hasVideo && (
+        <div className="voice-off-note">
+          <p className="hint" style={{ margin: 0 }}>{t("studio.captionsOnNow")}</p>
+          <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleCaptions(true)}>
+            {busy === "captions-off" ? t("studio.reelLogoSaving") : t("studio.captionsRemove")}
+          </button>
+        </div>
+      )}
+    {!project.captionsOff && (
+      <div className="music-block">
+        <p className="pane-title">{t("studio.capStyleTitle")}</p>
+        <div className="pill-row" role="group" aria-label={t("studio.capStyleTitle")}>
+          {(["clean", "box", ...(!reelBrandOff && kit ? ["brand"] : [])] as ("clean" | "box" | "brand")[]).map((style) => (
+            <button
+              key={style}
+              type="button"
+              className={`btn ghost tiny${(project.captionStyle || "clean") === style ? " on" : ""}`}
+              aria-pressed={(project.captionStyle || "clean") === style}
+              disabled={Boolean(busy)}
+              onClick={() => saveCaptionStyle(style)}
+            >
+              {t(`studio.capStyle_${style}`)}
+            </button>
+          ))}
+        </div>
+        <p className="hint" style={{ margin: 0 }}>
+          {busy === "caption-style" ? t("studio.reelLogoSaving") : t(project.hasVideo ? "studio.capStyleFreeNow" : "studio.capStyleLater")}
+        </p>
+      </div>
+    )}
+          </>
+        )}
+        {soundTab === "titles" && (
+          <>
+            {project.voiceOff ? (
+              <p className="hint" style={{ margin: 0 }}>{t("studio.titlesNoVoice")}</p>
+            ) : (
+              <div className="music-block">
+                <p className="hint" style={{ margin: 0 }}>{t("studio.titlesWhat")}</p>
+                <div className="pill-row" role="group" aria-label={t("studio.tabTitles")}>
+                  {([true, false] as const).map((show) => (
+                    <button
+                      key={String(show)}
+                      type="button"
+                      className={`btn ghost tiny${reelTitles.show === show ? " on" : ""}`}
+                      aria-pressed={reelTitles.show === show}
+                      disabled={Boolean(busy)}
+                      onClick={() => saveReelTitles({ show })}
+                    >
+                      {t(show ? "studio.titlesShow" : "studio.titlesHide")}
+                    </button>
+                  ))}
+                </div>
+                {reelTitles.show && (
+                  <>
+                    <p className="pane-title">{t("studio.titlesLook")}</p>
+                    <div className="pill-row" role="group" aria-label={t("studio.titlesLook")}>
+                      {(["clean", "box", ...(!reelBrandOff && kit ? ["brand"] : [])] as ("clean" | "box" | "brand")[]).map((style) => (
+                        <button
+                          key={style}
+                          type="button"
+                          className={`btn ghost tiny${reelTitles.style === style ? " on" : ""}`}
+                          aria-pressed={reelTitles.style === style}
+                          disabled={Boolean(busy)}
+                          onClick={() => saveReelTitles({ style })}
+                        >
+                          {t(`studio.capStyle_${style}`)}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="pane-title">{t("studio.titlesSize")}</p>
+                    <div className="pill-row" role="group" aria-label={t("studio.titlesSize")}>
+                      {(["s", "m", "l"] as const).map((size) => (
+                        <button
+                          key={size}
+                          type="button"
+                          className={`btn ghost tiny${reelTitles.size === size ? " on" : ""}`}
+                          aria-pressed={reelTitles.size === size}
+                          disabled={Boolean(busy)}
+                          onClick={() => saveReelTitles({ size })}
+                        >
+                          {t(`studio.titlesSize_${size}`)}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                <p className="hint" style={{ margin: 0 }}>
+                  {busy === "reel-titles" ? t("studio.reelLogoSaving") : t(project.hasVideo ? "studio.capStyleFreeNow" : "studio.titlesLater")}
+                </p>
+              </div>
+            )}
+          </>
+        )}
+        {soundTab === "logo" && (
+    <div className="music-block">
+      <p className="music-title">{t("studio.reelLogoTitle")}</p>
+      {reelBrandOff ? (
+        <p className="hint" style={{ margin: 0 }}>{t("studio.reelLogoNoBrand")}</p>
+      ) : reelMarkLoading ? null : (
+        <>
+          {!reelHasMark && (
+            <p className="hint" style={{ margin: 0 }}>
+              {t(reelCanEndCard ? "studio.reelLogoNeedFile" : "studio.reelLogoNeedKit")} <Link to="/app/brand">{t("nav.brand")}</Link>
+            </p>
+          )}
+          {reelHasMark && (
+          <>
+          <label className="check-row">
+            <input type="checkbox" checked={reelLogo.show} disabled={Boolean(busy)} onChange={(e) => saveReelLogo({ show: e.target.checked })} />
+            <span>{t("studio.reelLogoShow")}</span>
+          </label>
+          {reelLogo.show && (
+            <>
+              <div className="pill-row" role="group" aria-label={t("studio.reelLogoWhere")}>
+                <span className="hint">{t("studio.reelLogoWhere")}</span>
+                {REEL_CORNERS.map((corner) => (
+                  <button
+                    key={corner}
+                    type="button"
+                    className={`btn ghost tiny${reelLogo.corner === corner ? " on" : ""}`}
+                    aria-pressed={reelLogo.corner === corner}
+                    disabled={Boolean(busy)}
+                    onClick={() => saveReelLogo({ corner })}
+                  >
+                    {t(`studio.reelCorner_${corner.replace("-", "_")}`)}
+                  </button>
+                ))}
+              </div>
+              <div className="pill-row" role="group" aria-label={t("studio.reelLogoSize")}>
+                <span className="hint">{t("studio.reelLogoSize")}</span>
+                {(["s", "m", "l"] as const).map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    className={`btn ghost tiny${reelLogo.size === size ? " on" : ""}`}
+                    aria-pressed={reelLogo.size === size}
+                    disabled={Boolean(busy)}
+                    onClick={() => saveReelLogo({ size })}
+                  >
+                    {t(`studio.reelLogoSize_${size}`)}
+                  </button>
+                ))}
+              </div>
+              {Boolean(kit?.logo_url) && (
+                <>
+                  <label className="check-row">
+                    <input type="checkbox" checked={reelLogo.plate} disabled={Boolean(busy)} onChange={(e) => saveReelLogo({ plate: e.target.checked })} />
+                    <span>{t("studio.reelLogoPlate")}</span>
+                  </label>
+                  <p className="hint" style={{ margin: 0 }}>{t("studio.reelLogoPlateHint")}</p>
+                </>
+              )}
+            </>
+          )}
+          </>
+          )}
+          {reelCanEndCard && (
+            <>
+              <label className="check-row">
+                <input type="checkbox" checked={reelLogo.endCard} disabled={Boolean(busy)} onChange={(e) => saveReelLogo({ endCard: e.target.checked })} />
+                <span>{t(reelHasMark ? "studio.reelEndCard" : "studio.reelEndCardName")}</span>
+              </label>
+              <p className="hint" style={{ margin: 0 }}>
+                {busy === "reel-logo" ? t("studio.reelLogoSaving") : t(project.hasVideo ? "studio.reelLogoFreeNow" : "studio.reelLogoLater")}
+              </p>
+            </>
+          )}
+        </>
+      )}
+    </div>
+        )}
+        {soundTab === "music" && (
+    <div className="music-block">
+      <p className="music-title">{t("studio.musicTitle")}</p>
+      {!project.music ? (
+        <>
+          <label className={`btn ghost${busy ? " disabled" : ""}`}>
+            {busy === "music" ? t("studio.musicUploading") : t("studio.musicAdd")}
+            <input
+              type="file"
+              accept="audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,.mp3,.m4a,.aac,.wav,.ogg,.flac"
+              hidden
+              disabled={Boolean(busy)}
+              onChange={(e) => {
+                pickMusic(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <p className="hint" style={{ margin: 0 }}>{t("studio.musicFiles")}</p>
+          <details className="ready-more">
+            <summary>{t("studio.musicMore")}</summary>
+            <p className="hint">{t("studio.musicHowItSounds")}</p>
+          </details>
+        </>
+      ) : (
+        <>
+          <p className="hint" style={{ margin: 0 }}>
+            <b>{project.music.name}</b> · {t("studio.musicLength", { sec: Math.round(project.music.durationSec) })}
+          </p>
+          {musicSrc && <audio controls src={musicSrc} style={{ width: "100%" }} />}
+          <label className="music-row">
+            <span>{t("studio.musicVolume", { n: (musicDraft || project.music).volume })}</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={(musicDraft || project.music).volume}
+              disabled={Boolean(busy)}
+              onChange={(e) => setMusicDraft({ ...(musicDraft || project.music!), volume: Number(e.target.value) })}
+            />
+          </label>
+          <label className="music-row">
+            <span>{t("studio.musicStart")}</span>
+            <input
+              type="number"
+              min={0}
+              max={Math.max(0, Math.floor(project.music.durationSec - 1))}
+              step={1}
+              value={(musicDraft || project.music).start}
+              disabled={Boolean(busy)}
+              onChange={(e) => setMusicDraft({ ...(musicDraft || project.music!), start: Math.max(0, Number(e.target.value) || 0) })}
+            />
+          </label>
+          <p className="hint" style={{ margin: 0 }}>{t(project.voiceOff ? "studio.musicAlone" : "studio.musicUnderVoice")}</p>
+          <div className="row">
+            {musicDraft && (
+              <button className="btn accent" type="button" disabled={Boolean(busy)} onClick={saveMusic}>
+                {busy === "music" ? t("studio.musicSaving") : t(project.hasVideo ? "studio.musicApplyVideo" : "studio.musicApply")}
+              </button>
+            )}
+            <label className={`btn ghost${busy ? " disabled" : ""}`}>
+              {t("studio.musicReplace")}
+              <input
+                type="file"
+                accept="audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,.mp3,.m4a,.aac,.wav,.ogg,.flac"
+                hidden
+                disabled={Boolean(busy)}
+                onChange={(e) => {
+                  pickMusic(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={dropMusic}>
+              {busy === "music-off" ? t("studio.musicSaving") : t("studio.musicRemove")}
+            </button>
+          </div>
+        </>
+      )}
+      <p className="hint" style={{ margin: 0 }}>{t(project.hasVideo ? "studio.musicFreeNow" : "studio.musicLater")}</p>
+    </div>
+        )}
+        {soundTab === "voice" && (
+          <>
+      {project.voiceOff && (
+        <div className="voice-off-note">
+          <p className="hint" style={{ margin: 0 }}>{t("studio.voiceOffNow")}</p>
+          <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleVoice(false)}>
+            {busy === "voice-on" ? t("studio.voiceOffSaving") : t(project.voiceTakeSaved ? "studio.voiceBack" : "studio.voiceOn")}
+          </button>
+        </div>
+      )}
+            {!project.voiceOff && project.audioUrl && (
+              <>
+                <p className="hint" style={{ margin: 0 }}>{t("studio.voiceRecorded")}</p>
+                {audioSrc && <audio controls src={audioSrc} style={{ width: "100%" }} />}
+                <p className="pane-title">{t("studio.voicePick")}</p>
+                <VoicePicker value={project.voiceChoice || VOICE_CHOICES[0]} onPick={pickVoice} disabled={Boolean(busy)} lang={reelLangIsUk ? "uk" : "en"} t={t} />
+                <div className="voice-off-note">
+                  <p className="hint" style={{ margin: 0 }}>{t("studio.voiceOffHere")}</p>
+                  <button type="button" className="btn ghost" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => toggleVoice(true)}>
+                    {busy === "voice-off" ? t("studio.voiceOffSaving") : t("studio.voiceOffDo")}
+                  </button>
+                </div>
+                {(project.voice?.voiceId || "nova") !== (project.voiceChoice || VOICE_CHOICES[0]) && (
+                  <div className="voice-off-note">
+                    <p className="hint" style={{ margin: 0 }}>{t("studio.voiceOtherPicked")}</p>
+                    <button type="button" className="btn ghost" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => run("voice", true)}>
+                      {t("studio.voiceRecordAgain", { credits: extraPrice("voice").credits })}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+            {!project.voiceOff && !project.audioUrl && (
+                <>
+                  {next?.id === "voice" ? (
+                    <p className="hint" style={{ margin: 0 }}>{t("studio.voicePickBelow")}</p>
+                  ) : (
+                    <>
+                      <p className="pane-title">{t("studio.voicePick")}</p>
+                      <VoicePicker value={project.voiceChoice || VOICE_CHOICES[0]} onPick={pickVoice} disabled={Boolean(busy)} lang={reelLangIsUk ? "uk" : "en"} t={t} />
+                      <p className="hint" style={{ margin: 0 }}>{t("studio.voiceLater", { credits: prices.voice })}</p>
+                    </>
+                  )}
+                  <div className="voice-off-note">
+                    <p className="hint" style={{ margin: 0 }}>{t("studio.voiceSkipHere")}</p>
+                    <button type="button" className="btn ghost" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => toggleVoice(true)}>
+                      {busy === "voice-off" ? t("studio.voiceOffSaving") : t("studio.voiceOff")}
+                    </button>
+                  </div>
+                </>
+              )}
+          </>
+        )}
+      </div>
+      <p className="free-line">
+        {t("studio.freeShort")}{" "}
+        <button type="button" className="link-btn" onClick={() => setPaidOpen((v) => !v)} aria-expanded={paidOpen}>
+          {t(paidOpen ? "studio.paidHide" : "studio.paidShow")}
+        </button>
+      </p>
+      {paidOpen && <p className="hint free-more">{t("studio.paidList", prices)}</p>}
+    </details>
+  );
+
   return (
     <div>
       {!isImage && stepsNav}
@@ -1757,7 +2237,15 @@ export default function Studio() {
                     <span className="spinner" />
                   </div>
                 )}
-                {!isImage && (
+                {!isImage && sceneTitle && (
+                  <div
+                    className={`caption phone-title title-${reelTitles.size} cap-${reelTitles.style}${reelLogo.show && reelHasMark && reelLogo.corner.startsWith("top") ? " under-logo" : ""}`}
+                    style={reelTitles.style === "brand" && kit?.primary_color ? ({ "--cap-brand": kit.primary_color, "--cap-ink": hexLight(kit.primary_color) ? "#1a1612" : "#ffffff" } as CSSProperties) : undefined}
+                  >
+                    <span>{sceneTitle}</span>
+                  </div>
+                )}
+                {!isImage && !project.captionsOff && (
                   <div
                     className={`caption${project.captionsOff ? "" : ` cap-${project.captionStyle || "clean"}`}`}
                     style={project.captionStyle === "brand" && kit?.primary_color ? ({ "--cap-brand": kit.primary_color, "--cap-ink": hexLight(kit.primary_color) ? "#1a1612" : "#ffffff" } as CSSProperties) : undefined}
@@ -1866,6 +2354,7 @@ export default function Studio() {
                     <legend className="hint">{t("studio.reviewScene", { n: i + 1 })}</legend>
                     <label className="shot-field">
                       <span>{t("studio.scriptOnScreen")}</span>
+                      {i === 0 && <span className="field-note">{t(project.voiceOff ? "studio.onScreenNoteNoVoice" : "studio.onScreenNote")}</span>}
                       <input
                         value={sc.onScreen}
                         maxLength={120}
@@ -1874,6 +2363,7 @@ export default function Studio() {
                     </label>
                     <label className="shot-field">
                       <span>{t("studio.scriptVoiceover")}</span>
+                      {i === 0 && <span className="field-note">{t(project.voiceOff ? "studio.voiceoverNoteNoVoice" : "studio.voiceoverNote")}</span>}
                       <textarea
                         rows={2}
                         value={sc.voiceover}
@@ -2785,6 +3275,12 @@ export default function Studio() {
               </button>
             </div>
           )}
+          {!isImage && next?.id === "voice" && !project.voiceOff && !viewStep && (
+            <div className="voice-choose">
+              <p className="pane-title">{t("studio.voicePick")}</p>
+              <VoicePicker value={project.voiceChoice || VOICE_CHOICES[0]} onPick={pickVoice} disabled={Boolean(busy)} lang={reelLangIsUk ? "uk" : "en"} t={t} />
+            </div>
+          )}
           {next && !(isImage && next.id === "visuals" && project.idea?.shot?.summary) && (
             <div className="action-row" style={{ marginTop: 18 }}>
               <button className="btn accent" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => run(next.id)}>
@@ -2842,276 +3338,7 @@ export default function Studio() {
           )}
           {next?.id === "voice" && <p className="hint" style={{ marginTop: 6 }}>{t("studio.voiceOffHint")}</p>}
           {next?.id === "captions" && <p className="hint" style={{ marginTop: 6 }}>{t("studio.captionsOffHint")}</p>}
-          {!isImage && project.script && !viewStep && (
-            <details className="edit-block sound-card">
-              <summary className="edit-block-head">
-                <h3>{t("studio.soundTitle")}</h3>
-                <p className="hint">
-                  {[
-                    reelHasMark ? t(reelLogo.show ? "studio.soundLogoOn" : "studio.soundLogoOff") : "",
-                    t(project.voiceOff ? "studio.soundVoiceOff" : project.audioUrl ? "studio.soundVoiceOn" : "studio.soundVoiceNot"),
-                    t(project.captionsOff ? "studio.soundCapsOff" : project.captions ? "studio.soundCapsOn" : "studio.soundCapsNot"),
-                    project.music ? t("studio.soundMusicOn", { name: project.music.name }) : t("studio.soundMusicNot"),
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-              </summary>
-              <div className="sound-tabs" role="tablist" aria-label={t("studio.soundTitle")}>
-                {(
-                  [
-                    ["captions", t("studio.tabCaptions"), project.captionsOff ? t("studio.soundCapsOff") : project.captions ? t(`studio.capStyle_${project.captionStyle || "clean"}`) : t("studio.soundCapsNot")],
-                    ["logo", t("studio.tabLogo"), reelBrandOff || !reelHasMark ? t("studio.tabLogoNone") : reelLogo.show ? t(`studio.reelCorner_${reelLogo.corner.replace("-", "_")}`) : t("studio.soundLogoOff")],
-                    ["music", t("studio.tabMusic"), project.music ? project.music.name : t("studio.soundMusicNot")],
-                    ["voice", t("studio.tabVoice"), t(project.voiceOff ? "studio.soundVoiceOff" : project.audioUrl ? "studio.soundVoiceOn" : "studio.soundVoiceNot")],
-                  ] as const
-                ).map(([key, label, state]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    role="tab"
-                    aria-selected={soundTab === key}
-                    className={`sound-tab${soundTab === key ? " on" : ""}`}
-                    onClick={() => setSoundTab(key)}
-                  >
-                    <span>{label}</span>
-                    <small>{state}</small>
-                  </button>
-                ))}
-              </div>
-              <div className="sound-pane" role="tabpanel">
-                {soundTab === "captions" && (
-                  <>
-              {project.captionsOff && (
-                <div className="voice-off-note">
-                  <p className="hint" style={{ margin: 0 }}>{t("studio.captionsOffNow")}</p>
-                  <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleCaptions(false)}>
-                    {busy === "captions-on" ? t("studio.reelLogoSaving") : t("studio.captionsOn")}
-                  </button>
-                </div>
-              )}
-              {!project.captionsOff && project.captions && project.hasVideo && (
-                <div className="voice-off-note">
-                  <p className="hint" style={{ margin: 0 }}>{t("studio.captionsOnNow")}</p>
-                  <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleCaptions(true)}>
-                    {busy === "captions-off" ? t("studio.reelLogoSaving") : t("studio.captionsRemove")}
-                  </button>
-                </div>
-              )}
-            {!project.captionsOff && (
-              <div className="music-block">
-                <p className="pane-title">{t("studio.capStyleTitle")}</p>
-                <div className="pill-row" role="group" aria-label={t("studio.capStyleTitle")}>
-                  {(["clean", "box", ...(!reelBrandOff && kit ? ["brand"] : [])] as ("clean" | "box" | "brand")[]).map((style) => (
-                    <button
-                      key={style}
-                      type="button"
-                      className={`btn ghost tiny${(project.captionStyle || "clean") === style ? " on" : ""}`}
-                      aria-pressed={(project.captionStyle || "clean") === style}
-                      disabled={Boolean(busy)}
-                      onClick={() => saveCaptionStyle(style)}
-                    >
-                      {t(`studio.capStyle_${style}`)}
-                    </button>
-                  ))}
-                </div>
-                <p className="hint" style={{ margin: 0 }}>
-                  {busy === "caption-style" ? t("studio.reelLogoSaving") : t(project.hasVideo ? "studio.capStyleFreeNow" : "studio.capStyleLater")}
-                </p>
-              </div>
-            )}
-                  </>
-                )}
-                {soundTab === "logo" && (
-            <div className="music-block">
-              <p className="music-title">{t("studio.reelLogoTitle")}</p>
-              {reelBrandOff ? (
-                <p className="hint" style={{ margin: 0 }}>{t("studio.reelLogoNoBrand")}</p>
-              ) : reelMarkLoading ? null : (
-                <>
-                  {!reelHasMark && (
-                    <p className="hint" style={{ margin: 0 }}>
-                      {t(reelCanEndCard ? "studio.reelLogoNeedFile" : "studio.reelLogoNeedKit")} <Link to="/app/brand">{t("nav.brand")}</Link>
-                    </p>
-                  )}
-                  {reelHasMark && (
-                  <>
-                  <label className="check-row">
-                    <input type="checkbox" checked={reelLogo.show} disabled={Boolean(busy)} onChange={(e) => saveReelLogo({ show: e.target.checked })} />
-                    <span>{t("studio.reelLogoShow")}</span>
-                  </label>
-                  {reelLogo.show && (
-                    <>
-                      <div className="pill-row" role="group" aria-label={t("studio.reelLogoWhere")}>
-                        <span className="hint">{t("studio.reelLogoWhere")}</span>
-                        {REEL_CORNERS.map((corner) => (
-                          <button
-                            key={corner}
-                            type="button"
-                            className={`btn ghost tiny${reelLogo.corner === corner ? " on" : ""}`}
-                            aria-pressed={reelLogo.corner === corner}
-                            disabled={Boolean(busy)}
-                            onClick={() => saveReelLogo({ corner })}
-                          >
-                            {t(`studio.reelCorner_${corner.replace("-", "_")}`)}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="pill-row" role="group" aria-label={t("studio.reelLogoSize")}>
-                        <span className="hint">{t("studio.reelLogoSize")}</span>
-                        {(["s", "m", "l"] as const).map((size) => (
-                          <button
-                            key={size}
-                            type="button"
-                            className={`btn ghost tiny${reelLogo.size === size ? " on" : ""}`}
-                            aria-pressed={reelLogo.size === size}
-                            disabled={Boolean(busy)}
-                            onClick={() => saveReelLogo({ size })}
-                          >
-                            {t(`studio.reelLogoSize_${size}`)}
-                          </button>
-                        ))}
-                      </div>
-                      {Boolean(kit?.logo_url) && (
-                        <>
-                          <label className="check-row">
-                            <input type="checkbox" checked={reelLogo.plate} disabled={Boolean(busy)} onChange={(e) => saveReelLogo({ plate: e.target.checked })} />
-                            <span>{t("studio.reelLogoPlate")}</span>
-                          </label>
-                          <p className="hint" style={{ margin: 0 }}>{t("studio.reelLogoPlateHint")}</p>
-                        </>
-                      )}
-                    </>
-                  )}
-                  </>
-                  )}
-                  {reelCanEndCard && (
-                    <>
-                      <label className="check-row">
-                        <input type="checkbox" checked={reelLogo.endCard} disabled={Boolean(busy)} onChange={(e) => saveReelLogo({ endCard: e.target.checked })} />
-                        <span>{t(reelHasMark ? "studio.reelEndCard" : "studio.reelEndCardName")}</span>
-                      </label>
-                      <p className="hint" style={{ margin: 0 }}>
-                        {busy === "reel-logo" ? t("studio.reelLogoSaving") : t(project.hasVideo ? "studio.reelLogoFreeNow" : "studio.reelLogoLater")}
-                      </p>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-                )}
-                {soundTab === "music" && (
-            <div className="music-block">
-              <p className="music-title">{t("studio.musicTitle")}</p>
-              {!project.music ? (
-                <>
-                  <label className={`btn ghost${busy ? " disabled" : ""}`}>
-                    {busy === "music" ? t("studio.musicUploading") : t("studio.musicAdd")}
-                    <input
-                      type="file"
-                      accept="audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,.mp3,.m4a,.aac,.wav,.ogg,.flac"
-                      hidden
-                      disabled={Boolean(busy)}
-                      onChange={(e) => {
-                        pickMusic(e.target.files?.[0]);
-                        e.target.value = "";
-                      }}
-                    />
-                  </label>
-                  <p className="hint" style={{ margin: 0 }}>{t("studio.musicFiles")}</p>
-                  <details className="ready-more">
-                    <summary>{t("studio.musicMore")}</summary>
-                    <p className="hint">{t("studio.musicHowItSounds")}</p>
-                  </details>
-                </>
-              ) : (
-                <>
-                  <p className="hint" style={{ margin: 0 }}>
-                    <b>{project.music.name}</b> · {t("studio.musicLength", { sec: Math.round(project.music.durationSec) })}
-                  </p>
-                  {musicSrc && <audio controls src={musicSrc} style={{ width: "100%" }} />}
-                  <label className="music-row">
-                    <span>{t("studio.musicVolume", { n: (musicDraft || project.music).volume })}</span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      step={5}
-                      value={(musicDraft || project.music).volume}
-                      disabled={Boolean(busy)}
-                      onChange={(e) => setMusicDraft({ ...(musicDraft || project.music!), volume: Number(e.target.value) })}
-                    />
-                  </label>
-                  <label className="music-row">
-                    <span>{t("studio.musicStart")}</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={Math.max(0, Math.floor(project.music.durationSec - 1))}
-                      step={1}
-                      value={(musicDraft || project.music).start}
-                      disabled={Boolean(busy)}
-                      onChange={(e) => setMusicDraft({ ...(musicDraft || project.music!), start: Math.max(0, Number(e.target.value) || 0) })}
-                    />
-                  </label>
-                  <p className="hint" style={{ margin: 0 }}>{t(project.voiceOff ? "studio.musicAlone" : "studio.musicUnderVoice")}</p>
-                  <div className="row">
-                    {musicDraft && (
-                      <button className="btn accent" type="button" disabled={Boolean(busy)} onClick={saveMusic}>
-                        {busy === "music" ? t("studio.musicSaving") : t(project.hasVideo ? "studio.musicApplyVideo" : "studio.musicApply")}
-                      </button>
-                    )}
-                    <label className={`btn ghost${busy ? " disabled" : ""}`}>
-                      {t("studio.musicReplace")}
-                      <input
-                        type="file"
-                        accept="audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,.mp3,.m4a,.aac,.wav,.ogg,.flac"
-                        hidden
-                        disabled={Boolean(busy)}
-                        onChange={(e) => {
-                          pickMusic(e.target.files?.[0]);
-                          e.target.value = "";
-                        }}
-                      />
-                    </label>
-                    <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={dropMusic}>
-                      {busy === "music-off" ? t("studio.musicSaving") : t("studio.musicRemove")}
-                    </button>
-                  </div>
-                </>
-              )}
-              <p className="hint" style={{ margin: 0 }}>{t(project.hasVideo ? "studio.musicFreeNow" : "studio.musicLater")}</p>
-            </div>
-                )}
-                {soundTab === "voice" && (
-                  <>
-              {project.voiceOff && (
-                <div className="voice-off-note">
-                  <p className="hint" style={{ margin: 0 }}>{t("studio.voiceOffNow")}</p>
-                  <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleVoice(false)}>
-                    {t("studio.voiceOn")}
-                  </button>
-                </div>
-              )}
-                    {!project.voiceOff && project.audioUrl && (
-                      <>
-                        <p className="hint" style={{ margin: 0 }}>{t("studio.voiceRecorded")}</p>
-                        {audioSrc && <audio controls src={audioSrc} style={{ width: "100%" }} />}
-                      </>
-                    )}
-                    {!project.voiceOff && !project.audioUrl && <p className="hint" style={{ margin: 0 }}>{t("studio.voiceLater")}</p>}
-                  </>
-                )}
-              </div>
-              <p className="free-line">
-                {t("studio.freeShort")}{" "}
-                <button type="button" className="link-btn" onClick={() => setPaidOpen((v) => !v)} aria-expanded={paidOpen}>
-                  {t(paidOpen ? "studio.paidHide" : "studio.paidShow")}
-                </button>
-              </p>
-              {paidOpen && <p className="hint free-more">{t("studio.paidList", prices)}</p>}
-            </details>
-          )}
+          {!isImage && !viewStep && soundCard}
           {pendingRegen && STEP_REASONS[pendingRegen.step] && (
             <div ref={reasonRef} className="reason-box" style={{ marginTop: 16 }}>
               <p className="lede">{t("studio.whyFail")}</p>

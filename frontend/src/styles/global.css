@@ -1234,8 +1234,9 @@ details.options > .brand-toggle, details.options > .examples { margin-top: 14px;
 .phone-busy .spinner { width: 40px; height: 40px; border-width: 3px; }
 
 /* Sound, captions and logo: one section at a time. */
-.sound-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin-top: 12px; padding: 4px; border-radius: 14px; background: var(--surface-2, rgba(127,127,127,.08)); }
-.sound-tab { display: grid; gap: 2px; padding: 8px 10px; text-align: left; border: 0; border-radius: 10px; background: none; color: var(--muted); font: inherit; cursor: pointer; min-width: 0; }
+.sound-tabs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; margin-top: 12px; padding: 4px; border-radius: 14px; background: var(--surface-2, rgba(127,127,127,.08)); }
+.sound-tab { grid-column: span 2; display: grid; gap: 2px; padding: 8px 10px; text-align: left; border: 0; border-radius: 10px; background: none; color: var(--muted); font: inherit; cursor: pointer; min-width: 0; }
+.sound-tab:nth-child(-n + 2) { grid-column: span 3; }
 .sound-tab span { font-size: 13px; font-weight: 600; }
 .sound-tab small { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sound-tab.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
@@ -1279,3 +1280,22 @@ details.options > .brand-toggle, details.options > .examples { margin-top: 14px;
 .redo-needed-title { margin: 0; font-weight: 600; font-size: 14px; }
 .redo-needed ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; line-height: 1.45; }
 .redo-needed .btn { justify-self: start; }
+
+.voice-choose { margin-top: 12px; display: grid; gap: 8px; }
+.voice-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.voice-option { display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; }
+.voice-option.on { border-color: var(--accent-2); background: var(--accent-soft); }
+.voice-pick { flex: 1; min-width: 0; display: grid; gap: 1px; padding: 4px 6px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.voice-pick b { font-size: 13px; font-weight: 600; }
+.voice-pick .hint { font-size: 11px; }
+.voice-option .btn.tiny { flex: none; padding: 4px 9px; }
+
+.caption.phone-title { top: 13%; bottom: auto; font-size: 8.2cqw; }
+.caption.phone-title.under-logo { top: 21%; }
+.caption.phone-title.cap-box, .caption.phone-title.cap-brand { font-size: 7.2cqw; }
+.caption.phone-title.title-s { font-size: 6.4cqw; }
+.caption.phone-title.title-l { font-size: 9.6cqw; }
+.caption.phone-title.title-l.cap-box, .caption.phone-title.title-l.cap-brand { font-size: 8.4cqw; }
+.caption.phone-title.title-s.cap-box, .caption.phone-title.title-s.cap-brand { font-size: 5.8cqw; }
+.field-note { font-size: 12px; color: var(--accent-2); }
+.sound-card .sound-setup { margin: 8px 0 0; }

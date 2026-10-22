@@ -10,6 +10,7 @@ import { attemptCost, config, CREDIT_COSTS, EXTRA_ATTEMPT_MULTIPLIER, IMAGE_SLID
 import { getBalance, refundCredits, spendCredits } from "./credits.js";
 import {
   generateCaptions,
+  captionsFromWordTimes,
   generateIdea,
   generateScript,
   generateVisuals,
@@ -66,15 +67,23 @@ import {
   writeMusicFromUpload,
   loadVoiceTake,
   loadVoiceTakeMeta,
+  hasVoiceTake,
+  voiceTakeKeyFor,
   saveTakeCaptions,
   saveVoiceTake,
   voiceTakeKey,
+  voiceChoiceOf,
+  voiceInstructions,
+  voiceWordTimes,
+  VOICE_CHOICES,
   type ReelMusic,
   unstampReelFrames,
   writeReelEndCard,
   writeReelLogoBadge,
   type ReelLogoSettings,
   CAPTION_STYLES,
+  REEL_TITLE_SIZES,
+  type ReelTitles,
   type CaptionStyle,
   restoreStillSnapshot,
   snapshotStills,
@@ -414,9 +423,10 @@ function continuationOf(projectId: string, project: Record<string, unknown>, scr
     current!.scenes.length === script.scenes.length &&
     current!.scenes.every((scene, i) => scene.id === script.scenes[i].id && (scene.visualPrompt || "").trim() === (script.scenes[i].visualPrompt || "").trim());
   const frames = sameFrames || Boolean(framesForScript(projectId, script));
-  const key = voiceTakeKey(script);
-  const take = loadVoiceTakeMeta(projectId, key);
-  const sameVoice = Boolean(current) && voiceTakeKey(current!) === key && hasVoiceFile(projectId);
+  const voice = voiceChoiceOf(project.voice_choice);
+  const key = voiceTakeKey(script, voice);
+  const take = loadVoiceTakeMeta(projectId, voiceTakeKeyFor(projectId, script, voice));
+  const sameVoice = Boolean(current) && voiceTakeKey(current!, voice) === key && hasVoiceFile(projectId);
   return { frames, voice: Boolean(take) || sameVoice, captions: Boolean(take?.captions) || (sameVoice && Boolean(project.captions_json)) };
 }
 
@@ -540,6 +550,13 @@ export function serializeProject(row: Record<string, unknown>) {
     videoStamp: hasVideoFile(id) ? Math.round(fs.statSync(videoFile(id)).mtimeMs) : 0,
     reelLogo: parse<Partial<ReelLogoSettings>>(row.reel_logo_json),
     captionStyle: captionStyleOf(row),
+    reelTitles: reelTitlesOf(row),
+    voiceChoice: voiceChoiceOf(row.voice_choice),
+    /** Voice is off but its recording for these words and this voice is still kept, so bringing it back is free. */
+    voiceTakeSaved:
+      Number(row.voice_off) === 1 && Boolean(row.script_json)
+        ? hasVoiceTake(id, voiceTakeKeyFor(id, parse<Script>(row.script_json)!, voiceChoiceOf(row.voice_choice)))
+        : false,
     renderPaid: renderPaidBefore(id) || hasVideoFile(id),
     music: hasMusicFile(id)
       ? { name: String(row.music_name || ""), durationSec: Number(row.music_duration) || 0, ...reelMusicOf(row) }
@@ -624,6 +641,7 @@ export async function restoreStepVersion(
     const updates: Record<string, unknown> = { ...downstreamWipe("idea"), updated_at: new Date().toISOString() };
     delete updates.output_url;
     delete updates.status;
+    keepCurrentVoice(projectId);
     removeVoiceFile(projectId);
     const fields = Object.keys(updates).map((key) => `${key} = @${key}`).join(", ");
     db.prepare(`UPDATE projects SET ${fields} WHERE id = @id`).run({ ...updates, id: projectId });
@@ -665,10 +683,11 @@ export async function restoreStepVersion(
     db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = 'visuals'").run(projectId);
     db.prepare("UPDATE project_step_versions SET accepted = 1 WHERE id = ?").run(framesBack.versionId);
   }
+  keepCurrentVoice(projectId);
   removeVoiceFile(projectId);
   // A voice already recorded for exactly that script's words comes back free, with its captions.
   if (older && Number(fresh.voice_off) !== 1) {
-    const take = loadVoiceTake(projectId, voiceTakeKey(older));
+    const take = loadVoiceTake(projectId, voiceTakeKeyFor(projectId, older, voiceChoiceOf(fresh.voice_choice)));
     if (take) {
       updates.voice_json = take.voice ? JSON.stringify(take.voice) : null;
       updates.audio_url = `/projects/${projectId}/audio`;
@@ -769,7 +788,7 @@ export function forkReel(userId: string, projectId: string, rawStep: unknown, ve
     updates.current_step = "visuals";
   }
   if (script && Number(project.voice_off) !== 1) {
-    const key = voiceTakeKey(script);
+    const key = voiceTakeKeyFor(projectId, script, voiceChoiceOf(project.voice_choice));
     for (const ext of ["mp3", "json"]) {
       const src = `${from}/voice-take-${key}.${ext}`;
       if (fs.existsSync(src)) fs.copyFileSync(src, `${to}/voice-take-${key}.${ext}`);
@@ -1570,16 +1589,23 @@ export async function runStep(
     } else if (step === "voice" && script) {
       providerTouched = true;
       const result = await generateVoice(script, brand);
+      const voiceChoice = voiceChoiceOf(project.voice_choice);
+      // The voice reads exactly the script's words (what the owner sees and edits), in the voice they chose.
+      const spokenWords = script.scenes.map((scene) => scene.voiceover).join(" ").replace(/\s+/g, " ").trim();
       const direction = {
-        voicePreset: result.data.voicePreset || result.data.voice || "warm_british_female",
-        voice: result.data.voice || result.data.voicePreset || "warm british female",
-        script: result.data.script,
+        voicePreset: voiceChoice,
+        voice: voiceChoice,
+        voiceId: voiceChoice,
+        script: spokenWords || result.data.script,
         notes: result.data.notes,
       };
       updates.voice_json = JSON.stringify(direction);
       updates.voice_off = 0;
-      const tts = await synthesizeSpeech(direction.script, projectId);
-      saveVoiceTake(projectId, voiceTakeKey(script), direction);
+      const tts = await synthesizeSpeech(direction.script, projectId, {
+        voice: voiceChoice,
+        instructions: voiceInstructions(direction.script, brand?.tone_of_voice || "", String(direction.notes || "")),
+      });
+      saveVoiceTake(projectId, voiceTakeKey(script, voiceChoice), direction);
       updates.audio_url = `/projects/${projectId}/audio`;
       updates.current_step = "voice";
       provider = tts.provider;
@@ -1604,10 +1630,16 @@ export async function runStep(
     } else if (step === "captions" && script) {
       providerTouched = true;
       const audioSec = (await voiceDurationSec(projectId)) || script.durationSec || 30;
-      const result = await generateCaptions(script, audioSec);
+      const spokenText = script.scenes.map((scene) => scene.voiceover).join(" ");
+      const ukrainian = (spokenText.match(/[\u0400-\u04FF]/g) || []).length > (spokenText.match(/[A-Za-z]/g) || []).length;
+      const heard = await voiceWordTimes(projectId, ukrainian ? "uk" : "en");
+      const timed = heard ? captionsFromWordTimes(script.scenes, heard.words, heard.duration || audioSec) : [];
+      const result = timed.length
+        ? { data: { cues: timed }, provider: "openai", model: "whisper-1", cost: 0.006 * Math.max(0.25, audioSec / 60) }
+        : await generateCaptions(script, audioSec);
       updates.captions_off = 0;
       updates.captions_json = JSON.stringify(result.data);
-      saveTakeCaptions(projectId, voiceTakeKey(script), result.data);
+      saveTakeCaptions(projectId, voiceTakeKeyFor(projectId, script, voiceChoiceOf(project.voice_choice)), result.data);
       updates.current_step = "captions";
       provider = result.provider;
       model = result.model;
@@ -1627,6 +1659,7 @@ export async function runStep(
         logo: layers.logo,
         endCard: layers.endCard,
         captionStyle: captionStyleOf(project),
+      titles: reelTitlesOf(project),
         brand,
       });
       updates.current_step = "create";
@@ -1663,7 +1696,10 @@ export async function runStep(
       delete updates.current_step;
     } else if (regenerate || sceneId) {
       Object.assign(updates, downstreamWipe(step, Boolean(sceneId)));
-      if (step === "idea" || step === "script") removeVoiceFile(projectId);
+      if (step === "idea" || step === "script") {
+        keepCurrentVoice(projectId);
+        removeVoiceFile(projectId);
+      }
       if (step !== "render") removeVideoFile(projectId);
     }
     if (step === "render") {
@@ -1768,9 +1804,13 @@ function asCaption(text: unknown) {
 export async function setVoiceOff(userId: string, projectId: string, off: boolean) {
   const project = getProject(projectId, userId);
   if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
-  if (!project.script_json) throw Object.assign(new Error("Generate the script first."), { status: 400 });
   if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
   if ((Number(project.voice_off) === 1) === off) return serializeProject(project);
+  if (!project.script_json || !project.visuals_json) {
+    // Set up before the frames: nothing recorded or made yet, so only the choice is kept for the voice step.
+    db.prepare(`UPDATE projects SET voice_off = ?, updated_at = datetime('now') WHERE id = ?`).run(off ? 1 : 0, projectId);
+    return serializeProject(getProject(projectId, userId));
+  }
   const script = parse<Script>(project.script_json)!;
   const hadVideo = hasVideoFile(projectId);
   const captionsOff = Number(project.captions_off) === 1;
@@ -1779,10 +1819,11 @@ export async function setVoiceOff(userId: string, projectId: string, off: boolea
   let captions: string | null = null;
   if (off) {
     // The recording stays kept by its words: turning the voice back on later brings it back free.
+    keepCurrentVoice(projectId);
     removeVoiceFile(projectId);
     if (!captionsOff && project.captions_json) captions = JSON.stringify({ cues: sceneCaptions(script) });
   } else {
-    const take = loadVoiceTake(projectId, voiceTakeKey(script));
+    const take = loadVoiceTake(projectId, voiceTakeKeyFor(projectId, script, voiceChoiceOf(project.voice_choice)));
     if (take) {
       voiceJson = take.voice ? JSON.stringify(take.voice) : null;
       audioUrl = `/projects/${projectId}/audio`;
@@ -1865,11 +1906,12 @@ async function applyScriptWords(userId: string, projectId: string, project: Reco
   let audioUrl = String(project.audio_url || "");
   let captions = (project.captions_json as string | null) || null;
   if (!voiceOff && voiceChanged) {
+    keepCurrentVoice(projectId);
     removeVoiceFile(projectId);
     voiceJson = null;
     audioUrl = "";
     captions = null;
-    const take = loadVoiceTake(projectId, voiceTakeKey(next));
+    const take = loadVoiceTake(projectId, voiceTakeKeyFor(projectId, next, voiceChoiceOf(project.voice_choice)));
     if (take) {
       voiceJson = take.voice ? JSON.stringify(take.voice) : null;
       audioUrl = `/projects/${projectId}/audio`;
@@ -1910,6 +1952,7 @@ export async function editCaptions(userId: string, projectId: string, raw: unkno
       start: Math.max(0, Math.round(Number(cue.start) * 10) / 10),
       end: Math.round(Number(cue.end) * 10) / 10,
       text: String(cue.text ?? "").replace(/\s+/g, " ").trim().slice(0, 120),
+      ...(Number.isInteger(cue.scene) && Number(cue.scene) >= 0 ? { scene: Number(cue.scene) } : {}),
     }))
     .filter((cue) => cue.text && Number.isFinite(cue.start) && Number.isFinite(cue.end) && cue.end > cue.start)
     .sort((a, b) => a.start - b.start);
@@ -1996,9 +2039,39 @@ export async function updateCaptionStyle(userId: string, projectId: string, raw:
   return serializeProject(getProject(projectId, userId));
 }
 
+function reelTitlesOf(row: Record<string, unknown>): ReelTitles {
+  const saved = parse<Partial<ReelTitles>>(row.titles_json as string | null) || {};
+  return {
+    show: saved.show !== false,
+    style: (CAPTION_STYLES as readonly string[]).includes(String(saved.style)) ? (saved.style as ReelTitles["style"]) : "clean",
+    size: (REEL_TITLE_SIZES as readonly string[]).includes(String(saved.size)) ? (saved.size as ReelTitles["size"]) : "m",
+  };
+}
+
+/** The scene headlines at the top: shown or not, their look and size. A finished video is made again straight away, free. */
+export async function updateReelTitles(userId: string, projectId: string, raw: unknown) {
+  const project = getProject(projectId, userId);
+  if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
+  const body = (raw || {}) as Partial<Record<keyof ReelTitles, unknown>>;
+  const current = reelTitlesOf(project);
+  const next: ReelTitles = {
+    show: typeof body.show === "boolean" ? body.show : current.show,
+    style: (CAPTION_STYLES as readonly string[]).includes(String(body.style)) ? (body.style as ReelTitles["style"]) : current.style,
+    size: (REEL_TITLE_SIZES as readonly string[]).includes(String(body.size)) ? (body.size as ReelTitles["size"]) : current.size,
+  };
+  const voiced = Number(project.voice_off) !== 1;
+  if (voiced) assertCanRemake(projectId, project);
+  db.prepare(`UPDATE projects SET titles_json = ? WHERE id = ?`).run(JSON.stringify(next), projectId);
+  const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
+  // Without a voice there are no headlines in the video, so nothing to make again.
+  if (voiced) await remakeReelVideo(userId, projectId, brand);
+  return serializeProject(getProject(projectId, userId));
+}
+
 /** Captions made earlier from the current voice, if they are still kept. */
-function keptTakeCaptions(projectId: string, script: Script) {
-  const take = loadVoiceTakeMeta(projectId, voiceTakeKey(script));
+function keptTakeCaptions(projectId: string, script: Script, voice: string) {
+  const take = loadVoiceTakeMeta(projectId, voiceTakeKeyFor(projectId, script, voice));
   return take?.captions || null;
 }
 
@@ -2023,6 +2096,23 @@ function reelInputsReady(projectId: string, row: Record<string, unknown>) {
  * After a change to a finished Reel: make the video again straight away when everything for it is there (free);
  * otherwise take it down, so the owner finishes the missing steps (the video step itself is free by then).
  */
+/**
+ * Keep the current recording (with its captions) under its words and voice before it is removed, so going back to
+ * these words brings it back free — also for voices recorded before takes were kept.
+ */
+function keepCurrentVoice(projectId: string) {
+  const row = db.prepare("SELECT script_json, voice_json, voice_choice, voice_off, captions_off, captions_json FROM projects WHERE id = ?").get(projectId) as
+    | Record<string, unknown>
+    | undefined;
+  const script = parse<Script>(row?.script_json as string | null);
+  if (!row || !script || Number(row.voice_off) === 1 || !hasVoiceFile(projectId)) return;
+  const voice = voiceChoiceOf(row.voice_choice);
+  if (hasVoiceTake(projectId, voiceTakeKeyFor(projectId, script, voice))) return;
+  const key = voiceTakeKey(script, voice);
+  saveVoiceTake(projectId, key, parse(row.voice_json as string | null));
+  if (Number(row.captions_off) !== 1 && row.captions_json) saveTakeCaptions(projectId, key, parse(row.captions_json as string));
+}
+
 async function settleVideo(userId: string, projectId: string, hadVideo: boolean, brand?: BrandKit | null) {
   if (!hadVideo) return;
   const row = getProject(projectId, userId);
@@ -2059,6 +2149,15 @@ export async function refreshReelVideo(userId: string, projectId: string) {
   return serializeProject(getProject(projectId, userId));
 }
 
+/** Which voice reads this Reel. Takes effect on the next recording; a recording already made stays as it is. */
+export function setVoiceChoice(userId: string, projectId: string, raw: unknown) {
+  const project = getProject(projectId, userId);
+  if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  if (!(VOICE_CHOICES as readonly string[]).includes(String(raw))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  db.prepare(`UPDATE projects SET voice_choice = ?, updated_at = datetime('now') WHERE id = ?`).run(String(raw), projectId);
+  return serializeProject(getProject(projectId, userId));
+}
+
 /** Make the finished Reel again. The old video stays if that fails — the owner can try again. */
 async function remakeOrDrop(userId: string, projectId: string, brand: BrandKit | null) {
   try {
@@ -2086,6 +2185,7 @@ async function remakeReelVideo(userId: string, projectId: string, brand: BrandKi
       logo: layers.logo,
       endCard: layers.endCard,
       captionStyle: captionStyleOf(project),
+      titles: reelTitlesOf(project),
       brand,
     });
     if (layers.framesChanged) db.prepare(`UPDATE projects SET visuals_json = ? WHERE id = ?`).run(JSON.stringify(layers.visuals), projectId);
@@ -2154,12 +2254,17 @@ export async function removeMusic(userId: string, projectId: string) {
 export async function setCaptionsOff(userId: string, projectId: string, off: boolean) {
   const project = getProject(projectId, userId);
   if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
-  if (!project.script_json) throw Object.assign(new Error("Generate the script first."), { status: 400 });
   if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
   if ((Number(project.captions_off) === 1) === off) return serializeProject(project);
+  const voiceStepDone = Number(project.voice_off) === 1 || hasVoiceFile(projectId);
+  if (!project.script_json || !project.visuals_json || (!voiceStepDone && !project.captions_json && !hasVideoFile(projectId))) {
+    // Set up before the captions step: nothing made yet, so only the choice is kept for later.
+    db.prepare(`UPDATE projects SET captions_off = ?, updated_at = datetime('now') WHERE id = ?`).run(off ? 1 : 0, projectId);
+    return serializeProject(getProject(projectId, userId));
+  }
   const script = parse<Script>(project.script_json);
   const keptCaptions =
-    !off && script && Number(project.voice_off) !== 1 && hasVoiceFile(projectId) ? keptTakeCaptions(projectId, script) : null;
+    !off && script && Number(project.voice_off) !== 1 && hasVoiceFile(projectId) ? keptTakeCaptions(projectId, script, voiceChoiceOf(project.voice_choice)) : null;
   if (hasVideoFile(projectId) && script && (off || Number(project.voice_off) === 1 || keptCaptions)) {
     assertCanRemake(projectId, project);
     db.prepare(`UPDATE projects SET captions_off = ?, captions_json = ?, updated_at = datetime('now') WHERE id = ?`).run(

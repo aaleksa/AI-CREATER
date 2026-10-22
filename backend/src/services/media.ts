@@ -545,9 +545,25 @@ export function hasVideoFile(projectId: string) {
  * Every recorded voice is kept by the words it reads (plus the captions made from it), so going back to a script with
  * the same voiceover brings both back for free. Cleared with the other intermediates after 7 days.
  */
-export function voiceTakeKey(script: { scenes: { voiceover?: string }[] }) {
+export function voiceTakeKey(script: { scenes: { voiceover?: string }[] }, voice: string) {
   const words = script.scenes.map((scene) => String(scene.voiceover || "").replace(/\s+/g, " ").trim()).join("\n");
-  return createHash("sha1").update(words).digest("hex").slice(0, 16);
+  return createHash("sha1").update(`${voice}\n${words}`).digest("hex").slice(0, 16);
+}
+
+/**
+ * The key under which this voice for these words is kept. Takes saved before the voice choice existed are keyed by
+ * the words alone; they still count when they were read in the same voice.
+ */
+export function voiceTakeKeyFor(projectId: string, script: { scenes: { voiceover?: string }[] }, voice: string) {
+  const key = voiceTakeKey(script, voice);
+  if (hasVoiceTake(projectId, key)) return key;
+  const words = script.scenes.map((scene) => String(scene.voiceover || "").replace(/\s+/g, " ").trim()).join("\n");
+  const legacy = createHash("sha1").update(words).digest("hex").slice(0, 16);
+  if (!hasVoiceTake(projectId, legacy)) return key;
+  const was = loadVoiceTakeMeta(projectId, legacy)?.voice as { voiceId?: unknown; voice?: unknown } | null | undefined;
+  const name = String(was?.voiceId || was?.voice || "");
+  const same = name === voice || (!(VOICE_CHOICES as readonly string[]).includes(name) && voice === VOICE_CHOICES[0]);
+  return same ? legacy : key;
 }
 
 function voiceTakePaths(projectId: string, key: string) {
@@ -639,19 +655,52 @@ export async function writeStillFromPng(projectId: string, sceneId: number, png:
   fs.rmSync(tmp, { force: true });
 }
 
-export async function synthesizeSpeech(script: string, projectId: string) {
-  const out = voiceFile(projectId);
+/** Voices the owner can pick; the first is the default. All work with gpt-4o-mini-tts and with tts-1 as the fallback. */
+export const VOICE_CHOICES = ["coral", "nova", "sage", "ash", "onyx", "echo"] as const;
+export type VoiceChoice = (typeof VOICE_CHOICES)[number];
+export function voiceChoiceOf(value: unknown): VoiceChoice {
+  return (VOICE_CHOICES as readonly string[]).includes(String(value)) ? (value as VoiceChoice) : VOICE_CHOICES[0];
+}
+
+/** How to read the words: language, the brand's tone and the voice direction. gpt-4o-mini-tts follows these. */
+export function voiceInstructions(text: string, tone = "", notes = "") {
+  const cyrillic = (text.match(/[\u0400-\u04FF]/g) || []).length;
+  const latin = (text.match(/[A-Za-z]/g) || []).length;
+  const language = cyrillic > latin ? "Ukrainian, with natural native Ukrainian pronunciation and stress" : "English, natural and clear";
+  return [
+    `Speak in ${language}. Keep names, places and addresses as written.`,
+    "Sound like a real local business owner talking to a neighbour — warm, natural, never like an ad read.",
+    "Moderate pace with short natural pauses between sentences.",
+    tone ? `Brand tone: ${tone}.` : "",
+    notes ? `Direction: ${notes}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, 900);
+}
+
+export async function synthesizeSpeech(script: string, projectId: string, opts: { voice?: VoiceChoice; instructions?: string; out?: string } = {}) {
+  const out = opts.out || voiceFile(projectId);
   const spoken = (script || "Your Reel is ready.").replace(/\s+/g, " ").slice(0, 4000);
+  const voice = opts.voice || VOICE_CHOICES[0];
 
   if (config.openaiKey) {
     const openai = new OpenAI({ apiKey: config.openaiKey });
-    const mp3 = await openai.audio.speech.create({
-      model: "tts-1",
-      voice: "nova",
-      input: spoken,
-    });
-    fs.writeFileSync(out, Buffer.from(await mp3.arrayBuffer()));
-    return { provider: "openai", model: "tts-1", cost: 0.015 };
+    try {
+      const mp3 = await openai.audio.speech.create({
+        model: "gpt-4o-mini-tts",
+        voice,
+        input: spoken,
+        ...(opts.instructions ? { instructions: opts.instructions } : {}),
+      } as Parameters<typeof openai.audio.speech.create>[0]);
+      fs.writeFileSync(out, Buffer.from(await mp3.arrayBuffer()));
+      return { provider: "openai", model: "gpt-4o-mini-tts", cost: 0.015 };
+    } catch (error) {
+      console.error("gpt-4o-mini-tts failed, falling back to tts-1", error instanceof Error ? error.message : error);
+      const mp3 = await openai.audio.speech.create({ model: "tts-1", voice, input: spoken });
+      fs.writeFileSync(out, Buffer.from(await mp3.arrayBuffer()));
+      return { provider: "openai", model: "tts-1", cost: 0.015 };
+    }
   }
 
   const aiff = path.join(projectMediaDir(projectId), "voice.aiff");
@@ -678,6 +727,37 @@ export async function synthesizeSpeech(script: string, projectId: string) {
   return { provider: "auteur-studio", model: "silence", cost: 0 };
 }
 
+/** A short sample of a voice, made once per voice and language and kept for everyone. */
+export async function voiceSampleFile(voice: VoiceChoice, lang: "uk" | "en") {
+  const dir = path.join(dataDir, "voice-samples");
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${voice}-${lang}.mp3`);
+  if (fs.existsSync(file) && fs.statSync(file).size > 0) return file;
+  const words = lang === "uk" ? "Привіт! Так звучатиме ваш Reel. Чекаємо на вас у суботу!" : "Hi! This is how your Reel could sound. See you on Saturday!";
+  await synthesizeSpeech(words, "voice-samples", { voice, instructions: voiceInstructions(words), out: file });
+  return fs.existsSync(file) ? file : "";
+}
+
+/** Every word of the recorded voice with its time, from speech recognition (whisper-1). Null when that is not possible. */
+export async function voiceWordTimes(projectId: string, language?: "uk" | "en"): Promise<{ words: { word: string; start: number; end: number }[]; duration: number } | null> {
+  if (!config.openaiKey || !hasVoiceFile(projectId)) return null;
+  try {
+    const openai = new OpenAI({ apiKey: config.openaiKey });
+    const result = (await openai.audio.transcriptions.create({
+      file: fs.createReadStream(voiceFile(projectId)),
+      model: "whisper-1",
+      response_format: "verbose_json",
+      timestamp_granularities: ["word"],
+      ...(language ? { language } : {}),
+    })) as unknown as { words?: { word: string; start: number; end: number }[]; duration?: number };
+    const words = (result.words || []).filter((w) => Number.isFinite(w.start) && Number.isFinite(w.end));
+    return words.length ? { words, duration: Number(result.duration) || words[words.length - 1].end } : null;
+  } catch (error) {
+    console.error("voice word times failed", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
 export const CAPTION_STYLES = ["clean", "box", "brand"] as const;
 export type CaptionStyle = (typeof CAPTION_STYLES)[number];
 
@@ -702,12 +782,17 @@ function assColour(hex: string, opacity = 1) {
  * bottom corner). "clean" is white with a soft shadow, "box" sits on a dark see-through band, "brand" uses their
  * title font on their main colour.
  */
-function writeAss(cues: CaptionCue[], file: string, opts: { style: CaptionStyle; brand?: BrandKit | null; bottomPx: number }) {
-  const fontsDir = path.join(path.dirname(file), "caption-fonts");
-  fs.rmSync(fontsDir, { recursive: true, force: true });
-  fs.mkdirSync(fontsDir, { recursive: true });
-  const own = opts.style === "brand" && opts.brand?.user_id ? brandFont(opts.brand.user_id, opts.brand.font) : null;
-  const heavy = captionFontFile(opts.style === "box" ? "bold" : "extrabold");
+export const REEL_TITLE_SIZES = ["s", "m", "l"] as const;
+export type ReelTitleSize = (typeof REEL_TITLE_SIZES)[number];
+/** Headline size against the captions of the same look. */
+const TITLE_SCALE: Record<ReelTitleSize, number> = { s: 0.92, m: 1.12, l: 1.35 };
+
+export type ReelTitles = { show: boolean; style: CaptionStyle; size: ReelTitleSize };
+
+/** One caption look as an ASS style: its font (copied for libass) and colours. */
+function assLook(style: CaptionStyle, brand: BrandKit | null | undefined, fontsDir: string) {
+  const own = style === "brand" && brand?.user_id ? brandFont(brand.user_id, brand.font) : null;
+  const heavy = captionFontFile(style === "box" ? "bold" : "extrabold");
   const fontFile = own?.file || heavy;
   let family = "Arial";
   let heavyBold = 0;
@@ -715,19 +800,96 @@ function writeAss(cues: CaptionCue[], file: string, opts: { style: CaptionStyle;
     fs.copyFileSync(fontFile, path.join(fontsDir, path.basename(fontFile)));
     // libass matches the plain family name (name ID 1): "Montserrat" + bold for Bold, "Montserrat ExtraBold" for ExtraBold.
     if (own) family = own.family || "Arial";
-    else if (opts.style === "box") {
+    else if (style === "box") {
       family = "Montserrat";
       heavyBold = -1;
     } else family = "Montserrat ExtraBold";
   }
-  const primary = hexRgb(opts.brand?.primary_color) ? opts.brand!.primary_color! : "#1a1612";
+  const primary = hexRgb(brand?.primary_color) ? brand!.primary_color! : "#1a1612";
   const onPrimary = luminance(primary) > 0.6 ? "#1a1612" : "#ffffff";
   const look =
-    opts.style === "box"
+    style === "box"
       ? { size: 72, text: assColour("#ffffff"), outline: assColour("#0c0b0a", 0.62), back: assColour("#000000", 0), border: 3, outlineW: 16, shadow: 0, bold: heavyBold }
-      : opts.style === "brand"
+      : style === "brand"
         ? { size: 74, text: assColour(onPrimary), outline: assColour(primary, 0.92), back: assColour("#000000", 0), border: 3, outlineW: 18, shadow: 0, bold: own ? -1 : 0 }
         : { size: 86, text: assColour("#ffffff"), outline: assColour("#000000", 0.55), back: assColour("#000000", 0.35), border: 1, outlineW: 4, shadow: 3, bold: 0 };
+  return { family, ...look };
+}
+
+/**
+ * Captions made from the voice before they carried their scene: their lines are the script's words in order and never
+ * cross scenes, so counting words tells each line's scene. Anything else (edited, other words) is left as it is.
+ */
+function withScenes(cues: CaptionCue[], scenes: Script["scenes"]): CaptionCue[] {
+  if (!cues.length || cues.every((cue) => Number.isInteger(cue.scene))) return cues;
+  const count = (text: string) => text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean).length;
+  const ends: number[] = [];
+  scenes.reduce((sum, scene) => (ends.push(sum + count(String(scene.voiceover || ""))), ends[ends.length - 1]), 0);
+  let words = 0;
+  let scene = 0;
+  const tagged = cues.map((cue) => {
+    while (scene < ends.length - 1 && words >= ends[scene]) scene += 1;
+    words += count(cue.text);
+    return { ...cue, scene };
+  });
+  const fits = words === ends[ends.length - 1] && tagged.every((cue, i) => {
+    const before = tagged.slice(0, i + 1).reduce((sum, c) => sum + count(c.text), 0);
+    return before <= ends[cue.scene!];
+  });
+  return fits ? tagged : cues;
+}
+
+/**
+ * How long each scene plays. With a voice the scenes follow it: each one starts when the voice reaches its words
+ * (from the captions timed to the voice, else by how long each scene's words are) and the last one ends just after
+ * the voice — so nothing is cut and the frames keep pace with what is said. Without a voice: even scenes.
+ */
+async function sceneSeconds(params: { projectId: string; script: Script; silent?: boolean; captions: { cues: CaptionCue[] } | null }, scenes: Script["scenes"]) {
+  const even = Math.max(3, Math.round((params.script.durationSec || 30) / scenes.length));
+  const uniform = scenes.map(() => even);
+  if (params.silent) return uniform;
+  const voiceSec = await voiceDurationSec(params.projectId).catch(() => 0);
+  if (!voiceSec) return uniform;
+  const n = scenes.length;
+  const minSec = 1.5;
+  const cues = withScenes(params.captions?.cues || [], scenes);
+  let starts: number[];
+  if (cues.length && cues.every((cue) => Number.isInteger(cue.scene))) {
+    starts = scenes.map((_, i) => (i === 0 ? 0 : Math.max(0, (cues.find((cue) => cue.scene! >= i)?.start ?? voiceSec) - 0.15)));
+  } else {
+    const weights = scenes.map((scene) => Math.max(1, String(scene.voiceover || "").trim().length));
+    const total = weights.reduce((a, b) => a + b, 0);
+    let at = 0;
+    starts = weights.map((w) => {
+      const start = (at / total) * voiceSec;
+      at += w;
+      return start;
+    });
+  }
+  for (let i = 1; i < n; i++) starts[i] = Math.max(starts[i], starts[i - 1] + minSec);
+  const end = Math.max(voiceSec + 0.6, starts[n - 1] + minSec);
+  return starts.map((start, i) => Math.round(((i + 1 < n ? starts[i + 1] : end) - start) * 100) / 100);
+}
+
+function writeAss(
+  cues: CaptionCue[],
+  file: string,
+  opts: {
+    style: CaptionStyle;
+    brand?: BrandKit | null;
+    bottomPx: number;
+    titles?: CaptionCue[];
+    topPx?: number;
+    titleStyle?: CaptionStyle;
+    titleSize?: ReelTitleSize;
+  }
+) {
+  const fontsDir = path.join(path.dirname(file), "caption-fonts");
+  fs.rmSync(fontsDir, { recursive: true, force: true });
+  fs.mkdirSync(fontsDir, { recursive: true });
+  const look = assLook(opts.style, opts.brand, fontsDir);
+  const head = assLook(opts.titleStyle || opts.style, opts.brand, fontsDir);
+  const headSize = Math.round(head.size * TITLE_SCALE[opts.titleSize || "m"]);
   const header = [
     "[Script Info]",
     "ScriptType: v4.00+",
@@ -738,15 +900,18 @@ function writeAss(cues: CaptionCue[], file: string, opts: { style: CaptionStyle;
     "",
     "[V4+ Styles]",
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-    `Style: Cap,${family},${look.size},${look.text},${look.text},${look.outline},${look.back},${look.bold},0,0,0,100,100,0,0,${look.border},${look.outlineW},${look.shadow},2,90,90,${Math.round(opts.bottomPx)},1`,
+    `Style: Cap,${look.family},${look.size},${look.text},${look.text},${look.outline},${look.back},${look.bold},0,0,0,100,100,0,0,${look.border},${look.outlineW},${look.shadow},2,90,90,${Math.round(opts.bottomPx)},1`,
+    // The scene's on-screen words: a headline at the top, with its own look and size.
+    `Style: Title,${head.family},${headSize},${head.text},${head.text},${head.outline},${head.back},${head.bold},0,0,0,100,100,0,0,${head.border},${head.outlineW},${head.shadow},8,90,90,${Math.round(opts.topPx ?? 300)},1`,
     "",
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
   ];
-  const lines = cues.map((cue) => {
-    const text = cue.text.replace(/\s+/g, " ").trim().slice(0, 80).replace(/\\/g, "").replace(/[{}]/g, "");
-    return `Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},Cap,,0,0,0,,${text}`;
-  });
+  const clean = (text: string, max: number) => text.replace(/\s+/g, " ").trim().slice(0, max).replace(/\\/g, "").replace(/[{}]/g, "");
+  const lines = [
+    ...cues.map((cue) => `Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},Cap,,0,0,0,,${clean(cue.text, 80)}`),
+    ...(opts.titles || []).map((title) => `Dialogue: 1,${assTime(title.start)},${assTime(title.end)},Title,,0,0,0,,{\\fad(250,200)}${clean(title.text, 120)}`),
+  ];
   fs.writeFileSync(file, [...header, ...lines, ""].join("\n"), "utf8");
   return fontsDir;
 }
@@ -809,6 +974,8 @@ export async function renderReel(params: {
   logo?: ReelLogoLayer | null;
   endCard?: ReelEndCard | null;
   captionStyle?: CaptionStyle;
+  /** The scenes' on-screen words as headlines at the top (with a voice): shown or not, their look and size. */
+  titles?: ReelTitles | null;
   brand?: BrandKit | null;
 }) {
   if (!params.silent && !hasVoiceFile(params.projectId)) {
@@ -837,16 +1004,19 @@ async function encodeReel(params: {
   logo?: ReelLogoLayer | null;
   endCard?: ReelEndCard | null;
   captionStyle?: CaptionStyle;
+  titles?: ReelTitles | null;
   brand?: BrandKit | null;
 }) {
   const dir = projectMediaDir(params.projectId);
   const scenes = params.script.scenes.length ? params.script.scenes : [{ id: 1, time: "0–30s", onScreen: "", voiceover: "", visualPrompt: "" }];
-  const duration = Math.max(3, Math.round((params.script.durationSec || 30) / scenes.length));
+  const lens = await sceneSeconds(params, scenes);
+  const startsAt = lens.map((_, i) => lens.slice(0, i).reduce((a, b) => a + b, 0));
   const hex = (params.primaryColor || "#C45C26").replace("#", "") || "C45C26";
   const n = scenes.length;
   const endCard = params.endCard && fs.existsSync(params.endCard.file) ? params.endCard.file : "";
-  // With an end card the scenes play in full and the card follows; without one we keep the script's length.
-  const mainSec = endCard ? duration * n : Math.min(params.script.durationSec || 30, duration * n);
+  const allScenes = lens.reduce((a, b) => a + b, 0);
+  // With a voice or an end card the scenes play in full; a silent Reel without a card keeps the script's length.
+  const mainSec = endCard || !params.silent ? allScenes : Math.min(params.script.durationSec || 30, allScenes);
   const totalSec = mainSec + (endCard ? END_CARD_SEC : 0);
 
   const inputs: string[] = [];
@@ -855,10 +1025,10 @@ async function encodeReel(params: {
     const visual = params.visuals?.find((v) => v.sceneId === scenes[i].id) || params.visuals?.[i];
     const image = await sceneImage(visual, i, dir);
     if (image) {
-      inputs.push("-loop", "1", "-t", String(duration), "-i", image);
+      inputs.push("-loop", "1", "-t", String(lens[i]), "-i", image);
     } else {
       const color = FALLBACK_COLORS[i % FALLBACK_COLORS.length] || hex;
-      inputs.push("-f", "lavfi", "-i", `color=c=0x${color}:s=1080x1920:d=${duration}`);
+      inputs.push("-f", "lavfi", "-i", `color=c=0x${color}:s=1080x1920:d=${lens[i]}`);
     }
     next += 1;
   }
@@ -886,8 +1056,8 @@ async function encodeReel(params: {
   if (withMusic) {
     audioFilter = `;${reelAudioFilter({ voiceIndex, musicIndex, lengthSec: totalSec, music: params.music! })}`;
     audioMap = "[aout]";
-  } else if (voiceIndex != null && endCard) {
-    // The voice ends before the card; pad it so the card is not cut off.
+  } else if (voiceIndex != null) {
+    // Pad the voice to the video's length so neither the last scene nor the card is cut off.
     audioFilter = `;[${voiceIndex}:a]apad,atrim=0:${totalSec.toFixed(2)}[aout]`;
     audioMap = "[aout]";
   } else {
@@ -904,8 +1074,28 @@ async function encodeReel(params: {
   // Above Instagram's caption and buttons; above our logo when it sits in a bottom corner.
   const bottomPx = logoNow && logoNow.corner.startsWith("bottom") ? REEL_BOTTOM + logoNow.h + 36 : Math.round(1920 * 0.24);
   const assFile = path.join(dir, "captions.ass");
-  const subtitles = params.captions?.cues?.length ? assFile : "";
-  const fontsDir = subtitles ? writeAss(params.captions!.cues, assFile, { style: params.captionStyle || "clean", brand: params.brand, bottomPx }) : "";
+  // With a voice the captions are what it says, so each scene's on-screen words become its headline at the top.
+  // Without a voice those words already are the captions — no headline, so nothing shows twice.
+  const titles =
+    params.silent || params.titles?.show === false
+      ? []
+      : scenes
+          .map((scene, i) => ({ start: startsAt[i], end: Math.min(startsAt[i] + lens[i], mainSec), text: String(scene.onScreen || "").trim() }))
+        .filter((title) => title.text && title.start < mainSec);
+  const topPx = logoNow && logoNow.corner.startsWith("top") ? REEL_TOP + logoNow.h + 30 : REEL_TOP + 20;
+  const cues = params.captions?.cues || [];
+  const subtitles = cues.length || titles.length ? assFile : "";
+  const fontsDir = subtitles
+    ? writeAss(cues, assFile, {
+        style: params.captionStyle || "clean",
+        brand: params.brand,
+        bottomPx,
+        titles,
+        topPx,
+        titleStyle: params.titles?.style,
+        titleSize: params.titles?.size,
+      })
+    : "";
   const esc = (file: string) => file.replaceAll("\\", "/").replaceAll(":", "\\:").replaceAll("'", "\\'");
 
   const videoFilter = (withSubtitles: boolean) => {
