@@ -77,7 +77,7 @@ export default function Library() {
                       ? t("library.stills")
                       : fileGone(p)
                         ? t("library.expired")
-                        : p.status}{" "}
+                        : t(`library.status_${p.status}`) || p.status}{" "}
                   · {t("billing.creditsN", { n: p.creditsUsed })}
                 </div>
                 {fileGone(p) && <div className="hint">{t("library.expiredHint")}</div>}

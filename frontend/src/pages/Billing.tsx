@@ -134,7 +134,7 @@ export default function Billing() {
       </div>
       {!checkoutEnabled && <p className="hint" style={{ marginTop: 16 }}>{t("billing.checkoutClosed")}</p>}
 
-      <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>{t("billing.buyTitle")}</h2>
+      <h2 className="page-title section-title" style={{ fontSize: 28, marginTop: 48 }}>{t("billing.buyTitle")}</h2>
       <MoreHint short={t("billing.buyHintShort")} full={t("billing.buyHint")} />
       <div className="list" style={{ maxWidth: 640, marginTop: 12 }}>
         {packs.map((pack) => (
@@ -153,7 +153,7 @@ export default function Billing() {
 
       {SHOW_AI_COST_LOG && (
         <>
-          <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>{t("billing.eachTitle")}</h2>
+          <h2 className="page-title section-title" style={{ fontSize: 28, marginTop: 48 }}>{t("billing.eachTitle")}</h2>
           <p className="hint">{t("billing.eachHint")}</p>
           <div className="list" style={{ marginTop: 12 }}>
             {(credits?.generations || []).map((g) => (
@@ -171,7 +171,7 @@ export default function Billing() {
         </>
       )}
 
-      <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>{t("billing.account")}</h2>
+      <h2 className="page-title section-title" style={{ fontSize: 28, marginTop: 48 }}>{t("billing.account")}</h2>
       <p className="hint">{t("billing.accountHint")}</p>
       <Link className="btn ghost" style={{ marginTop: 12 }} to="/app/account">
         {t("billing.manageAccount")}

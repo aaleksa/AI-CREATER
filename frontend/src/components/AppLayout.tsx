@@ -63,6 +63,19 @@ export default function AppLayout() {
     return () => window.removeEventListener("auteur:refresh", load);
   }, [nav, location.pathname]);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !(e.target as Element | null)?.closest?.(".side")) setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [menuOpen]);
+
   return (
     <div className="app-shell">
       <aside className={`side${menuOpen ? " open" : ""}`}>
@@ -96,6 +109,11 @@ export default function AppLayout() {
             <ThemeSwitch />
             <LanguageSwitch compact />
           </div>
+          {me?.isAdmin && (
+            <NavLink to="/app/admin" className="admin-link">
+              Database
+            </NavLink>
+          )}
           <NavLink to="/app/account" className="side-account" title={t("nav.account")}>
             <b>{me?.user.name}</b>
             <span>{t("nav.plan", { name: me?.subscription?.plan_name || "Free" })}</span>
@@ -118,7 +136,10 @@ export default function AppLayout() {
         <Outlet context={{ me, setMe }} />
       </main>
       <nav className="tabbar" aria-label={t("nav.menu")}>
-        <NavLink to="/app" end><span aria-hidden>✦</span>{t("nav.create")}</NavLink>
+        <NavLink to="/app" end className={({ isActive }) => (isActive || location.pathname.startsWith("/app/studio") ? "active" : "")}>
+          <span aria-hidden>✦</span>
+          {t("nav.create")}
+        </NavLink>
         <NavLink to="/app/library"><span aria-hidden>▤</span>{t("nav.library")}</NavLink>
         <NavLink to="/app/brand"><span aria-hidden>◐</span>{t("nav.brand")}</NavLink>
         <NavLink to="/app/billing"><span aria-hidden>◈</span>{t("nav.credits")}</NavLink>

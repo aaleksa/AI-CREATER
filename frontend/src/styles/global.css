@@ -175,7 +175,7 @@ a.side-account { padding: 8px 10px; margin: -8px -10px; border-radius: 14px; }
 a.side-account:hover, a.side-account.active { background: var(--hover); }
 .side-account-link { color: var(--accent-2); font-size: 13px; }
 
-.main { padding: 36px 48px 80px; max-width: 1180px; }
+.main { padding: 36px 48px 80px; max-width: 1180px; min-width: 0; }
 
 .hero-home h1, .page-title, .landing h1 {
   font-family: var(--serif);
@@ -290,7 +290,7 @@ button.step:hover { border-color: var(--accent-2); }
   max-width: 980px;
 }
 /* The picture being changed stays in view while the edits on the right scroll. */
-@media (min-width: 901px) {
+@media (min-width: 961px) {
   .studio-preview { position: sticky; top: 16px; }
 }
 .studio-preview-label { margin: 10px 0 0; text-align: center; }
@@ -390,7 +390,7 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
   .studio > .reel-stage { align-self: stretch; }
   .reel-stage .phone { position: sticky; top: 16px; align-self: start; }
 }
-@media (min-width: 901px) and (min-height: 680px) {
+@media (min-width: 961px) and (min-height: 680px) {
   .studio.reviewing > .reel-stage { align-self: stretch; }
   .studio.reviewing .reel-stage .phone { position: sticky; top: 16px; align-self: start; }
 }
@@ -443,7 +443,9 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
 .studio.reviewing .reel-stage { grid-template-columns: 1fr; }
 @media (max-width: 900px) {
   .studio.reviewing { grid-template-columns: 1fr; }
-  .studio.reviewing .reel-stage { display: none; }
+  /* Looking back at a step: the phone stays on top (a tapped frame shows there), the review below. */
+  .studio.reviewing > .reel-stage { display: contents; }
+  .studio.reviewing > .reel-stage > .phone { order: 1; }
 }
 .review-head { display: grid; gap: 6px; justify-items: start; margin-bottom: 14px; }
 .review-head .step-back { margin: 0; }
@@ -519,7 +521,9 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
 }
 .pw-eye:hover, .pw-eye[aria-pressed="true"] { color: var(--text, inherit); }
 .pw-eye:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
-.color-row { display: flex; gap: 10px; align-items: center; }
+.color-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; min-width: 0; }
+.color-row > div { min-width: 0; }
+.color-row input:not([type="color"]) { min-width: 0; width: 9em; max-width: 100%; }
 .color-row input.bad { border-color: #b3261e; }
 .color-row input[type="color"] { width: 42px; height: 42px; border: 0; background: none; padding: 0; }
 .plans {
@@ -628,7 +632,7 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
   gap: 4px;
 }
 .choice.on { border-color: var(--accent-2); }
-.choice-row.tones { grid-template-columns: 1fr 1fr; }
+.choice-row.tones { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .choice-row.kinds { grid-template-columns: repeat(4, 1fr); margin-top: 10px; }
 .choice-row.kinds .choice span { color: var(--muted); font-size: 13px; line-height: 1.35; }
 .choice-row.langs { grid-template-columns: 1fr 1fr 1fr; margin-top: 10px; }
@@ -658,7 +662,7 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
   .studio.image { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
-  .brand-layout { grid-template-columns: 1fr; }
+  .brand-layout { grid-template-columns: minmax(0, 1fr); }
 }
 .compare-grid {
   display: grid;
@@ -938,7 +942,7 @@ textarea.brief-box::placeholder {
 
   .main { padding: 20px 16px calc(84px + env(safe-area-inset-bottom)); }
   .page-title, .hero-home h1 { font-size: 34px !important; }
-  .format-grid, .plans, .studio { grid-template-columns: 1fr; }
+  .format-grid, .plans, .studio { grid-template-columns: minmax(0, 1fr); }
   .format-grid { margin-top: 24px; }
   .format-card { min-height: 0; }
   .prompt-stage { margin-top: 28px; padding: 18px; border-radius: 20px; }
@@ -1090,8 +1094,11 @@ details.learned > summary { font-family: var(--serif); font-size: 20px; }
 .checklist button.done { color: var(--ok); }
 .checklist button:hover { color: var(--ink); }
 
+@media (max-width: 960px) {
+  .brand-aside { position: static; }
+}
 @media (max-width: 900px) {
-  .brand-aside { position: static; order: -1; }
+  .brand-aside { order: -1; }
   .post-mock { aspect-ratio: auto; min-height: 150px; max-width: 320px; padding: 22px 22px 56px; }
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -1227,7 +1234,8 @@ details.options > .brand-toggle, details.options > .examples { margin-top: 14px;
 .busy-toast.wait { background: var(--accent); color: #fff; }
 .reason-box { padding: 12px; border: 1px solid var(--accent-2); border-radius: 14px; }
 .busy-toast .busy-time { margin-left: auto; padding-left: 8px; opacity: .7; font-variant-numeric: tabular-nums; white-space: nowrap; }
-@media (max-width: 900px) { .busy-toast { bottom: 84px; } }
+@media (max-width: 960px) { .busy-toast { bottom: calc(84px + env(safe-area-inset-bottom)); } }
+.busy-toast { pointer-events: none; }
 .spinner { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .phone-busy { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; background: rgba(12, 11, 10, .38); color: #fff; pointer-events: none; }
@@ -1328,3 +1336,63 @@ details.options > .brand-toggle, details.options > .examples { margin-top: 14px;
 .brief-line .brief-facts { flex-basis: 100%; order: 4; }
 .brief-brand .brief-facts { vertical-align: middle; margin-left: 4px; }
 .more-hint .more-toggle { font-size: inherit; white-space: nowrap; }
+
+/* ---------- Phone ---------- */
+html { -webkit-text-size-adjust: 100%; }
+a, button, summary, label { -webkit-tap-highlight-color: transparent; }
+.review-frames figure .btn.tiny { white-space: normal; line-height: 1.2; }
+.soon-line { display: none; margin: 10px 2px 0; }
+@media (max-width: 960px) {
+  /* iOS zooms into any field under 16px when it gets focus. */
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), textarea, select { font-size: 16px; }
+  .btn.tiny { min-height: 36px; padding: 6px 12px; font-size: 13px; }
+  .reel-stage .scene-actions .btn.tiny { padding: 6px 12px; font-size: 13px; }
+  .link-btn { padding: 4px 0; }
+  /* A finger needs a bigger corner to grab. */
+  .logo-place-handle { width: 28px; height: 28px; right: -14px; bottom: -14px; }
+}
+@media (max-width: 900px) {
+  /* The step and its button come right after the preview; the long scene list goes below. */
+  .studio > .reel-stage { display: contents; }
+  .studio > .reel-stage > .phone { order: 1; }
+  .studio > .reel-stage > .studio-preview-label { order: 1; }
+  .studio > .panel { order: 2; }
+  .studio > .reel-stage > .scenes-wrap { order: 3; }
+  .reel-stage .phone { max-width: min(280px, 72vw); margin: 0 auto; }
+}
+@media (max-width: 600px) {
+  .choice-row.tones { grid-template-columns: minmax(0, 1fr); }
+  /* Formats that are not open yet fold into one line under the open ones. */
+  .format-card.soon { display: none; }
+  .format-card { flex-direction: row; align-items: center; justify-content: flex-start; text-align: left; gap: 14px; padding: 14px 16px; }
+  .format-card h3 { margin: 0 0 2px; }
+  .soon-line { display: block; }
+  .list-row { grid-template-columns: minmax(0, 1fr); }
+  .list-actions { flex-direction: row; flex-wrap: wrap; }
+  .list-actions .btn { padding: 8px 14px; font-size: 14px; }
+}
+@media (max-width: 960px) {
+  /* The top bar keeps its own height; the page takes the rest (a short page no longer stretches the bar). */
+  .app-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; min-height: 100dvh; }
+  .side { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  .side .admin-link { display: block; }
+  .step { min-height: 40px; }
+  .brief-line .btn { min-height: 36px; }
+  .voice-option .btn.tiny { min-width: 36px; min-height: 36px; }
+  .tile-actions .btn, .checklist button, .chip-link { min-height: 40px; }
+  .ready-more summary, .lang-note-more summary, .brief-examples summary, .options-summary { padding: 6px 0; }
+  .page-title.section-title { font-size: 26px !important; }
+  .logo-place-handle { right: 2px; bottom: 2px; }
+  .studio-preview .phone.post { margin: 0 auto; }
+}
+@media (max-width: 600px) {
+  .version-row { grid-template-columns: 56px minmax(0, 1fr); }
+  .version-row .version-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .review-scenes li { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .draft-cue .btn { padding: 6px 10px; min-width: 0; }
+  .landing .topbar { flex-wrap: wrap; gap: 10px; }
+  .landing .topbar .row { flex-wrap: wrap; gap: 8px; }
+}
+.side .admin-link { display: none; }
+.phone.placing .phone-frame { animation: none; transform: none; }
+.preview-video { display: block; width: min(360px, 100%); border-radius: 24px; margin-top: 24px; }
