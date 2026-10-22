@@ -140,6 +140,8 @@ export type Project = {
   hasImages: boolean;
   creditsUsed: number;
   stepAttempts: Record<string, number>;
+  /** Tries of each frame (by scene id): the set it came in plus each redo of that frame. */
+  frameAttempts?: Record<string, number>;
   maxStepAttempts: number;
   maxRegenerates: number;
   extraAttemptMultiplier: number;

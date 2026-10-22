@@ -344,6 +344,7 @@ export default function Studio() {
   const [busyTick, setBusyTick] = useState(0);
   const [doneNote, setDoneNote] = useState("");
   const lastBusy = useRef<string | null>(null);
+  const videoAtStart = useRef(false);
   const reasonRef = useRef<HTMLDivElement>(null);
   const [reelMark, setReelMark] = useState<{ src: string; w: number; h: number; dark: boolean } | null>(null);
   const [reelMarkChecked, setReelMarkChecked] = useState("");
@@ -472,6 +473,7 @@ export default function Studio() {
 
   useEffect(() => {
     if (!busy) return;
+    videoAtStart.current = Boolean(project?.hasVideo);
     setBusySince(Date.now());
     setBusyTick(0);
     setDoneNote("");
@@ -486,7 +488,7 @@ export default function Studio() {
     const note = doneText(finished);
     if (!note) return;
     setDoneNote(note);
-    const timer = window.setTimeout(() => setDoneNote(""), 6000);
+    const timer = window.setTimeout(() => setDoneNote(""), note === t("studio.doneVideoDown") ? 12000 : 6000);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busy]);
@@ -620,9 +622,10 @@ export default function Studio() {
     // Without a voice the captions are the scenes' own words: free.
     if (step === "captions" && project?.voiceOff) return { extra: false, credits: 0 };
     // The video is paid once per Reel; making it again is free.
-    if (step === "render" && project?.renderPaid) return { extra: false, credits: 0 };
+    if (step === "render" && (project?.renderPaid || project?.hasVideo)) return { extra: false, credits: 0 };
     const base = sceneId ? 8 : STEPS.find((s) => s.id === step)?.cost ?? 0;
-    const used = project?.stepAttempts?.[step] ?? 0;
+    // A frame counts its own tries; other steps count theirs.
+    const used = sceneId ? (project?.frameAttempts?.[String(sceneId)] ?? 1) : (project?.stepAttempts?.[step] ?? 0);
     const included = project?.maxStepAttempts ?? 3;
     const mult = used >= included ? (project?.extraAttemptMultiplier ?? 2) : 1;
     return { extra: used >= included, credits: base * mult };
@@ -771,6 +774,9 @@ export default function Studio() {
   const reelCanEndCard = !isImage && !reelBrandOff && Boolean(kit?.logo_url || kit?.business_name);
   const sceneNumber = (sceneId: number) => Math.max(0, project?.script?.scenes.findIndex((sc) => sc.id === sceneId) ?? 0) + 1;
   const VIDEO_UPDATES = ["remake", "reel-logo", "caption-style", "music", "music-off", "captions-on", "captions-off", "edit-captions"];
+  // Changes to a finished Reel after which the server makes the video again (or takes it down when a new voice is needed).
+  const touchesVideo = (key: string) =>
+    VIDEO_UPDATES.includes(key) || ["edit-script", "voice-on", "voice-off", "lang-en", "lang-uk"].includes(key) || key.startsWith("restore-");
   function busyText(key: string | null) {
     if (!key) return "";
     const frame = /^visual-(\d+)$/.exec(key);
@@ -780,15 +786,19 @@ export default function Studio() {
     if (key === "voice") return t("studio.busyVoice");
     if (key === "captions") return t("studio.busyCaptions");
     if (key === "idea" || key === "script") return t("studio.busyText");
-    if (key === "lang-en" || key === "lang-uk") return t("studio.busyTranslate");
+    if (key === "lang-en" || key === "lang-uk") return t(project?.hasVideo && !isImage ? "studio.busyTranslateVideo" : "studio.busyTranslate");
     if (!isImage && project?.hasVideo && VIDEO_UPDATES.includes(key)) return t("studio.busyVideo");
+    if (!isImage && project?.hasVideo && touchesVideo(key)) return t("studio.busySaveVideo");
     return "";
   }
   function doneText(key: string) {
     const frame = /^visual-(\d+)$/.exec(key);
     if (frame) return t(project?.hasVideo && !isImage ? "studio.doneFrameVideo" : "studio.doneFrame", { n: sceneNumber(Number(frame[1])) });
     if (key === "render") return t("studio.doneRender");
-    if (!isImage && project?.hasVideo && VIDEO_UPDATES.includes(key)) return t("studio.doneVideo");
+    if (!isImage && touchesVideo(key) && videoAtStart.current) {
+      // The video was there before: say whether it is updated or was taken down until a new voice is made.
+      return t(project?.hasVideo ? "studio.doneVideo" : "studio.doneVideoDown");
+    }
     return "";
   }
   const busyNote = busyText(busy);
@@ -1099,7 +1109,8 @@ export default function Studio() {
 
   async function translateReel(lang: "en" | "uk") {
     if (!id || !project?.script) return;
-    if (translateRedo.total > 0 && !window.confirm(t("studio.reelLangConfirm", { list: translateRedo.list, total: translateRedo.total }))) return;
+    const translateVideoNote = project.hasVideo && project.audioUrl && !project.voiceOff ? t("studio.videoDownNote") : "";
+    if (translateRedo.total > 0 && !window.confirm(t("studio.reelLangConfirm", { list: translateRedo.list, total: translateRedo.total, videoNote: translateVideoNote }))) return;
     setBusy(`lang-${lang}`);
     setError("");
     try {
@@ -1146,7 +1157,13 @@ export default function Studio() {
   async function saveScriptDraft(update = false) {
     if (!id || !project?.script || !scriptDraft) return;
     const plan = draftPlan();
-    if (!update && plan.wordsChanged && plan.voiceRedo?.total && !window.confirm(t("studio.scriptEditVoiceConfirm", plan.voiceRedo))) return;
+    if (
+      !update &&
+      plan.wordsChanged &&
+      plan.voiceRedo?.total &&
+      !window.confirm(t("studio.scriptEditVoiceConfirm", { ...plan.voiceRedo, videoNote: project.hasVideo ? t("studio.videoDownNote") : "" }))
+    )
+      return;
     const hadVoice = Boolean(project.audioUrl) && !project.voiceOff;
     const hadCaptions = Boolean(project.captions) && !project.captionsOff;
     const hadVideo = Boolean(project.hasVideo || project.renderPaid);
@@ -1225,7 +1242,7 @@ export default function Studio() {
         parts.push(t("studio.redoVideo", { n: prices.video }));
         total += prices.video;
       }
-      if (!window.confirm(t("studio.voiceOnConfirm", { list: parts.join(", "), total }))) return;
+      if (!window.confirm(t("studio.voiceOnConfirm", { list: parts.join(", "), total, videoNote: project?.hasVideo ? t("studio.videoDownNote") : "" }))) return;
     }
     if (off && project?.audioUrl && !window.confirm(t("studio.voiceOffConfirm"))) return;
     setBusy(off ? "voice-off" : "voice-on");
@@ -1776,7 +1793,7 @@ export default function Studio() {
               {project.script.scenes.map((s, i) => (
                 <div key={s.id} className={`scene${scene === i ? " on" : ""}`}>
                   <button className="scene-pick" onClick={() => setScene(i)}>
-                    <b>{s.time}</b>
+                    <b>{sceneTime(s.time)}</b>
                     <span>{readableLine(isImage ? s.onScreen : s.voiceover)}</span>
                   </button>
                   {project.visuals && (
@@ -1791,9 +1808,7 @@ export default function Studio() {
                       >
                         {busy === `visual-${s.id}`
                           ? t(project.hasVideo ? "studio.reshootVideo" : "studio.makingShort")
-                          : extraPrice("visuals", s.id).extra
-                            ? t("studio.anotherFrame", { credits: extraPrice("visuals", s.id).credits })
-                            : t("studio.regenFrame", { credits: extraPrice("visuals", s.id).credits })}
+                          : t(extraPrice("visuals", s.id).extra ? "studio.regenFrame2x" : "studio.regenFrame", { credits: extraPrice("visuals", s.id).credits })}
                       </button>
                       {[...(project.versions?.visuals || [])].reverse().find((version) => !version.accepted) && (
                         <button
@@ -1899,6 +1914,14 @@ export default function Studio() {
                       { max: CTA_MAX }
                     )}</span>
                 </label>
+                {(() => {
+                  const plan = draftPlan();
+                  return plan.voiceChanged && project.audioUrl && !project.voiceOff ? (
+                    <div className="voice-warn" role="note">
+                      {t(project.hasVideo ? "studio.voiceTextWarnVideo" : "studio.voiceTextWarn", { voice: prices.voice, caps: prices.caps })}
+                    </div>
+                  ) : null;
+                })()}
                 <p className="hint">{t("studio.scriptEditHint", prices)}</p>
                 <div className="action-row">
                   {(() => {
@@ -2026,9 +2049,7 @@ export default function Studio() {
                         >
                           {busy === `visual-${v.sceneId}`
                             ? t("studio.makingShort")
-                            : extraPrice("visuals", v.sceneId).extra
-                              ? t("studio.anotherFrame", { credits: extraPrice("visuals", v.sceneId).credits })
-                              : t("studio.regenFrame", { credits: extraPrice("visuals", v.sceneId).credits })}
+                            : t(extraPrice("visuals", v.sceneId).extra ? "studio.regenFrame2x" : "studio.regenFrame", { credits: extraPrice("visuals", v.sceneId).credits })}
                         </button>
                       </figure>
                     );
@@ -2226,7 +2247,7 @@ export default function Studio() {
               <VersionCompare step="script" versions={project.versions?.script || []} onRestore={restore} onFork={isImage ? undefined : forkFrom} busy={Boolean(busy)} t={t} />
             </>
           )}
-          {!isImage && project.visuals && !project.hasVideo && (next?.id === "voice" || placeholderCount > 0) && (
+          {!isImage && project.visuals && !project.hasVideo && ((next?.id === "voice" && !project.renderPaid) || placeholderCount > 0) && (
             <p className="lede">
               {placeholderCount
                 ? t(placeholderCount === 1 ? "studio.framesFail" : "studio.framesFailMany", { count: placeholderCount })
@@ -2741,6 +2762,29 @@ export default function Studio() {
             </>
           )}
 
+          {!isImage && project.renderPaid && !project.hasVideo && finishSteps.length > 0 && !viewStep && (
+            <div className="redo-needed" role="status">
+              <p className="redo-needed-title">{t("studio.redoNeededTitle")}</p>
+              <ul>
+                {finishSteps.map((step) => (
+                  <li key={step}>
+                    {step === "voice"
+                      ? t("studio.redoNeededVoice", { n: extraPrice("voice").credits })
+                      : step === "captions"
+                        ? project.voiceOff
+                          ? t("studio.redoNeededCapsFree")
+                          : t("studio.redoNeededCaps", { n: extraPrice("captions").credits })
+                        : t("studio.redoNeededVideo")}
+                  </li>
+                ))}
+              </ul>
+              <button type="button" className="btn accent" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={finishReel}>
+                {finishTotal > 0
+                  ? t("studio.finishReel", { list: finishSteps.map((step) => t(step === "render" ? "studio.videoNoun" : step === "voice" ? "studio.voiceNoun" : "studio.captionsNoun")).join(", "), total: finishTotal })
+                  : t("studio.finishReelFree")}
+              </button>
+            </div>
+          )}
           {next && !(isImage && next.id === "visuals" && project.idea?.shot?.summary) && (
             <div className="action-row" style={{ marginTop: 18 }}>
               <button className="btn accent" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => run(next.id)}>
@@ -2768,7 +2812,7 @@ export default function Studio() {
               )}
             </div>
           )}
-          {finishSteps.length > 1 && !viewStep && (
+          {finishSteps.length > 1 && !viewStep && !(project.renderPaid && !project.hasVideo) && (
             <div className="finish-row">
               <button type="button" className="btn ghost" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={finishReel}>
                 {finishTotal > 0
@@ -3167,8 +3211,8 @@ export default function Studio() {
           <span className="busy-time">{elapsedLabel}</span>
         </div>
       ) : doneNote ? (
-        <div className="busy-toast done" role="status" aria-live="polite">
-          <span aria-hidden>✓</span>
+        <div className={`busy-toast done${doneNote === t("studio.doneVideoDown") ? " down" : ""}`} role="status" aria-live="polite">
+          <span aria-hidden>{doneNote === t("studio.doneVideoDown") ? "!" : "✓"}</span>
           <span>{doneNote}</span>
         </div>
       ) : null}

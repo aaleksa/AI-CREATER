@@ -324,6 +324,23 @@ function stepAttemptCount(projectId: string, step: string) {
   return Number(row?.n ?? 0);
 }
 
+/** Tries of one frame: the set it came in, plus each time this very frame was made again. */
+function frameAttemptCount(projectId: string, sceneId: number) {
+  const row = db
+    .prepare(`SELECT COUNT(*) AS n FROM project_step_versions WHERE project_id = ? AND step = 'visuals' AND scene_id = ?`)
+    .get(projectId, sceneId) as { n: number } | undefined;
+  return 1 + Number(row?.n ?? 0);
+}
+
+function frameAttemptCounts(projectId: string) {
+  const rows = db
+    .prepare(
+      `SELECT scene_id, COUNT(*) AS n FROM project_step_versions WHERE project_id = ? AND step = 'visuals' AND scene_id IS NOT NULL GROUP BY scene_id`
+    )
+    .all(projectId) as { scene_id: number; n: number }[];
+  return Object.fromEntries(rows.map((row) => [String(row.scene_id), 1 + Number(row.n)]));
+}
+
 function stepAttemptCounts(projectId: string) {
   const rows = db
     .prepare(
@@ -523,13 +540,14 @@ export function serializeProject(row: Record<string, unknown>) {
     videoStamp: hasVideoFile(id) ? Math.round(fs.statSync(videoFile(id)).mtimeMs) : 0,
     reelLogo: parse<Partial<ReelLogoSettings>>(row.reel_logo_json),
     captionStyle: captionStyleOf(row),
-    renderPaid: renderPaidBefore(id),
+    renderPaid: renderPaidBefore(id) || hasVideoFile(id),
     music: hasMusicFile(id)
       ? { name: String(row.music_name || ""), durationSec: Number(row.music_duration) || 0, ...reelMusicOf(row) }
       : null,
     hasImages: isImagePost(String(row.type)) && Boolean(parse(row.visuals_json)),
     creditsUsed: row.credits_used,
     stepAttempts: stepAttemptCounts(id),
+    frameAttempts: frameAttemptCounts(id),
     maxStepAttempts: MAX_STEP_ATTEMPTS,
     maxRegenerates: MAX_REGENERATES_PER_STEP,
     extraAttemptMultiplier: EXTRA_ATTEMPT_MULTIPLIER,
@@ -1226,7 +1244,8 @@ export async function runStep(
     throw Object.assign(new Error("We’re already making this. Wait for it to finish."), { status: 409 });
   }
 
-  const attemptsSoFar = stepAttemptCount(projectId, step);
+  // One frame counts its own tries, so redoing frame 3 does not make frame 1 dearer.
+  const attemptsSoFar = step === "visuals" && sceneId ? frameAttemptCount(projectId, sceneId) : stepAttemptCount(projectId, step);
   const multiplier = attemptsSoFar >= MAX_STEP_ATTEMPTS ? EXTRA_ATTEMPT_MULTIPLIER : 1;
   const visualsBase =
     step === "visuals" && sceneId
@@ -1359,7 +1378,7 @@ export async function runStep(
   // No voice: captions are the on-screen words of each scene, made here — no AI, no credits.
   if (step === "captions" && voiceOff) cost = 0;
   // The video is paid once per Reel; making it again (ffmpeg only) is free.
-  if (step === "render" && renderPaidBefore(projectId)) cost = 0;
+  if (step === "render" && (renderPaidBefore(projectId) || hasVideoFile(projectId))) cost = 0;
   if (step === "render") {
     assertArchiveRoom(userId, projectId, Boolean(opts.evictOldest));
   }
