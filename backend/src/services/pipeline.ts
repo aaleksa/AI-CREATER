@@ -45,6 +45,8 @@ import {
 } from "./ai.js";
 import {
   cleanStillFile,
+  projectMediaDir,
+  projectMediaPath,
   copySelectedStill,
   hasCleanStill,
   hasStillFile,
@@ -62,6 +64,11 @@ import {
   renderReel,
   videoFile,
   writeMusicFromUpload,
+  loadVoiceTake,
+  loadVoiceTakeMeta,
+  saveTakeCaptions,
+  saveVoiceTake,
+  voiceTakeKey,
   type ReelMusic,
   unstampReelFrames,
   writeReelEndCard,
@@ -247,6 +254,12 @@ function finishGeneration(
 
 function saveStepVersion(projectId: string, step: string, payload: unknown, generationId: string, sceneId?: number) {
   const id = uuid();
+  const parentStep = step === "script" ? "idea" : step === "visuals" ? "script" : "";
+  const parent = parentStep
+    ? (db
+        .prepare("SELECT id FROM project_step_versions WHERE project_id = ? AND step = ? AND accepted = 1 ORDER BY rowid DESC LIMIT 1")
+        .get(projectId, parentStep) as { id: string } | undefined)
+    : undefined;
   if (step === "visuals") {
     db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = 'visuals'").run(projectId);
   } else if (sceneId) {
@@ -259,9 +272,9 @@ function saveStepVersion(projectId: string, step: string, payload: unknown, gene
     db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = ?").run(projectId, step);
   }
   db.prepare(
-    `INSERT INTO project_step_versions (id, project_id, step, scene_id, payload_json, accepted, generation_id)
-     VALUES (?, ?, ?, ?, ?, 1, ?)`
-  ).run(id, projectId, step, sceneId ?? null, JSON.stringify(payload), generationId);
+    `INSERT INTO project_step_versions (id, project_id, step, scene_id, payload_json, accepted, generation_id, parent_id)
+     VALUES (?, ?, ?, ?, ?, 1, ?, ?)`
+  ).run(id, projectId, step, sceneId ?? null, JSON.stringify(payload), generationId, parent?.id ?? null);
   return id;
 }
 
@@ -338,15 +351,56 @@ function slimVersionPayload(step: string, payload: unknown) {
   });
 }
 
-type VersionRow = { id: string; payload_json: string; accepted: number; created_at: string; generation_id: string | null };
+type VersionRow = {
+  id: string;
+  payload_json: string;
+  accepted: number;
+  created_at: string;
+  generation_id: string | null;
+  parent_id?: string | null;
+  seq?: number;
+};
 
 function versionRows(projectId: string, step: string) {
   return db
     .prepare(
-      `SELECT id, payload_json, accepted, created_at, generation_id FROM project_step_versions
+      `SELECT id, payload_json, accepted, created_at, generation_id, parent_id, rowid AS seq FROM project_step_versions
        WHERE project_id = ? AND step = ? ORDER BY created_at ASC, rowid ASC`
     )
     .all(projectId, step) as VersionRow[];
+}
+
+/**
+ * The latest script made under this idea. Versions saved before scripts remembered their idea are matched by order:
+ * the scripts that came after this idea and before the next one.
+ */
+function latestScriptOfIdea(projectId: string, ideaId: string) {
+  const ideas = versionRows(projectId, "idea");
+  const scripts = versionRows(projectId, "script");
+  const linked = scripts.filter((row) => row.parent_id === ideaId);
+  if (linked.length) return linked[linked.length - 1];
+  const index = ideas.findIndex((row) => row.id === ideaId);
+  if (index < 0) return null;
+  const from = Number(ideas[index].seq);
+  const to = index + 1 < ideas.length ? Number(ideas[index + 1].seq) : Infinity;
+  const inWindow = scripts.filter((row) => !row.parent_id && Number(row.seq) > from && Number(row.seq) < to);
+  return inWindow.length ? inWindow[inWindow.length - 1] : null;
+}
+
+/** What of a script's continuation is already made: its frames, and a voice for exactly its words (with captions). */
+function continuationOf(projectId: string, project: Record<string, unknown>, script: Script | null) {
+  if (!script) return { frames: false, voice: false, captions: false };
+  const current = parse<Script>(project.script_json as string);
+  const sameFrames =
+    Boolean(current) &&
+    Boolean(parse<Visual[]>(project.visuals_json as string)?.length) &&
+    current!.scenes.length === script.scenes.length &&
+    current!.scenes.every((scene, i) => scene.id === script.scenes[i].id && (scene.visualPrompt || "").trim() === (script.scenes[i].visualPrompt || "").trim());
+  const frames = sameFrames || Boolean(framesForScript(projectId, script));
+  const key = voiceTakeKey(script);
+  const take = loadVoiceTakeMeta(projectId, key);
+  const sameVoice = Boolean(current) && voiceTakeKey(current!) === key && hasVoiceFile(projectId);
+  return { frames, voice: Boolean(take) || sameVoice, captions: Boolean(take?.captions) || (sameVoice && Boolean(project.captions_json)) };
 }
 
 /**
@@ -394,14 +448,22 @@ function versionShape(projectId: string, row: VersionRow) {
   return frame && !frame.placeholder ? formatOfFile(stillVersionFile(projectId, frame.sceneId, row.id)) : "";
 }
 
-function lastVersions(projectId: string, step: string) {
+function lastVersions(projectId: string, step: string, project?: Record<string, unknown>) {
   const rows = versionRows(projectId, step);
+  const reel = project && !isImagePost(String(project.type));
   return rows.map((row, index) => ({
     id: row.id,
     accepted: Number(row.accepted) === 1,
     createdAt: row.created_at,
     payload: slimVersionPayload(step, parse(row.payload_json)),
     ...(step === "visuals" ? { ourLogo: hasOurLogo(projectId, rows, index), shape: versionShape(projectId, row) } : {}),
+    ...(reel && step === "script" ? { keeps: continuationOf(projectId, project!, parse<Script>(row.payload_json)) } : {}),
+    ...(reel && step === "idea"
+      ? (() => {
+          const child = latestScriptOfIdea(projectId, row.id);
+          return { keeps: { script: Boolean(child), ...continuationOf(projectId, project!, child ? parse<Script>(child.payload_json) : null) } };
+        })()
+      : {}),
   }));
 }
 
@@ -461,6 +523,7 @@ export function serializeProject(row: Record<string, unknown>) {
     videoStamp: hasVideoFile(id) ? Math.round(fs.statSync(videoFile(id)).mtimeMs) : 0,
     reelLogo: parse<Partial<ReelLogoSettings>>(row.reel_logo_json),
     captionStyle: captionStyleOf(row),
+    renderPaid: renderPaidBefore(id),
     music: hasMusicFile(id)
       ? { name: String(row.music_name || ""), durationSec: Number(row.music_duration) || 0, ...reelMusicOf(row) }
       : null,
@@ -474,8 +537,8 @@ export function serializeProject(row: Record<string, unknown>) {
       ? { publishable: feedback.publishable, reasons: parse<string[]>(feedback.reasons_json) || [] }
       : null,
     versions: {
-      idea: lastVersions(id, "idea"),
-      script: lastVersions(id, "script"),
+      idea: lastVersions(id, "idea", row),
+      script: lastVersions(id, "script", row),
       visuals: lastVersions(id, "visuals"),
     },
     ...previewState(row),
@@ -484,7 +547,7 @@ export function serializeProject(row: Record<string, unknown>) {
   };
 }
 
-export function restoreStepVersion(
+export async function restoreStepVersion(
   userId: string,
   projectId: string,
   step: "idea" | "script" | "visuals",
@@ -499,6 +562,7 @@ export function restoreStepVersion(
     | undefined;
   if (!version) throw Object.assign(new Error("That version is gone."), { status: 404 });
   if (Number(version.accepted) === 1 && step !== "visuals") return serializeProject(project);
+  const hadVideoBefore = hasVideoFile(projectId);
 
   if (step === "visuals") {
     const snapshot = parse<Visual[]>(version.payload_json);
@@ -524,36 +588,207 @@ export function restoreStepVersion(
     // An older take may have another shape: the project follows the picture that is now on screen.
     const shape = ready && next[0] ? formatOfFile(stillFile(projectId, next[0].sceneId)) : "";
     if (shape && shape !== "tall") db.prepare("UPDATE projects SET image_format = ? WHERE id = ?").run(shape, projectId);
-    removeVideoFile(projectId);
+    // A Reel keeps its video and gets it made again with the frame that is back (free).
+    if (!ready) await settleVideo(userId, projectId, hadVideoBefore);
     return serializeProject(getProject(projectId, userId));
   }
 
   if (Number(version.accepted) === 1) return serializeProject(project);
-  const current = parse<Script>(project.script_json);
-  const older = step === "script" ? parse<Script>(String(version.payload_json)) : null;
-  const sameScenes =
-    !isImagePost(String(project.type)) &&
-    Boolean(current && older) &&
-    current!.scenes.length === older!.scenes.length &&
-    current!.scenes.every((scene, i) => scene.id === older!.scenes[i].id);
+  const reel = !isImagePost(String(project.type));
   db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = ?").run(projectId, step);
   db.prepare("UPDATE project_step_versions SET accepted = 1 WHERE id = ?").run(version.id);
-  // Same scenes (e.g. an earlier hand edit): only what depends on the words is made again; the frames stay.
-  if (sameScenes) return editScript(userId, projectId, older, { saveVersion: false });
-  const field = step === "idea" ? "idea_json" : "script_json";
-  const wipe = downstreamWipe(step);
-  const updates = {
-    [field]: version.payload_json,
+
+  // An idea brings its own continuation: its latest script, then whatever that script already had.
+  const scriptRow = step === "script" ? (version as unknown as VersionRow) : reel ? latestScriptOfIdea(projectId, version.id) : null;
+  if (step === "idea") db.prepare(`UPDATE projects SET idea_json = ? WHERE id = ?`).run(version.payload_json, projectId);
+  if (!scriptRow) {
+    // No script under that idea yet: everything after the idea is made again.
+    const updates: Record<string, unknown> = { ...downstreamWipe("idea"), updated_at: new Date().toISOString() };
+    delete updates.output_url;
+    delete updates.status;
+    removeVoiceFile(projectId);
+    const fields = Object.keys(updates).map((key) => `${key} = @${key}`).join(", ");
+    db.prepare(`UPDATE projects SET ${fields} WHERE id = @id`).run({ ...updates, id: projectId });
+    await settleVideo(userId, projectId, hadVideoBefore);
+    if (!hasVideoFile(projectId)) db.prepare(`UPDATE projects SET status = 'draft', output_url = NULL WHERE id = ?`).run(projectId);
+    return serializeProject(getProject(projectId, userId));
+  }
+  if (step === "idea") {
+    db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = 'script'").run(projectId);
+    db.prepare("UPDATE project_step_versions SET accepted = 1 WHERE id = ?").run(scriptRow.id);
+  }
+  const fresh = getProject(projectId, userId);
+  const current = parse<Script>(fresh.script_json);
+  const older = parse<Script>(scriptRow.payload_json);
+  const sameScenes =
+    reel &&
+    Boolean(current && older) &&
+    current!.scenes.length === older!.scenes.length &&
+    // The frames were painted from these descriptions: only the very same ones keep them valid.
+    current!.scenes.every(
+      (scene, i) => scene.id === older!.scenes[i].id && (scene.visualPrompt || "").trim() === (older!.scenes[i].visualPrompt || "").trim()
+    );
+  // Same scenes and frame descriptions (e.g. an earlier hand edit or a translation): only what depends on the words is
+  // made again; the frames stay.
+  if (sameScenes) return await editScript(userId, projectId, older, { saveVersion: false });
+  const wipe = downstreamWipe("script");
+  // Frames already painted for that script come back too, free: the latest set whose descriptions match it.
+  const framesBack = older && reel ? framesForScript(projectId, older) : null;
+  const updates: Record<string, unknown> = {
+    script_json: scriptRow.payload_json,
     ...wipe,
+    ...(framesBack ? { visuals_json: JSON.stringify(framesBack.visuals) } : {}),
     updated_at: new Date().toISOString(),
   };
+  delete updates.output_url;
+  delete updates.status;
+  if (framesBack) {
+    restoreStillSnapshot(projectId, framesBack.versionId, framesBack.visuals);
+    db.prepare("UPDATE project_step_versions SET accepted = 0 WHERE project_id = ? AND step = 'visuals'").run(projectId);
+    db.prepare("UPDATE project_step_versions SET accepted = 1 WHERE id = ?").run(framesBack.versionId);
+  }
   removeVoiceFile(projectId);
-  removeVideoFile(projectId);
+  // A voice already recorded for exactly that script's words comes back free, with its captions.
+  if (older && Number(fresh.voice_off) !== 1) {
+    const take = loadVoiceTake(projectId, voiceTakeKey(older));
+    if (take) {
+      updates.voice_json = take.voice ? JSON.stringify(take.voice) : null;
+      updates.audio_url = `/projects/${projectId}/audio`;
+      if (Number(fresh.captions_off) !== 1 && take.captions) updates.captions_json = JSON.stringify(take.captions);
+    }
+  }
+  // Without a voice the captions are the scenes' own words: made right here, free.
+  if (older && Number(fresh.voice_off) === 1 && Number(fresh.captions_off) !== 1) {
+    updates.captions_json = JSON.stringify({ cues: sceneCaptions(older) });
+  }
   const fields = Object.keys(updates)
     .map((key) => `${key} = @${key}`)
     .join(", ");
   db.prepare(`UPDATE projects SET ${fields} WHERE id = @id`).run({ ...updates, id: projectId });
+  await settleVideo(userId, projectId, hadVideoBefore);
+  if (!hasVideoFile(projectId)) db.prepare(`UPDATE projects SET status = 'draft', output_url = NULL WHERE id = ?`).run(projectId);
   return serializeProject(getProject(projectId, userId));
+}
+
+/**
+ * "Try as a new Reel": a copy of this Reel that starts from one idea or script version, with whatever was already
+ * made for it — its frames, a voice for its words and the captions from that voice — plus the brief's example
+ * pictures, music and look settings. The original Reel stays exactly as it is. Free: nothing is generated.
+ */
+export function forkReel(userId: string, projectId: string, rawStep: unknown, versionId: string) {
+  const project = getProject(projectId, userId);
+  if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  const step = rawStep === "idea" ? "idea" : rawStep === "script" ? "script" : "";
+  if (!step) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  const version = db
+    .prepare("SELECT id, payload_json, parent_id FROM project_step_versions WHERE id = ? AND project_id = ? AND step = ?")
+    .get(versionId, projectId, step) as { id: string; payload_json: string; parent_id: string | null } | undefined;
+  if (!version) throw Object.assign(new Error("That version is gone."), { status: 404 });
+  const scriptRow = step === "script" ? version : latestScriptOfIdea(projectId, version.id);
+  const ideaJson =
+    step === "idea"
+      ? version.payload_json
+      : version.parent_id
+        ? (db.prepare("SELECT payload_json FROM project_step_versions WHERE id = ?").get(version.parent_id) as { payload_json: string } | undefined)?.payload_json ||
+          (project.idea_json as string)
+        : (project.idea_json as string);
+  const script = scriptRow ? parse<Script>(scriptRow.payload_json) : null;
+
+  const newId = uuid();
+  const now = new Date().toISOString();
+  const row: Record<string, unknown> = {
+    ...project,
+    id: newId,
+    idea_json: ideaJson,
+    script_json: scriptRow ? scriptRow.payload_json : null,
+    visuals_json: null,
+    voice_json: null,
+    captions_json: null,
+    audio_url: "",
+    output_url: null,
+    status: "draft",
+    current_step: scriptRow ? "script" : "idea",
+    credits_used: 0,
+    created_at: now,
+    updated_at: now,
+    preview_token: null,
+    preview_expires_at: null,
+  };
+  const keys = Object.keys(row);
+  db.prepare(`INSERT INTO projects (${keys.join(",")}) VALUES (${keys.map((key) => "@" + key).join(",")})`).run(row);
+
+  const from = projectMediaPath(projectId);
+  const to = projectMediaDir(newId);
+  if (fs.existsSync(from)) {
+    for (const name of fs.readdirSync(from)) {
+      if (name.startsWith("example-") || name === "music.m4a") fs.copyFileSync(`${from}/${name}`, `${to}/${name}`);
+    }
+  }
+  const insertVersion = (stepName: string, payload: string, parentId: string | null) => {
+    const vid = uuid();
+    db.prepare(
+      `INSERT INTO project_step_versions (id, project_id, step, scene_id, payload_json, accepted, generation_id, parent_id) VALUES (?, ?, ?, NULL, ?, 1, '', ?)`
+    ).run(vid, newId, stepName, payload, parentId);
+    return vid;
+  };
+  const ideaVersion = ideaJson ? insertVersion("idea", ideaJson, null) : null;
+  const scriptVersion = scriptRow ? insertVersion("script", scriptRow.payload_json, ideaVersion) : null;
+
+  const updates: Record<string, unknown> = {};
+  const frames = script ? framesForScript(projectId, script) : null;
+  if (frames) {
+    const framesVersion = insertVersion("visuals", JSON.stringify(frames.visuals), scriptVersion);
+    for (const visual of frames.visuals) {
+      const src = stillVersionFile(projectId, visual.sceneId, frames.versionId);
+      if (!fs.existsSync(src)) continue;
+      fs.copyFileSync(src, stillFile(newId, visual.sceneId));
+      fs.copyFileSync(src, stillVersionFile(newId, visual.sceneId, framesVersion));
+      if (visual.clean && fs.existsSync(cleanStillFile(projectId, visual.clean))) {
+        fs.copyFileSync(cleanStillFile(projectId, visual.clean), cleanStillFile(newId, visual.clean));
+      }
+    }
+    updates.visuals_json = JSON.stringify(frames.visuals);
+    updates.current_step = "visuals";
+  }
+  if (script && Number(project.voice_off) !== 1) {
+    const key = voiceTakeKey(script);
+    for (const ext of ["mp3", "json"]) {
+      const src = `${from}/voice-take-${key}.${ext}`;
+      if (fs.existsSync(src)) fs.copyFileSync(src, `${to}/voice-take-${key}.${ext}`);
+    }
+    const take = loadVoiceTake(newId, key);
+    if (take) {
+      updates.voice_json = take.voice ? JSON.stringify(take.voice) : null;
+      updates.audio_url = `/projects/${newId}/audio`;
+      if (frames) updates.current_step = "voice";
+      if (Number(project.captions_off) !== 1 && take.captions) {
+        updates.captions_json = JSON.stringify(take.captions);
+        if (frames) updates.current_step = "captions";
+      }
+    }
+  }
+  if (Object.keys(updates).length) {
+    const fields = Object.keys(updates).map((key) => `${key} = @${key}`).join(", ");
+    db.prepare(`UPDATE projects SET ${fields} WHERE id = @id`).run({ ...updates, id: newId });
+  }
+  return serializeProject(getProject(newId, userId));
+}
+
+/** The latest saved set of Reel frames painted from exactly this script's frame descriptions, with its files on disk. */
+function framesForScript(projectId: string, script: Script) {
+  const rows = versionRows(projectId, "visuals");
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const frames = parse<Visual[]>(rows[i].payload_json);
+    if (!Array.isArray(frames) || frames.length !== script.scenes.length) continue;
+    const matches = script.scenes.every((scene) => {
+      const frame = frames.find((item) => item.sceneId === scene.id);
+      return Boolean(frame) && (frame!.prompt || "").trim() === (scene.visualPrompt || "").trim();
+    });
+    if (!matches) continue;
+    const filesThere = frames.every((frame) => frame.placeholder || hasStillVersionFile(projectId, frame.sceneId, rows[i].id));
+    if (filesThere) return { versionId: rows[i].id, visuals: frames };
+  }
+  return null;
 }
 
 const NO_BRAND_MARK = "Add a logo in Brand Kit first.";
@@ -1123,6 +1358,8 @@ export async function runStep(
   }
   // No voice: captions are the on-screen words of each scene, made here — no AI, no credits.
   if (step === "captions" && voiceOff) cost = 0;
+  // The video is paid once per Reel; making it again (ffmpeg only) is free.
+  if (step === "render" && renderPaidBefore(projectId)) cost = 0;
   if (step === "render") {
     assertArchiveRoom(userId, projectId, Boolean(opts.evictOldest));
   }
@@ -1323,6 +1560,7 @@ export async function runStep(
       updates.voice_json = JSON.stringify(direction);
       updates.voice_off = 0;
       const tts = await synthesizeSpeech(direction.script, projectId);
+      saveVoiceTake(projectId, voiceTakeKey(script), direction);
       updates.audio_url = `/projects/${projectId}/audio`;
       updates.current_step = "voice";
       provider = tts.provider;
@@ -1350,6 +1588,7 @@ export async function runStep(
       const result = await generateCaptions(script, audioSec);
       updates.captions_off = 0;
       updates.captions_json = JSON.stringify(result.data);
+      saveTakeCaptions(projectId, voiceTakeKey(script), result.data);
       updates.current_step = "captions";
       provider = result.provider;
       model = result.model;
@@ -1388,16 +1627,19 @@ export async function runStep(
 
     updates.credits_used = Number(project.credits_used) + cost;
 
-    // One new frame in a finished Reel: keep the video and make it again with that frame (ffmpeg only, free).
-    const newFrame = sceneId ? (parse<Visual[]>(String(updates.visuals_json || "")) || []).find((v) => v.sceneId === sceneId) : undefined;
+    // A finished Reel whose new frames, captions or (without captions) voice are in: keep the video and make it again
+    // with them (ffmpeg only, free). A missed frame leaves a colour card, so then the video is made again as a step.
+    const framesNow = step === "visuals" ? parse<Visual[]>(String(updates.visuals_json || "")) || [] : [];
+    const framesOk =
+      step !== "visuals" ||
+      (sceneId ? Boolean(framesNow.find((v) => v.sceneId === sceneId && !v.placeholder)) : framesNow.length > 0 && framesNow.every((v) => !v.placeholder));
     const remakeVideo =
-      step === "visuals" &&
-      Boolean(sceneId) &&
       !isImagePost(type) &&
       hasVideoFile(projectId) &&
-      Boolean(newFrame) &&
-      !newFrame?.placeholder &&
-      (voiceOff || hasVoiceFile(projectId));
+      (regenerate || Boolean(sceneId)) &&
+      (step === "visuals" || step === "captions" || (step === "voice" && captionsOff)) &&
+      framesOk &&
+      (voiceOff || step === "voice" || hasVoiceFile(projectId));
     if (remakeVideo) {
       delete updates.current_step;
     } else if (regenerate || sceneId) {
@@ -1452,14 +1694,8 @@ export async function runStep(
     }
     if (String(updates.status || "") === "ready") maybeRefreshLearnedSummary(userId);
     if (remakeVideo) {
-      // The frame is already new; a video that could not catch up is dropped, so it is made again as the step.
-      try {
-        await remakeReelVideo(userId, projectId, brand);
-      } catch (error) {
-        console.error("reel remake after frame failed", error instanceof Error ? error.message : error);
-        removeVideoFile(projectId);
-        db.prepare(`UPDATE projects SET output_url = NULL, status = 'draft', updated_at = datetime('now') WHERE id = ?`).run(projectId);
-      }
+      // The new part is already in; a video that could not catch up is dropped, so it is made again as the step (free).
+      await settleVideo(userId, projectId, true, brand);
     }
 
     return serializeProject(getProject(projectId, userId));
@@ -1510,19 +1746,35 @@ function asCaption(text: unknown) {
 }
 
 /** Reel with or without a voice. Turning it off drops the voice; either way captions and video must be made again. */
-export function setVoiceOff(userId: string, projectId: string, off: boolean) {
+export async function setVoiceOff(userId: string, projectId: string, off: boolean) {
   const project = getProject(projectId, userId);
   if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   if (!project.script_json) throw Object.assign(new Error("Generate the script first."), { status: 400 });
   if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
   if ((Number(project.voice_off) === 1) === off) return serializeProject(project);
-  if (off) removeVoiceFile(projectId);
-  removeVideoFile(projectId);
+  const script = parse<Script>(project.script_json)!;
+  const hadVideo = hasVideoFile(projectId);
+  const captionsOff = Number(project.captions_off) === 1;
+  let voiceJson: string | null = null;
+  let audioUrl = "";
+  let captions: string | null = null;
+  if (off) {
+    // The recording stays kept by its words: turning the voice back on later brings it back free.
+    removeVoiceFile(projectId);
+    if (!captionsOff && project.captions_json) captions = JSON.stringify({ cues: sceneCaptions(script) });
+  } else {
+    const take = loadVoiceTake(projectId, voiceTakeKey(script));
+    if (take) {
+      voiceJson = take.voice ? JSON.stringify(take.voice) : null;
+      audioUrl = `/projects/${projectId}/audio`;
+      if (!captionsOff && take.captions) captions = JSON.stringify(take.captions);
+    }
+  }
   db.prepare(
-    `UPDATE projects SET voice_off = ?, voice_json = CASE WHEN ? = 1 THEN NULL ELSE voice_json END,
-       audio_url = CASE WHEN ? = 1 THEN '' ELSE audio_url END, captions_json = NULL, output_url = NULL,
-       status = 'draft', current_step = ?, updated_at = datetime('now') WHERE id = ?`
-  ).run(off ? 1 : 0, off ? 1 : 0, off ? 1 : 0, off ? "voice" : "visuals", projectId);
+    `UPDATE projects SET voice_off = ?, voice_json = ?, audio_url = ?, captions_json = ?, current_step = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(off ? 1 : 0, voiceJson, audioUrl, captions, off ? "voice" : audioUrl ? "voice" : "visuals", projectId);
+  await settleVideo(userId, projectId, hadVideo);
+  if (!hadVideo) db.prepare(`UPDATE projects SET status = 'draft' WHERE id = ?`).run(projectId);
   return serializeProject(getProject(projectId, userId));
 }
 
@@ -1542,7 +1794,7 @@ function clipWords(value: unknown, max: number) {
  * The owner's own wording for the script. Changed voiceover drops the voice; changed words make captions and video
  * again. A changed "what I want in the frame" touches nothing else — that frame changes when it is redone.
  */
-export function editScript(userId: string, projectId: string, raw: unknown, opts: { saveVersion?: boolean } = {}) {
+export async function editScript(userId: string, projectId: string, raw: unknown, opts: { saveVersion?: boolean } = {}) {
   const project = getProject(projectId, userId);
   if (isImagePost(String(project.type))) throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
@@ -1576,14 +1828,40 @@ export function editScript(userId: string, projectId: string, raw: unknown, opts
     db.prepare(`UPDATE projects SET script_json = ?, updated_at = datetime('now') WHERE id = ?`).run(JSON.stringify(next), projectId);
     return serializeProject(getProject(projectId, userId));
   }
-  if (voiceChanged) removeVoiceFile(projectId);
-  removeVideoFile(projectId);
-  db.prepare(
-    `UPDATE projects SET script_json = ?, captions_json = NULL, output_url = NULL, status = 'draft',
-       voice_json = CASE WHEN ? = 1 THEN NULL ELSE voice_json END, audio_url = CASE WHEN ? = 1 THEN '' ELSE audio_url END,
-       updated_at = datetime('now') WHERE id = ?`
-  ).run(JSON.stringify(next), voiceChanged ? 1 : 0, voiceChanged ? 1 : 0, projectId);
+  await applyScriptWords(userId, projectId, project, next, voiceChanged);
   return serializeProject(getProject(projectId, userId));
+}
+
+/**
+ * New words for a Reel. Captions under a voice follow the voice, so new on-screen words or a new call to action keep
+ * them; captions without a voice are the scenes' words, made again here (free). New voiceover words need another
+ * voice — unless one was already recorded for exactly these words, which comes back free with its captions.
+ * A finished video is then made again (free) when everything is there, or taken down until the missing steps are done.
+ */
+async function applyScriptWords(userId: string, projectId: string, project: Record<string, unknown>, next: Script, voiceChanged: boolean) {
+  const hadVideo = hasVideoFile(projectId);
+  const voiceOff = Number(project.voice_off) === 1;
+  const captionsOff = Number(project.captions_off) === 1;
+  let voiceJson = (project.voice_json as string | null) || null;
+  let audioUrl = String(project.audio_url || "");
+  let captions = (project.captions_json as string | null) || null;
+  if (!voiceOff && voiceChanged) {
+    removeVoiceFile(projectId);
+    voiceJson = null;
+    audioUrl = "";
+    captions = null;
+    const take = loadVoiceTake(projectId, voiceTakeKey(next));
+    if (take) {
+      voiceJson = take.voice ? JSON.stringify(take.voice) : null;
+      audioUrl = `/projects/${projectId}/audio`;
+      if (!captionsOff && take.captions) captions = JSON.stringify(take.captions);
+    }
+  }
+  if (voiceOff && !captionsOff && captions) captions = JSON.stringify({ cues: sceneCaptions(next) });
+  db.prepare(
+    `UPDATE projects SET script_json = ?, voice_json = ?, audio_url = ?, captions_json = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(JSON.stringify(next), voiceJson, audioUrl, captions, projectId);
+  await settleVideo(userId, projectId, hadVideo);
 }
 
 /** One language for the whole Reel: the script is translated, then saved like a hand edit (voice, captions, video again). */
@@ -1598,7 +1876,7 @@ export async function translateReelScript(userId: string, projectId: string, raw
   const before = JSON.stringify({ cta: script.cta, scenes: script.scenes.map((s) => [s.onScreen, s.voiceover]) });
   const after = JSON.stringify({ cta: result.data.cta, scenes: (result.data.scenes || []).map((s) => [s.onScreen, s.voiceover]) });
   if (!result.data?.scenes?.length || before === after) throw Object.assign(new Error(USER_ERRORS.textFailed), { status: 502 });
-  return editScript(userId, projectId, result.data);
+  return await editScript(userId, projectId, result.data);
 }
 
 /** The owner's own captions: text and timing. A finished video is made again with them straight away, free. */
@@ -1697,6 +1975,50 @@ export async function updateCaptionStyle(userId: string, projectId: string, raw:
   const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
   if (Number(project.captions_off) !== 1) await remakeReelVideo(userId, projectId, brand);
   return serializeProject(getProject(projectId, userId));
+}
+
+/** Captions made earlier from the current voice, if they are still kept. */
+function keptTakeCaptions(projectId: string, script: Script) {
+  const take = loadVoiceTakeMeta(projectId, voiceTakeKey(script));
+  return take?.captions || null;
+}
+
+/** A render was charged on this Reel before: every later one is free. */
+function renderPaidBefore(projectId: string) {
+  const row = db
+    .prepare(`SELECT 1 FROM ai_generations WHERE project_id = ? AND type = 'render' AND status = 'succeeded' AND credits_used > 0 LIMIT 1`)
+    .get(projectId);
+  return Boolean(row);
+}
+
+/** Everything a Reel video is made from is there: frames, the voice (or "no voice"), captions (or "no captions"). */
+function reelInputsReady(projectId: string, row: Record<string, unknown>) {
+  const frames = parse<Visual[]>(row.visuals_json as string) || [];
+  if (!row.script_json || !frames.length) return false;
+  if (Number(row.voice_off) !== 1 && !hasVoiceFile(projectId)) return false;
+  if (Number(row.captions_off) !== 1 && !row.captions_json) return false;
+  return true;
+}
+
+/**
+ * After a change to a finished Reel: make the video again straight away when everything for it is there (free);
+ * otherwise take it down, so the owner finishes the missing steps (the video step itself is free by then).
+ */
+async function settleVideo(userId: string, projectId: string, hadVideo: boolean, brand?: BrandKit | null) {
+  if (!hadVideo) return;
+  const row = getProject(projectId, userId);
+  const owner = brand === undefined ? (Number(row.use_brand) === 0 ? null : brandFor(userId)) : brand;
+  if (hasVideoFile(projectId) && reelInputsReady(projectId, row)) {
+    try {
+      await remakeReelVideo(userId, projectId, owner);
+      db.prepare(`UPDATE projects SET status = 'ready', output_url = ?, updated_at = datetime('now') WHERE id = ?`).run(`/projects/${projectId}/file`, projectId);
+      return;
+    } catch (error) {
+      console.error("reel remake failed", error instanceof Error ? error.message : error);
+    }
+  }
+  removeVideoFile(projectId);
+  db.prepare(`UPDATE projects SET output_url = NULL, status = 'draft', updated_at = datetime('now') WHERE id = ?`).run(projectId);
 }
 
 /** The voice is kept 7 days after the last change; without it a finished Reel cannot be re-made for free. */
@@ -1817,11 +2139,13 @@ export async function setCaptionsOff(userId: string, projectId: string, off: boo
   if (project.status === "generating") throw Object.assign(new Error("Wait until this step is ready."), { status: 409 });
   if ((Number(project.captions_off) === 1) === off) return serializeProject(project);
   const script = parse<Script>(project.script_json);
-  if (hasVideoFile(projectId) && script && (off || Number(project.voice_off) === 1)) {
+  const keptCaptions =
+    !off && script && Number(project.voice_off) !== 1 && hasVoiceFile(projectId) ? keptTakeCaptions(projectId, script) : null;
+  if (hasVideoFile(projectId) && script && (off || Number(project.voice_off) === 1 || keptCaptions)) {
     assertCanRemake(projectId, project);
     db.prepare(`UPDATE projects SET captions_off = ?, captions_json = ?, updated_at = datetime('now') WHERE id = ?`).run(
       off ? 1 : 0,
-      off ? null : JSON.stringify({ cues: sceneCaptions(script) }),
+      off ? null : keptCaptions ? JSON.stringify(keptCaptions) : JSON.stringify({ cues: sceneCaptions(script) }),
       projectId
     );
     await remakeOrDrop(userId, projectId, Number(project.use_brand) === 0 ? null : brandFor(userId));

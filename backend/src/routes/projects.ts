@@ -2,7 +2,7 @@ import express, { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_INVITE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, logoBaseFile, logoLayout, logoMarkFile, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, editCaptions, editScript, translateReelScript, setMusic, updateMusic, removeMusic, updateReelLogo, updateCaptionStyle, refreshReelVideo, setCaptionsOff, setVoiceOff, stampLogoOnPicture, updateInvite, updateShot } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, logoBaseFile, logoLayout, logoMarkFile, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, editCaptions, editScript, translateReelScript, setMusic, updateMusic, removeMusic, updateReelLogo, updateCaptionStyle, refreshReelVideo, forkReel, setCaptionsOff, setVoiceOff, stampLogoOnPicture, updateInvite, updateShot } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
 import { hasMusicFile, hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, MUSIC_MAX_BYTES, musicFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
 import { archiveState } from "../services/archive.js";
@@ -334,7 +334,7 @@ projectsRouter.post("/:id/share", (req, res) => {
   }
 });
 
-projectsRouter.post("/:id/versions/:step/:versionId/restore", (req, res) => {
+projectsRouter.post("/:id/versions/:step/:versionId/restore", async (req, res) => {
   const step = String(req.params.step);
   if (step !== "idea" && step !== "script" && step !== "visuals") {
     res.status(400).json({ error: USER_ERRORS.refresh });
@@ -343,7 +343,7 @@ projectsRouter.post("/:id/versions/:step/:versionId/restore", (req, res) => {
   const sceneRaw = req.body?.sceneId;
   const sceneId = Number.isFinite(Number(sceneRaw)) ? Number(sceneRaw) : undefined;
   try {
-    const project = restoreStepVersion(req.user!.id, String(req.params.id), step, String(req.params.versionId), sceneId);
+    const project = await restoreStepVersion(req.user!.id, String(req.params.id), step, String(req.params.versionId), sceneId);
     res.json({ project });
   } catch (error) {
     const { status, body } = publicError(error, `${req.method} ${req.path}`);
@@ -435,9 +435,9 @@ projectsRouter.post("/:id/versions/visuals/keep-current", rateLimit(10, 60_000),
   }
 });
 
-projectsRouter.patch("/:id/script", (req, res) => {
+projectsRouter.patch("/:id/script", async (req, res) => {
   try {
-    res.json({ project: editScript(req.user!.id, String(req.params.id), req.body) });
+    res.json({ project: await editScript(req.user!.id, String(req.params.id), req.body) });
   } catch (error) {
     const { status, body } = publicError(error, `${req.method} ${req.path}`);
     res.status(status).json(body);
@@ -456,6 +456,15 @@ projectsRouter.post("/:id/script/translate", rateLimit(10, 60_000), async (req, 
 projectsRouter.patch("/:id/captions", rateLimit(10, 60_000), async (req, res) => {
   try {
     res.json({ project: await editCaptions(req.user!.id, String(req.params.id), req.body) });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.post("/:id/fork", rateLimit(10, 60_000), (req, res) => {
+  try {
+    res.json({ project: forkReel(req.user!.id, String(req.params.id), req.body?.step, String(req.body?.versionId || "")) });
   } catch (error) {
     const { status, body } = publicError(error, `${req.method} ${req.path}`);
     res.status(status).json(body);
@@ -498,9 +507,9 @@ projectsRouter.post("/:id/captions-off", rateLimit(10, 60_000), async (req, res)
   }
 });
 
-projectsRouter.post("/:id/voice-off", (req, res) => {
+projectsRouter.post("/:id/voice-off", rateLimit(10, 60_000), async (req, res) => {
   try {
-    res.json({ project: setVoiceOff(req.user!.id, String(req.params.id), req.body?.off !== false) });
+    res.json({ project: await setVoiceOff(req.user!.id, String(req.params.id), req.body?.off !== false) });
   } catch (error) {
     const { status, body } = publicError(error, `${req.method} ${req.path}`);
     res.status(status).json(body);

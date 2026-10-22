@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
@@ -539,6 +539,68 @@ async function mediaDurationSec(file: string) {
 
 export function hasVideoFile(projectId: string) {
   return fs.existsSync(videoFile(projectId)) && fs.statSync(videoFile(projectId)).size > 0;
+}
+
+/**
+ * Every recorded voice is kept by the words it reads (plus the captions made from it), so going back to a script with
+ * the same voiceover brings both back for free. Cleared with the other intermediates after 7 days.
+ */
+export function voiceTakeKey(script: { scenes: { voiceover?: string }[] }) {
+  const words = script.scenes.map((scene) => String(scene.voiceover || "").replace(/\s+/g, " ").trim()).join("\n");
+  return createHash("sha1").update(words).digest("hex").slice(0, 16);
+}
+
+function voiceTakePaths(projectId: string, key: string) {
+  const dir = projectMediaDir(projectId);
+  return { audio: path.join(dir, `voice-take-${key}.mp3`), meta: path.join(dir, `voice-take-${key}.json`) };
+}
+
+export function saveVoiceTake(projectId: string, key: string, voice: unknown) {
+  if (!hasVoiceFile(projectId)) return;
+  const take = voiceTakePaths(projectId, key);
+  fs.copyFileSync(voiceFile(projectId), take.audio);
+  fs.writeFileSync(take.meta, JSON.stringify({ voice, captions: null }));
+}
+
+export function saveTakeCaptions(projectId: string, key: string, captions: unknown) {
+  const take = voiceTakePaths(projectId, key);
+  if (!fs.existsSync(take.meta)) return;
+  try {
+    const meta = JSON.parse(fs.readFileSync(take.meta, "utf8"));
+    fs.writeFileSync(take.meta, JSON.stringify({ ...meta, captions }));
+  } catch {
+    /* a broken note only loses the captions */
+  }
+}
+
+/** The kept voice for these words, put back as the current voice. Null when there is none. */
+export function loadVoiceTake(projectId: string, key: string): { voice: unknown; captions: unknown } | null {
+  const take = voiceTakePaths(projectId, key);
+  if (!fs.existsSync(take.audio) || !fs.statSync(take.audio).size || !fs.existsSync(take.meta)) return null;
+  try {
+    const meta = JSON.parse(fs.readFileSync(take.meta, "utf8"));
+    fs.copyFileSync(take.audio, voiceFile(projectId));
+    return { voice: meta.voice ?? null, captions: meta.captions ?? null };
+  } catch {
+    return null;
+  }
+}
+
+/** What was kept for these words (voice settings and captions), without touching the current voice file. */
+export function loadVoiceTakeMeta(projectId: string, key: string): { voice: unknown; captions: unknown } | null {
+  const take = voiceTakePaths(projectId, key);
+  if (!fs.existsSync(take.meta)) return null;
+  try {
+    const meta = JSON.parse(fs.readFileSync(take.meta, "utf8"));
+    return { voice: meta.voice ?? null, captions: meta.captions ?? null };
+  } catch {
+    return null;
+  }
+}
+
+export function hasVoiceTake(projectId: string, key: string) {
+  const take = voiceTakePaths(projectId, key);
+  return fs.existsSync(take.audio) && fs.existsSync(take.meta);
 }
 
 export function removeVoiceFile(projectId: string) {

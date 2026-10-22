@@ -133,6 +133,8 @@ export type Project = {
   videoStamp?: number;
   /** Logo over the Reel and the end card; null until the owner changes it (the Brand Kit decides). */
   reelLogo?: Partial<ReelLogo> | null;
+  /** The video was paid once on this Reel: making it again is free. */
+  renderPaid?: boolean;
   /** How burned-in captions look on the Reel. */
   captionStyle?: "clean" | "box" | "brand";
   hasImages: boolean;
@@ -156,7 +158,9 @@ export type Project = {
   createdAt: string;
   updatedAt?: string;
 };
-export type StepVersion<T> = { id: string; accepted: boolean; createdAt: string; payload: T | null };
+/** What comes back free with this version: its script (for an idea), its frames, a voice for its words and its captions. */
+export type VersionKeeps = { script?: boolean; frames: boolean; voice: boolean; captions: boolean };
+export type StepVersion<T> = { id: string; accepted: boolean; createdAt: string; payload: T | null; keeps?: VersionKeeps };
 
 function localeHeaders(extra?: HeadersInit): HeadersInit {
   const token = localStorage.getItem(TOKEN);
@@ -281,6 +285,8 @@ export const api = {
   },
   updateMusic: (id: string, body: { volume?: number; start?: number }) =>
     request<{ project: Project }>(`/projects/${id}/music`, { method: "PATCH", body: JSON.stringify(body) }),
+  forkReel: (id: string, step: "idea" | "script", versionId: string) =>
+    request<{ project: Project }>(`/projects/${id}/fork`, { method: "POST", body: JSON.stringify({ step, versionId }) }),
   remakeVideo: (id: string) => request<{ project: Project }>(`/projects/${id}/remake`, { method: "POST" }),
   updateCaptionStyle: (id: string, style: "clean" | "box" | "brand") =>
     request<{ project: Project }>(`/projects/${id}/captions-style`, { method: "PATCH", body: JSON.stringify({ style }) }),
