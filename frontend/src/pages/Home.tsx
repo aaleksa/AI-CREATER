@@ -42,7 +42,7 @@ export default function Home() {
 
   const examples = useMemo(
     () => ({
-      instagram_reel: t("briefImages.instagram_reel"),
+      instagram_reel: t("examples.instagram_reel"),
     }),
     [t, locale]
   );
@@ -164,6 +164,9 @@ export default function Home() {
           );
         })}
       </div>
+      <p className="hint soon-line">
+        {t("home.soonLine", { list: FORMAT_IDS.filter((id) => !READY.has(id)).map((id) => t(`formats.${id}.title`)).join(", ") })}
+      </p>
 
       {isImage && (
         <section className="create-step">

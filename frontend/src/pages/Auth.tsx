@@ -46,13 +46,13 @@ export default function Auth({ mode }: { mode: "login" | "signup" }) {
         <p className="lede">{t("auth.lede")}</p>
         {mode === "signup" && (
           <div className="field">
-            <label>{t("auth.name")}</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} required />
+            <label htmlFor="auth-name">{t("auth.name")}</label>
+            <input id="auth-name" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} required />
           </div>
         )}
         <div className="field">
-          <label>{t("auth.email")}</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <label htmlFor="auth-email">{t("auth.email")}</label>
+          <input id="auth-email" type="email" autoComplete="email" autoCapitalize="off" autoCorrect="off" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </div>
         <div className="field">
           <label>{t("auth.password")}</label>

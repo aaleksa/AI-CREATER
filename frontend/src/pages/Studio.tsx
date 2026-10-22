@@ -1001,7 +1001,7 @@ export default function Studio() {
   /** Keeps a hand-placed logo inside the picture and at a usable size. Height follows the logo's own shape. */
   function fitBox(box: LogoBox, markRatio: number, pictureRatio: number): LogoBox {
     const heightPerWidth = pictureRatio / markRatio;
-    const w = Math.min(Math.max(box.w, 0.04), 0.8, 1 / heightPerWidth);
+    const w = Math.min(Math.max(box.w, 0.08), 0.8, 1 / heightPerWidth);
     const h = w * heightPerWidth;
     return { w, x: Math.min(Math.max(box.x, 0), 1 - w), y: Math.min(Math.max(box.y, 0), 1 - h) };
   }
@@ -1074,9 +1074,11 @@ export default function Studio() {
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }
 
   /** Arrow keys move the logo; with Shift they change its size. */
@@ -2243,7 +2245,7 @@ export default function Studio() {
 
       <div className={`studio${isImage ? " image" : ""}${!isImage && viewStep ? " reviewing" : ""}`}>
         <div className={isImage ? "studio-preview" : "reel-stage"}>
-          <div ref={phoneRef} className={`phone${isImage ? " post" : ""}${isPoster ? " poster" : ""}${isInvite ? " invite" : ""}`} style={{ ...(shapeRatio ? { aspectRatio: shapeRatio } : {}), ...(typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : {}) }}>
+          <div ref={phoneRef} className={`phone${placing ? " placing" : ""}${isImage ? " post" : ""}${isPoster ? " poster" : ""}${isInvite ? " invite" : ""}`} style={{ ...(shapeRatio ? { aspectRatio: shapeRatio } : {}), ...(typeof frame === "string" && frame.startsWith("linear") ? { background: frame } : {}) }}>
             {project.hasVideo && videoSrc ? (
               <>
                 <video className="phone-video" src={videoSrc} controls playsInline />
@@ -2619,20 +2621,26 @@ export default function Studio() {
                 {capsDraft.map((cue, i) => (
                   <div key={i} className="draft-cue">
                     <input
-                      type="number"
-                      step="0.1"
-                      min={0}
+                      type="text"
+                      inputMode="decimal"
                       aria-label={t("studio.capsStart")}
-                      value={cue.start}
-                      onChange={(e) => setCapsDraft(capsDraft.map((c, j) => (j === i ? { ...c, start: Number(e.target.value) } : c)))}
+                      defaultValue={cue.start}
+                      onChange={(e) => {
+                        // "1," or "1." while typing (a Ukrainian keyboard gives a comma) must not reset the field.
+                        const n = Number(e.target.value.replace(",", ".").trim());
+                        if (e.target.value.trim() && Number.isFinite(n) && n >= 0) setCapsDraft(capsDraft.map((c, j) => (j === i ? { ...c, start: n } : c)));
+                      }}
                     />
                     <input
-                      type="number"
-                      step="0.1"
-                      min={0}
+                      type="text"
+                      inputMode="decimal"
                       aria-label={t("studio.capsEnd")}
-                      value={cue.end}
-                      onChange={(e) => setCapsDraft(capsDraft.map((c, j) => (j === i ? { ...c, end: Number(e.target.value) } : c)))}
+                      defaultValue={cue.end}
+                      onChange={(e) => {
+                        // "1," or "1." while typing (a Ukrainian keyboard gives a comma) must not reset the field.
+                        const n = Number(e.target.value.replace(",", ".").trim());
+                        if (e.target.value.trim() && Number.isFinite(n) && n >= 0) setCapsDraft(capsDraft.map((c, j) => (j === i ? { ...c, end: n } : c)));
+                      }}
                     />
                     <input
                       className="draft-cue-text"

@@ -539,14 +539,14 @@ export default function Brand() {
                   <span className="hint">{t("brand.main")}</span>
                   <div className="color-row">
                     <input type="color" aria-label={t("brand.main")} value={HEX.test(form.primary_color) ? form.primary_color : DEFAULT_PRIMARY} onChange={(e) => set("primary_color", e.target.value)} />
-                    <input id="primary_color" value={form.primary_color} aria-invalid={!HEX.test(form.primary_color)} className={HEX.test(form.primary_color) ? "" : "bad"} onChange={(e) => set("primary_color", e.target.value)} />
+                    <input id="primary_color" autoCapitalize="off" autoCorrect="off" spellCheck={false} value={form.primary_color} aria-invalid={!HEX.test(form.primary_color)} className={HEX.test(form.primary_color) ? "" : "bad"} onChange={(e) => set("primary_color", e.target.value)} />
                   </div>
                 </div>
                 <div>
                   <span className="hint">{t("brand.soft")}</span>
                   <div className="color-row">
                     <input type="color" aria-label={t("brand.soft")} value={HEX.test(form.secondary_color) ? form.secondary_color : DEFAULT_SECONDARY} onChange={(e) => set("secondary_color", e.target.value)} />
-                    <input value={form.secondary_color} aria-invalid={!HEX.test(form.secondary_color)} className={HEX.test(form.secondary_color) ? "" : "bad"} onChange={(e) => set("secondary_color", e.target.value)} />
+                    <input autoCapitalize="off" autoCorrect="off" spellCheck={false} value={form.secondary_color} aria-invalid={!HEX.test(form.secondary_color)} className={HEX.test(form.secondary_color) ? "" : "bad"} onChange={(e) => set("secondary_color", e.target.value)} />
                   </div>
                 </div>
               </div>
@@ -643,11 +643,11 @@ export default function Brand() {
             <div className="field" style={{ marginTop: 14 }}>
               <label htmlFor="instagram">{t("brand.instagram")}</label>
               <p className="hint">{t("brand.contactHint")}</p>
-              <input id="instagram" value={form.instagram} onChange={(e) => set("instagram", e.target.value)} placeholder="@studio" />
+              <input id="instagram" autoCapitalize="off" autoCorrect="off" spellCheck={false} value={form.instagram} onChange={(e) => set("instagram", e.target.value)} placeholder="@studio" />
             </div>
             <div className="field">
               <label htmlFor="website">{t("brand.website")}</label>
-              <input id="website" value={form.website} onChange={(e) => set("website", e.target.value)} placeholder="https://" />
+              <input id="website" type="url" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false} value={form.website} onChange={(e) => set("website", e.target.value)} placeholder="https://" />
             </div>
             <h3 className="where">{t("brand.whereTitle")}</h3>
             <label className={`switch-row${canStamp ? "" : " off"}`}>

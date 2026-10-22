@@ -47,7 +47,7 @@ export default function Preview() {
           <h1 style={{ fontSize: "clamp(32px, 5vw, 48px)" }}>{data.title}</h1>
           {data.concept && <p className="lede">{data.concept}</p>}
           {data.hasVideo && (
-            <video className="phone-video" style={{ width: "min(360px, 100%)", borderRadius: 24, marginTop: 24 }} src={`/share/${token}/file`} controls playsInline />
+            <video className="preview-video" src={`/share/${token}/file`} controls playsInline />
           )}
           {data.hasImages && (
             <div className="row" style={{ marginTop: 24, flexWrap: "wrap" }}>
