@@ -205,6 +205,8 @@ export type CaptionCue = {
   start: number;
   end: number;
   text: string;
+  /** The script scene these words belong to (captions made from the recorded voice). */
+  scene?: number;
 };
 
 export type RegenNote = { reason?: string; note?: string };
@@ -243,6 +245,7 @@ export function tidyVoice(data: unknown): Voiceover | null {
   return {
     voicePreset: plainText(row.voicePreset),
     voice: plainText(row.voice) || plainText(row.voicePreset),
+    ...(typeof (row as { voiceId?: unknown }).voiceId === "string" ? { voiceId: (row as { voiceId: string }).voiceId } : {}),
     script: plainText(row.script),
     notes: notes || "Natural pace. Pause after the hook. Never sound like an ad read.",
   };
@@ -1638,6 +1641,65 @@ export function fitCuesToDuration(cues: CaptionCue[], scenes: ScriptScene[], dur
     t += share;
     const end = i === scenes.length - 1 ? total : t;
     return { start: Math.round(start * 100) / 100, end: Math.round(end * 100) / 100, text };
+  });
+}
+
+/**
+ * Captions timed by the recorded voice itself: our script's words (spelled as written) laid onto the times speech
+ * recognition heard. Lines of up to 6 words, broken at sentence ends, never across two scenes.
+ */
+export function captionsFromWordTimes(scenes: ScriptScene[], heard: { start: number; end: number }[], durationSec: number): CaptionCue[] {
+  const tokens: { word: string; scene: number }[] = [];
+  scenes.forEach((scene, index) => {
+    for (const word of String(scene.voiceover || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean)) tokens.push({ word, scene: index });
+  });
+  if (!tokens.length || !heard.length) return [];
+  const total = Math.max(1, durationSec);
+  // Our i-th word sits where the matching share of the heard words sits (both run in the same order).
+  const timeOf = (i: number) => {
+    const j = tokens.length === 1 ? 0 : Math.round((i * (heard.length - 1)) / (tokens.length - 1));
+    return heard[Math.min(heard.length - 1, Math.max(0, j))];
+  };
+  const cues: CaptionCue[] = [];
+  let line: number[] = [];
+  const flush = () => {
+    if (!line.length) return;
+    const first = timeOf(line[0]);
+    const last = timeOf(line[line.length - 1]);
+    cues.push({
+      start: first.start,
+      end: Math.max(last.end, first.start + 0.6),
+      text: line.map((i) => tokens[i].word).join(" ").slice(0, 80),
+      scene: tokens[line[0]].scene,
+    });
+    line = [];
+  };
+  const sentenceEnd = (i: number) => /[.!?…]$/.test(tokens[i].word) || i + 1 >= tokens.length || tokens[i + 1].scene !== tokens[i].scene;
+  // Words left until this sentence ends (counting this one).
+  const leftInSentence = (i: number) => {
+    let n = 1;
+    while (!sentenceEnd(i + n - 1) && i + n < tokens.length) n += 1;
+    return n;
+  };
+  tokens.forEach((token, i) => {
+    if (line.length && tokens[line[0]].scene !== token.scene) flush();
+    line.push(i);
+    if (sentenceEnd(i)) flush();
+    // Six words a line — unless only one or two are left of the sentence: those stay on this line.
+    else if (line.length >= 6 && leftInSentence(i + 1) > 2) flush();
+  });
+  flush();
+  // Each line stays until the next one starts (a scene's last line leaves as the next scene comes in, which the video
+  // cuts to just before its first word); the last one to the end of the voice.
+  return cues.map((cue, i) => {
+    const next = cues[i + 1];
+    const end = !next ? Math.max(cue.end, total) : next.scene !== cue.scene ? Math.max(cue.end, next.start - 0.15) : next.start;
+    return {
+      start: Math.round(Math.max(0, cue.start) * 100) / 100,
+      end: Math.round(Math.min(total, end) * 100) / 100,
+      text: cue.text,
+      scene: cue.scene,
+    };
   });
 }
 

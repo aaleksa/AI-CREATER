@@ -40,6 +40,11 @@ export type BrandKitRow = Record<string, string> & {
   vertical_note?: string;
   logo_on_photos?: boolean;
 };
+export const VOICE_CHOICES = ["coral", "nova", "sage", "ash", "onyx", "echo"] as const;
+export type VoiceChoice = (typeof VOICE_CHOICES)[number];
+/** The scenes' on-screen words as headlines at the top of a voiced Reel. */
+export type ReelTitles = { show: boolean; style: "clean" | "box" | "brand"; size: "s" | "m" | "l" };
+
 export type ReelLogo = { show: boolean; corner: "top-left" | "top-right" | "bottom-left" | "bottom-right"; size: "s" | "m" | "l"; endCard: boolean; plate: boolean };
 /** Our logo placed by hand: left, top and width as fractions of the picture. */
 export type LogoBox = { x: number; y: number; w: number };
@@ -118,13 +123,16 @@ export type Project = {
   idea: Idea | null;
   script: { durationSec: number; cta: string; scenes: ScriptScene[] } | null;
   visuals: { sceneId: number; imageUrl: string; prompt: string; placeholder?: boolean; clean?: string; logoCorner?: string; logoBox?: LogoBox }[] | null;
-  voice: { voicePreset?: string; voice: string; script: string; notes: string } | null;
-  captions: { cues: { start: number; end: number; text: string }[] } | null;
+  voice: { voicePreset?: string; voice: string; voiceId?: string; script: string; notes: string } | null;
+  /** Which voice reads this Reel next time it is recorded. */
+  voiceChoice?: VoiceChoice;
+  captions: { cues: { start: number; end: number; text: string; scene?: number }[] } | null;
   audioUrl: string | null;
   outputUrl: string | null;
   hasVideo: boolean;
   /** Reel made without a voiceover: captions are the on-screen words, the video has a quiet track. */
   voiceOff?: boolean;
+  voiceTakeSaved?: boolean;
   /** Reel made without burned-in captions. */
   captionsOff?: boolean;
   /** The owner's own track under the Reel: volume 0–100, starts from `start` seconds of the track. */
@@ -137,6 +145,7 @@ export type Project = {
   renderPaid?: boolean;
   /** How burned-in captions look on the Reel. */
   captionStyle?: "clean" | "box" | "brand";
+  reelTitles?: ReelTitles;
   hasImages: boolean;
   creditsUsed: number;
   stepAttempts: Record<string, number>;
@@ -287,11 +296,15 @@ export const api = {
   },
   updateMusic: (id: string, body: { volume?: number; start?: number }) =>
     request<{ project: Project }>(`/projects/${id}/music`, { method: "PATCH", body: JSON.stringify(body) }),
+  setVoiceChoice: (id: string, voice: VoiceChoice) =>
+    request<{ project: Project }>(`/projects/${id}/voice-choice`, { method: "PATCH", body: JSON.stringify({ voice }) }),
   forkReel: (id: string, step: "idea" | "script", versionId: string) =>
     request<{ project: Project }>(`/projects/${id}/fork`, { method: "POST", body: JSON.stringify({ step, versionId }) }),
   remakeVideo: (id: string) => request<{ project: Project }>(`/projects/${id}/remake`, { method: "POST" }),
   updateCaptionStyle: (id: string, style: "clean" | "box" | "brand") =>
     request<{ project: Project }>(`/projects/${id}/captions-style`, { method: "PATCH", body: JSON.stringify({ style }) }),
+  updateReelTitles: (id: string, body: Partial<ReelTitles>) =>
+    request<{ project: Project }>(`/projects/${id}/titles`, { method: "PATCH", body: JSON.stringify(body) }),
   updateReelLogo: (id: string, body: Partial<ReelLogo>) =>
     request<{ project: Project }>(`/projects/${id}/reel-logo`, { method: "PATCH", body: JSON.stringify(body) }),
   removeMusic: (id: string) => request<{ project: Project }>(`/projects/${id}/music`, { method: "DELETE" }),
