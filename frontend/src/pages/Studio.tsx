@@ -98,6 +98,15 @@ const STEP_REASONS: Record<string, { id: string; label: string }[]> = {
   ],
 };
 
+/**
+ * A line's language: Ukrainian when it has Ukrainian words, English when it has everyday English words. Addresses and
+ * names ("Eltham High Street, London SE9 1TX") are neither, so they never make a script look mixed.
+ */
+const ENGLISH_WORDS = /\b(the|and|to|for|with|you|your|our|we|us|is|are|of|at|in|on|this|it|join|come|see|get|be|all|now|here|every|help)\b/i;
+function lineLanguage(line: string): "uk" | "en" | "" {
+  return /\p{Script=Cyrillic}{3}/u.test(line) ? "uk" : ENGLISH_WORDS.test(line) ? "en" : "";
+}
+
 function doneThrough(project: Project, step: string) {
   const map: Record<string, unknown> = {
     idea: project.idea,
@@ -800,15 +809,7 @@ export default function Studio() {
   // Lines of the Reel script in different alphabets: Ukrainian words on screen, English voice, or the other way round.
   const reelLanguagesMixed = useMemo(() => {
     const lines = [project?.script?.cta, ...(project?.script?.scenes || []).flatMap((sc) => [sc.onScreen, sc.voiceover])];
-    // A line is Ukrainian when it has Ukrainian words, English when it has everyday English words. Addresses and names
-    // ("Eltham High Street, London SE9 1TX") are neither, so they never make a script look mixed.
-    const english = /\b(the|and|to|for|with|you|your|our|we|us|is|are|of|at|in|on|this|it|join|come|see|get|be|all|now|here|every|help)\b/i;
-    const kinds = new Set(
-      lines
-        .map((line) => String(line || ""))
-        .map((line) => (/\p{Script=Cyrillic}{3}/u.test(line) ? "uk" : english.test(line) ? "en" : ""))
-        .filter(Boolean)
-    );
+    const kinds = new Set(lines.map((line) => lineLanguage(String(line || ""))).filter(Boolean));
     return kinds.size > 1;
   }, [project?.script]);
   const shownTake = (project?.versions?.visuals || []).findIndex((version) => version.id === (previewVersionId || acceptedVersionId));
@@ -827,6 +828,10 @@ export default function Studio() {
   // The end card also works with just the business name.
   const reelCanEndCard = !isImage && !reelBrandOff && Boolean(kit?.logo_url || kit?.business_name);
   const reelLangIsUk = (() => {
+    const kinds = (project?.script?.scenes || []).flatMap((sc) => [sc.voiceover, sc.onScreen]).map((line) => lineLanguage(String(line || "")));
+    const uk = kinds.filter((kind) => kind === "uk").length;
+    const en = kinds.filter((kind) => kind === "en").length;
+    if (uk || en) return uk >= en;
     const text = (project?.script?.scenes || []).map((sc) => sc.voiceover).join(" ");
     return (text.match(/[\u0400-\u04FF]/g) || []).length >= (text.match(/[A-Za-z]/g) || []).length;
   })();
@@ -3327,16 +3332,20 @@ export default function Studio() {
               <p className="hint" style={{ margin: 0 }}>{t("studio.finishHint")}</p>
             </div>
           )}
-          {!isImage && project.script && reelLanguagesMixed && !viewStep && (
-            <div className="lang-note">
+          {!isImage && project.script && !viewStep && (
+            <div className={`lang-note${reelLanguagesMixed ? " mixed" : ""}`}>
               <div className="lang-note-row">
                 <p className="lang-note-title">
-                  <span aria-hidden>🌐</span> {t("studio.reelLangTitle")}
+                  <span aria-hidden>🌐</span> {reelLanguagesMixed ? t("studio.reelLangTitle") : t(reelLangIsUk ? "studio.reelLangNowUk" : "studio.reelLangNowEn")}
                 </p>
                 <div className="lang-note-pills" role="group" aria-label={t("studio.reelLangAsk")}>
-                  {(reelLangIsUk ? (["uk", "en"] as const) : (["en", "uk"] as const)).map((lang) => (
+                  {(reelLanguagesMixed ? (reelLangIsUk ? (["uk", "en"] as const) : (["en", "uk"] as const)) : ([reelLangIsUk ? "en" : "uk"] as const)).map((lang) => (
                     <button key={lang} type="button" className="btn ghost tiny" disabled={Boolean(busy)} onClick={() => translateReel(lang)}>
-                      {busy === `lang-${lang}` ? t("studio.reelLangWorking") : t(lang === "uk" ? "studio.reelLangUk" : "studio.reelLangEn")}
+                      {busy === `lang-${lang}`
+                        ? t("studio.reelLangWorking")
+                        : reelLanguagesMixed
+                          ? t(lang === "uk" ? "studio.reelLangUk" : "studio.reelLangEn")
+                          : t(lang === "uk" ? "studio.reelLangToUk" : "studio.reelLangToEn")}
                     </button>
                   ))}
                 </div>

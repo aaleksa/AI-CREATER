@@ -1309,3 +1309,4 @@ details.options > .brand-toggle, details.options > .examples { margin-top: 14px;
 .lang-note-more summary::before { content: "▸ "; }
 .lang-note-more[open] summary::before { content: "▾ "; }
 .lang-note-more .hint { margin: 6px 0 0; font-size: 12px; }
+.lang-note:not(.mixed) .lang-note-title { font-weight: 500; color: var(--muted); }
