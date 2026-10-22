@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type LogoBox, type Project, type ReelLogo, type Shot } from "../lib/api";
 import { copyText } from "../lib/copy";
 import { downloadName, shapeLabel } from "../lib/fileName";
@@ -257,12 +257,19 @@ function VersionCompare({
   step,
   versions,
   onRestore,
+  onFork,
   busy,
   t,
 }: {
   step: "idea" | "script";
-  versions: { id: string; accepted: boolean; payload: { title?: string; concept?: string; hook?: string; cta?: string; scenes?: { id: number; voiceover: string }[] } | null }[];
+  versions: {
+    id: string;
+    accepted: boolean;
+    payload: { title?: string; concept?: string; hook?: string; cta?: string; scenes?: { id: number; voiceover: string }[] } | null;
+    keeps?: { script?: boolean; frames: boolean; voice: boolean; captions: boolean };
+  }[];
   onRestore: (step: "idea" | "script", id: string) => void;
+  onFork?: (step: "idea" | "script", id: string) => void;
   busy: boolean;
   t: (path: string, vars?: Record<string, string | number>) => string;
 }) {
@@ -288,12 +295,27 @@ function VersionCompare({
               <span className="version-text">
                 <b>{line}</b>
                 {more && more !== line && <span className="hint">{more}</span>}
+                {!version.accepted && version.keeps && (() => {
+                  const back = [
+                    version.keeps.script ? t("studio.backScript") : "",
+                    version.keeps.frames ? t("studio.backFrames") : "",
+                    version.keeps.voice ? t("studio.backVoice") : "",
+                  ].filter(Boolean);
+                  return back.length ? <span className="version-keeps">{t("studio.backWith", { list: back.join(", ") })}</span> : null;
+                })()}
               </span>
-              {!version.accepted && (
-                <button className="btn ghost tiny" type="button" disabled={busy} onClick={() => onRestore(step, version.id)}>
-                  {t("studio.useVersionShort")}
-                </button>
-              )}
+              <span className="version-actions">
+                {!version.accepted && (
+                  <button className="btn ghost tiny" type="button" disabled={busy} onClick={() => onRestore(step, version.id)}>
+                    {t("studio.useVersionShort")}
+                  </button>
+                )}
+                {onFork && (
+                  <button className="btn ghost tiny" type="button" disabled={busy} onClick={() => onFork(step, version.id)} title={t("studio.forkHint")}>
+                    {t("studio.forkShort")}
+                  </button>
+                )}
+              </span>
             </li>
           );
         })}
@@ -304,6 +326,7 @@ function VersionCompare({
 
 export default function Studio() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const missedExamples = Number((useLocation().state as { missedExamples?: number } | null)?.missedExamples) || 0;
   const { t, te } = useLocale();
   const [project, setProject] = useState<Project | null>(null);
@@ -315,6 +338,8 @@ export default function Studio() {
   const [musicSrc, setMusicSrc] = useState<string | null>(null);
   const [musicDraft, setMusicDraft] = useState<{ volume: number; start: number } | null>(null);
   const [briefOpen, setBriefOpen] = useState(false);
+  const [soundTab, setSoundTab] = useState<"captions" | "logo" | "music" | "voice">("captions");
+  const [paidOpen, setPaidOpen] = useState(false);
   const [busySince, setBusySince] = useState(0);
   const [busyTick, setBusyTick] = useState(0);
   const [doneNote, setDoneNote] = useState("");
@@ -594,6 +619,8 @@ export default function Studio() {
   const extraPrice = (step: string, sceneId?: number) => {
     // Without a voice the captions are the scenes' own words: free.
     if (step === "captions" && project?.voiceOff) return { extra: false, credits: 0 };
+    // The video is paid once per Reel; making it again is free.
+    if (step === "render" && project?.renderPaid) return { extra: false, credits: 0 };
     const base = sceneId ? 8 : STEPS.find((s) => s.id === step)?.cost ?? 0;
     const used = project?.stepAttempts?.[step] ?? 0;
     const included = project?.maxStepAttempts ?? 3;
@@ -601,6 +628,98 @@ export default function Studio() {
     return { extra: used >= included, credits: base * mult };
   };
   const prices = { video: extraPrice("render").credits, voice: extraPrice("voice").credits, caps: extraPrice("captions").credits };
+  /** "Made again" list for what this project already has: frames/picture, voice, captions from the voice, video. */
+  function redoCost(what: { script?: boolean; frames?: boolean; voice?: boolean; captions?: boolean; video?: boolean }) {
+    const parts: string[] = [];
+    let total = 0;
+    const add = (key: string, n: number) => {
+      parts.push(t(key, { n }));
+      total += n;
+    };
+    if (what.script && !isImage && project?.script) add("studio.redoScript", extraPrice("script").credits);
+    if (what.frames && project?.visuals?.length) add(isImage ? "studio.redoPicture" : "studio.redoFrames", extraPrice("visuals").credits);
+    if (what.voice && !project?.voiceOff && project?.audioUrl) add("studio.redoVoice", prices.voice);
+    if (what.captions && project?.captions && !project.voiceOff) add("studio.redoCaps", prices.caps);
+    if (what.video && project?.hasVideo && prices.video > 0) add("studio.redoVideo", prices.video);
+    return { list: parts.join(", "), total };
+  }
+
+  /** The confirm before bringing back an older idea or script: free to pick, but say what has to be made again. */
+  function restoreAsk(step: "idea" | "script", versionId: string) {
+    const version = (step === "idea" ? project?.versions?.idea : project?.versions?.script)?.find((v) => v.id === versionId);
+    const keeps = version?.keeps;
+    if (step === "script" && !isImage) {
+      const older = project?.versions?.script?.find((v) => v.id === versionId)?.payload;
+      const now = project?.script;
+      const sameScenes =
+        Boolean(older && now) &&
+        older!.scenes.length === now!.scenes.length &&
+        older!.scenes.every((sc, i) => sc.id === now!.scenes[i].id && (sc.visualPrompt || "").trim() === (now!.scenes[i].visualPrompt || "").trim());
+      if (sameScenes) {
+        const voiceChanged = older!.scenes.some((sc, i) => (sc.voiceover || "").trim() !== (now!.scenes[i].voiceover || "").trim());
+        const redo = voiceChanged && !keeps?.voice ? redoCost({ voice: true, captions: true, video: true }) : { list: "", total: 0 };
+        return redo.total ? t("studio.restoreScriptSamePaid", redo) : t("studio.restoreScriptSameFree");
+      }
+    }
+    if (!keeps || isImage) {
+      const redo = step === "idea" ? redoCost({ script: true, frames: true, voice: true, captions: true, video: true }) : redoCost({ frames: true, voice: true, captions: true, video: true });
+      return redo.total ? t(step === "idea" ? "studio.restoreIdeaPaid" : "studio.restoreScriptNewPaid", redo) : t("studio.restoreFree");
+    }
+    if (step === "idea" && !keeps.script) {
+      const redo = redoCost({ script: true, frames: true, voice: true, captions: true, video: true });
+      return redo.total ? t("studio.restoreIdeaPaid", redo) : t("studio.restoreFree");
+    }
+    const back = [
+      step === "idea" ? t("studio.backScript") : "",
+      keeps.frames ? t("studio.backFrames") : "",
+      keeps.voice ? t("studio.backVoice") : "",
+    ].filter(Boolean);
+    const redo = redoCost({ frames: !keeps.frames, voice: !keeps.voice, captions: !keeps.captions, video: true });
+    return redo.total
+      ? t("studio.restoreBranchPaid", { back: back.join(", ") || t("studio.backNothing"), list: redo.list, total: redo.total })
+      : t("studio.restoreBranchFree", { back: back.join(", ") || t("studio.backNothing") });
+  }
+
+
+  /** What a Reel still needs before its video: voice (unless "no voice"), captions (unless "no captions"), the video. */
+  const finishSteps = (() => {
+    if (isImage || !project?.visuals?.length || project.hasVideo) return [] as string[];
+    const steps: string[] = [];
+    if (!project.voiceOff && !project.audioUrl) steps.push("voice");
+    if (!project.captionsOff && !project.captions) steps.push("captions");
+    steps.push("render");
+    return steps;
+  })();
+  const finishTotal = finishSteps.reduce((sum, step) => sum + extraPrice(step).credits, 0);
+
+  async function finishReel() {
+    if (!finishSteps.length) return;
+    const names = finishSteps.map((step) => t(step === "render" ? "studio.videoNoun" : step === "voice" ? "studio.voiceNoun" : "studio.captionsNoun")).join(", ");
+    if (finishTotal > 0 && !window.confirm(t("studio.finishConfirm", { list: names, total: finishTotal }))) return;
+    for (const step of finishSteps) {
+      const ok = await execute(step);
+      if (!ok) return;
+    }
+  }
+
+  // Translating is free itself; what it clears has to be made again. Only what this Reel already has is counted.
+  const translateRedo = (() => {
+    const parts: string[] = [];
+    let total = 0;
+    if (!project?.voiceOff && project?.audioUrl) {
+      parts.push(t("studio.redoVoice", { n: prices.voice }));
+      total += prices.voice;
+    }
+    if (project?.captions && !project.voiceOff) {
+      parts.push(t("studio.redoCaps", { n: prices.caps }));
+      total += prices.caps;
+    }
+    if (project?.hasVideo && prices.video > 0) {
+      parts.push(t("studio.redoVideo", { n: prices.video }));
+      total += prices.video;
+    }
+    return { list: parts.join(", "), total };
+  })();
   const rawFrame = project?.visuals?.[scene]?.imageUrl || "";
   const currentFrame =
     (project?.visuals?.[scene] && imageSrcs[project.visuals[scene].sceneId]) ||
@@ -688,9 +807,10 @@ export default function Studio() {
     evictOldest = false,
     extra?: { pictureLanguage?: string; keepStill?: boolean; keepStillVersionId?: string; copyEdit?: string; copyEditImage?: string; reformat?: string }
   ) {
-    if (!id) return;
+    if (!id) return false;
     setBusy(sceneId ? `visual-${sceneId}` : step);
     setError("");
+    let ok = false;
     try {
       const { project: nextProject, archive: nextArchive } = await api.runStep(
         id,
@@ -715,19 +835,21 @@ export default function Studio() {
       setPendingRegen(null);
       setRegenReason("");
       setRegenNote("");
+      ok = true;
     } catch (err) {
       if (!evictOldest && step === "render" && err instanceof ApiError && err.code === "archive_full") {
         const oldest = archive?.oldestPrompt || t("studio.oldestReel");
-        const ok = window.confirm(t("studio.confirmArchive", { limit: archive?.limit ?? 10, oldest }));
-        if (ok) {
-          await execute(step, regenerate, sceneId, feedback, true);
-          return;
+        const evict = window.confirm(t("studio.confirmArchive", { limit: archive?.limit ?? 10, oldest }));
+        if (evict) {
+          setBusy(null);
+          return execute(step, regenerate, sceneId, feedback, true);
         }
       }
       setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
     } finally {
       setBusy(null);
     }
+    return ok;
   }
 
   async function remakeLanguage(lang: "en" | "uk") {
@@ -916,6 +1038,23 @@ export default function Studio() {
     }
   }
 
+  /** A new Reel from this idea or script version; this one stays as it is. */
+  async function forkFrom(step: "idea" | "script", versionId: string) {
+    if (!id) return;
+    if (!window.confirm(t("studio.forkConfirm"))) return;
+    setBusy("fork");
+    setError("");
+    try {
+      const { project: copy } = await api.forkReel(id, step, versionId);
+      setViewStep(null);
+      navigate(`/app/studio/${copy.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function remakeVideo() {
     if (!id) return;
     setBusy("remake");
@@ -960,7 +1099,7 @@ export default function Studio() {
 
   async function translateReel(lang: "en" | "uk") {
     if (!id || !project?.script) return;
-    if ((project.audioUrl || project.captions || project.hasVideo) && !window.confirm(t("studio.reelLangConfirm", prices))) return;
+    if (translateRedo.total > 0 && !window.confirm(t("studio.reelLangConfirm", { list: translateRedo.list, total: translateRedo.total }))) return;
     setBusy(`lang-${lang}`);
     setError("");
     try {
@@ -974,36 +1113,72 @@ export default function Studio() {
     }
   }
 
-  async function saveScriptDraft() {
-    if (!id || !project?.script || !scriptDraft) return;
+  /** What saving the draft leaves to redo — new frames for changed wishes, a voice and its captions for new words. */
+  function draftPlan() {
+    const empty = { voiceChanged: false, wordsChanged: false, frameIds: [] as number[], list: "", total: 0, voiceRedo: null as null | { list: string; total: number } };
+    if (!project?.script || !scriptDraft) return empty;
     const was = (sceneId: number) => project.script?.scenes.find((x) => x.id === sceneId);
     const voiceChanged = scriptDraft.scenes.some((sc) => sc.voiceover.trim() !== (was(sc.id)?.voiceover || "").trim());
     const wordsChanged =
       voiceChanged ||
       scriptDraft.cta.trim() !== (project.script.cta || "").trim() ||
       scriptDraft.scenes.some((sc) => sc.onScreen.trim() !== (was(sc.id)?.onScreen || "").trim());
-    const wishIds = scriptDraft.scenes.filter((sc) => sc.frameWish.trim() !== (was(sc.id)?.frameWish || "").trim()).map((sc) => sc.id);
-    const ask = !wordsChanged
-      ? ""
-      : voiceChanged && project.audioUrl
-        ? t("studio.scriptEditVoiceConfirm", prices)
-        : project.captions || project.hasVideo
-          ? t("studio.scriptEditConfirm", prices)
-          : "";
-    if (ask && !window.confirm(ask)) return;
+    const frameIds = scriptDraft.scenes
+      .filter((sc) => sc.frameWish.trim() !== (was(sc.id)?.frameWish || "").trim())
+      .map((sc) => sc.id)
+      .filter((sceneId) => project.visuals?.some((v) => v.sceneId === sceneId));
+    const parts: string[] = [];
+    let total = 0;
+    for (const sceneId of frameIds) {
+      const n = extraPrice("visuals", sceneId).credits;
+      parts.push(t("studio.redoFrameN", { n: sceneNumber(sceneId), credits: n }));
+      total += n;
+    }
+    const voiceRedo = voiceChanged && project.audioUrl && !project.voiceOff ? redoCost({ voice: true, captions: true, video: true }) : null;
+    if (voiceRedo?.total) {
+      parts.push(voiceRedo.list);
+      total += voiceRedo.total;
+    }
+    return { voiceChanged, wordsChanged, frameIds, list: parts.join(", "), total, voiceRedo };
+  }
+
+  /** Save the script; with `update`, also make again what the change needs (frames, voice, captions), then the video. */
+  async function saveScriptDraft(update = false) {
+    if (!id || !project?.script || !scriptDraft) return;
+    const plan = draftPlan();
+    if (!update && plan.wordsChanged && plan.voiceRedo?.total && !window.confirm(t("studio.scriptEditVoiceConfirm", plan.voiceRedo))) return;
+    const hadVoice = Boolean(project.audioUrl) && !project.voiceOff;
+    const hadCaptions = Boolean(project.captions) && !project.captionsOff;
+    const hadVideo = Boolean(project.hasVideo || project.renderPaid);
     setBusy("edit-script");
     setError("");
+    let saved: Project | null = null;
     try {
       const { project: nextProject } = await api.editScript(id, scriptDraft);
       setScriptDraft(null);
       setProject(nextProject);
-      setWishRedo(nextProject.visuals?.length ? wishIds.filter((sceneId) => nextProject.visuals?.some((v) => v.sceneId === sceneId)) : []);
+      saved = nextProject;
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
     } finally {
       setBusy(null);
     }
+    if (!saved) return;
+    if (!update) {
+      setWishRedo(plan.frameIds);
+      return;
+    }
+    setViewStep(null);
+    for (const sceneId of plan.frameIds) {
+      if (!(await execute("visuals", true, sceneId))) return;
+    }
+    const needVoice = hadVoice && !saved.voiceOff && !saved.audioUrl;
+    const needCaptions = !saved.captionsOff && !saved.captions && (needVoice || hadCaptions);
+    if (needVoice && !(await execute("voice"))) return;
+    if (needCaptions && !(await execute("captions"))) return;
+    if (hadVideo && (needVoice || needCaptions || !saved.hasVideo)) await execute("render");
   }
+
 
   async function saveCapsDraft() {
     if (!id || !capsDraft) return;
@@ -1023,7 +1198,7 @@ export default function Studio() {
   async function toggleCaptions(off: boolean) {
     if (!id) return;
     // Back on under a voice: the captions come from the voice again (AI), then the video is made again.
-    if (!off && project?.hasVideo && !project.voiceOff && !window.confirm(t("studio.captionsToggleConfirm", prices))) return;
+    if (!off && project?.hasVideo && !project.voiceOff && !window.confirm(t("studio.captionsToggleConfirm", { caps: prices.caps }))) return;
     setBusy(off ? "captions-off" : "captions-on");
     setError("");
     try {
@@ -1039,8 +1214,20 @@ export default function Studio() {
 
   async function toggleVoice(off: boolean) {
     if (!id) return;
-    if (!off && !window.confirm(t("studio.voiceOnConfirm", prices))) return;
-    if (off && project?.captions && !window.confirm(t("studio.voiceOffConfirm", prices))) return;
+    if (!off) {
+      const parts = [t("studio.redoVoice", { n: prices.voice })];
+      let total = prices.voice;
+      if (!project?.captionsOff) {
+        parts.push(t("studio.redoCaps", { n: prices.caps }));
+        total += prices.caps;
+      }
+      if (!project?.renderPaid && project?.hasVideo) {
+        parts.push(t("studio.redoVideo", { n: prices.video }));
+        total += prices.video;
+      }
+      if (!window.confirm(t("studio.voiceOnConfirm", { list: parts.join(", "), total }))) return;
+    }
+    if (off && project?.audioUrl && !window.confirm(t("studio.voiceOffConfirm"))) return;
     setBusy(off ? "voice-off" : "voice-on");
     setError("");
     try {
@@ -1213,13 +1400,7 @@ export default function Studio() {
   }
   async function restore(step: "idea" | "script" | "visuals", versionId: string, sceneId?: number) {
     if (!id) return;
-    const ok = window.confirm(
-      step === "idea"
-        ? t("studio.restoreIdea")
-        : step === "visuals"
-          ? t("studio.restorePicture")
-          : t("studio.restoreScript")
-    );
+    const ok = window.confirm(step === "visuals" ? t("studio.restorePicture") : restoreAsk(step, versionId));
     if (!ok) return;
     setBusy(sceneId ? `restore-visual-${sceneId}` : `restore-${step}`);
     setError("");
@@ -1382,7 +1563,9 @@ export default function Studio() {
             ? makingLabel
             : extraPrice(s.id).extra
               ? t("studio.anotherStep", { label: stepNoun(s.id), credits: extraPrice(s.id).credits })
-              : t("studio.regenStep", { label: stepNoun(s.id), credits: extraPrice(s.id).credits })}
+              : extraPrice(s.id).credits === 0
+                ? t("studio.regenStepFree", { label: stepNoun(s.id) })
+                : t("studio.regenStep", { label: stepNoun(s.id), credits: extraPrice(s.id).credits })}
         </button>
       ))}
     </>
@@ -1658,7 +1841,7 @@ export default function Studio() {
                 {asText(project.idea.hook) && <p>{asText(project.idea.hook)}</p>}
                 <p className="lede">{asText(project.idea.concept)}</p>
                 {asText(project.idea.shot?.summary) && <p className="hint">{asText(project.idea.shot?.summary)}</p>}
-                <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} t={t} />
+                <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} onFork={isImage ? undefined : forkFrom} busy={Boolean(busy)} t={t} />
               </>
             )}
             {viewStep === "script" && project.script && scriptDraft && (
@@ -1718,9 +1901,24 @@ export default function Studio() {
                 </label>
                 <p className="hint">{t("studio.scriptEditHint", prices)}</p>
                 <div className="action-row">
-                  <button type="button" className="btn" disabled={Boolean(busy) || (scriptDraft.cta.length > CTA_MAX && scriptDraft.cta.trim() !== (project.script?.cta || "").trim())} onClick={saveScriptDraft}>
-                    {busy === "edit-script" ? t("studio.voiceOffSaving") : t("studio.editSave")}
-                  </button>
+                  {(() => {
+                    const plan = draftPlan();
+                    const blocked = Boolean(busy) || (scriptDraft.cta.length > CTA_MAX && scriptDraft.cta.trim() !== (project.script?.cta || "").trim());
+                    return plan.total > 0 ? (
+                      <>
+                        <button type="button" className="btn accent" disabled={blocked} onClick={() => saveScriptDraft(true)}>
+                          {busy === "edit-script" ? t("studio.voiceOffSaving") : t("studio.saveAndUpdate", { list: plan.list, total: plan.total })}
+                        </button>
+                        <button type="button" className="btn" disabled={blocked} onClick={() => saveScriptDraft(false)}>
+                          {t("studio.saveOnly")}
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" className="btn" disabled={blocked} onClick={() => saveScriptDraft(false)}>
+                        {busy === "edit-script" ? t("studio.voiceOffSaving") : t("studio.editSave")}
+                      </button>
+                    );
+                  })()}
                   <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => setScriptDraft(null)}>
                     {t("studio.placeCancel")}
                   </button>
@@ -1800,7 +1998,7 @@ export default function Studio() {
                     <b>{asText(project.script.cta)}</b>
                   </p>
                 )}
-                <VersionCompare step="script" versions={project.versions?.script || []} onRestore={restore} busy={Boolean(busy)} t={t} />
+                <VersionCompare step="script" versions={project.versions?.script || []} onRestore={restore} onFork={isImage ? undefined : forkFrom} busy={Boolean(busy)} t={t} />
               </>
             )}
             {viewStep === "visuals" &&
@@ -2008,7 +2206,7 @@ export default function Studio() {
               ) : (
                 <p className="hint">{asText(project.idea.visualDirection)}</p>
               )}
-              <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} t={t} />
+              <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} onFork={isImage ? undefined : forkFrom} busy={Boolean(busy)} t={t} />
             </>
           )}
           {isInvite && project.idea && !project.hasImages && (
@@ -2019,13 +2217,13 @@ export default function Studio() {
               <p><b>{asText(project.idea.title)}</b></p>
               <p className="lede">{asText(project.idea.concept)}</p>
               <p className="hint">{asText(project.idea.visualDirection)}</p>
-              <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} busy={Boolean(busy)} t={t} />
+              <VersionCompare step="idea" versions={project.versions?.idea || []} onRestore={restore} onFork={isImage ? undefined : forkFrom} busy={Boolean(busy)} t={t} />
             </>
           )}
           {!isImage && project.script && !project.visuals && (
             <>
               <p className="lede">{t("studio.scriptReady")}</p>
-              <VersionCompare step="script" versions={project.versions?.script || []} onRestore={restore} busy={Boolean(busy)} t={t} />
+              <VersionCompare step="script" versions={project.versions?.script || []} onRestore={restore} onFork={isImage ? undefined : forkFrom} busy={Boolean(busy)} t={t} />
             </>
           )}
           {!isImage && project.visuals && !project.hasVideo && (next?.id === "voice" || placeholderCount > 0) && (
@@ -2462,24 +2660,29 @@ export default function Studio() {
           {project.hasVideo && (
             <>
               <p className="ok">{t("studio.reelReady", { credits: project.creditsUsed })}</p>
-              <p className="hint">{t("studio.reelReadyFree")}</p>
-              <button type="button" className="btn ghost tiny remake-btn" disabled={Boolean(busy)} onClick={remakeVideo}>
-                {busy === "remake" ? t("studio.reelLogoSaving") : t("studio.remakeVideo")}
-              </button>
-              <p className="hint" style={{ marginTop: 0 }}>{t("studio.remakeHint")}</p>
-              <p className="hint">{t("studio.reelKeep")}</p>
-              <div className="row" style={{ marginTop: 18 }}>
+              <div className="row ready-actions">
                 {videoSrc && (
                   <a className="btn" href={videoSrc} download={downloadName(project, t, "mp4")}>
                     {t("studio.downloadMp4")}
                   </a>
                 )}
-                {SHOW_SHARE_AND_PUBLISH && (
+                <button type="button" className="btn ghost tiny" disabled={Boolean(busy)} onClick={remakeVideo} title={t("studio.remakeHint")}>
+                  {busy === "remake" ? t("studio.reelLogoSaving") : t("studio.remakeVideo")}
+                </button>
+              </div>
+              <details className="ready-more">
+                <summary>{t("studio.readyMore")}</summary>
+                <p className="hint">{t("studio.reelReadyFree")}</p>
+                <p className="hint">{t("studio.remakeHint")}</p>
+                <p className="hint">{t("studio.reelKeep")}</p>
+              </details>
+              {SHOW_SHARE_AND_PUBLISH && (
+                <div className="row" style={{ marginTop: 6 }}>
                   <button className="btn ghost" type="button" onClick={sharePreview}>
                     {shareCopied ? t("studio.shareCopied") : t("studio.share")}
                   </button>
-                )}
-              </div>
+                </div>
+              )}
               {SHOW_SHARE_AND_PUBLISH && (project.feedback ? (
                 <p className="ok" style={{ marginTop: 16 }}>{t("studio.thanksReel")}</p>
               ) : (
@@ -2546,7 +2749,9 @@ export default function Studio() {
                   : next.id === "captions" && project.voiceOff
                     ? t("studio.makeCaptionsFree")
                     : next.id === "render"
-                      ? t(extraPrice("render").extra ? "studio.makeVideo2x" : "studio.makeVideo", { credits: extraPrice("render").credits })
+                      ? extraPrice("render").credits === 0
+                        ? t("studio.makeVideoFree")
+                        : t(extraPrice("render").extra ? "studio.makeVideo2x" : "studio.makeVideo", { credits: extraPrice("render").credits })
                       : extraPrice(next.id).extra
                       ? t("studio.makeStep2x", { label: stepLabel(next.id).toLowerCase(), credits: extraPrice(next.id).credits })
                       : t("studio.makeStep", { label: stepLabel(next.id).toLowerCase(), credits: extraPrice(next.id).credits })}
@@ -2563,9 +2768,23 @@ export default function Studio() {
               )}
             </div>
           )}
+          {finishSteps.length > 1 && !viewStep && (
+            <div className="finish-row">
+              <button type="button" className="btn ghost" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={finishReel}>
+                {finishTotal > 0
+                  ? t("studio.finishReel", { list: finishSteps.map((step) => t(step === "render" ? "studio.videoNoun" : step === "voice" ? "studio.voiceNoun" : "studio.captionsNoun")).join(", "), total: finishTotal })
+                  : t("studio.finishReelFree")}
+              </button>
+              <p className="hint" style={{ margin: 0 }}>{t("studio.finishHint")}</p>
+            </div>
+          )}
           {!isImage && project.script && reelLanguagesMixed && !viewStep && (
-            <div className="voice-off-note">
-              <p className="hint" style={{ margin: 0 }}>{t("studio.reelLangMixed")}</p>
+            <div className="mini-note">
+              <p className="mini-note-title">
+                {translateRedo.total > 0
+                  ? t("studio.reelLangMixedPaid", { list: translateRedo.list, total: translateRedo.total })
+                  : t("studio.reelLangMixedShort")}
+              </p>
               <div className="reel-lang">
                 <span className="hint">{t("studio.reelLangAsk")}</span>
                 <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => translateReel("en")}>
@@ -2594,20 +2813,31 @@ export default function Studio() {
                     .join(" · ")}
                 </p>
               </summary>
-              <div className="free-note">
-                <p>
-                  <b>{t("studio.freeTitle")}</b> {t("studio.freeList")}
-                </p>
-                <p className="hint">{t("studio.paidList", prices)}</p>
-              </div>
-              {project.voiceOff && (
-                <div className="voice-off-note">
-                  <p className="hint" style={{ margin: 0 }}>{t("studio.voiceOffNow")}</p>
-                  <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleVoice(false)}>
-                    {t("studio.voiceOn")}
+              <div className="sound-tabs" role="tablist" aria-label={t("studio.soundTitle")}>
+                {(
+                  [
+                    ["captions", t("studio.tabCaptions"), project.captionsOff ? t("studio.soundCapsOff") : project.captions ? t(`studio.capStyle_${project.captionStyle || "clean"}`) : t("studio.soundCapsNot")],
+                    ["logo", t("studio.tabLogo"), reelBrandOff || !reelHasMark ? t("studio.tabLogoNone") : reelLogo.show ? t(`studio.reelCorner_${reelLogo.corner.replace("-", "_")}`) : t("studio.soundLogoOff")],
+                    ["music", t("studio.tabMusic"), project.music ? project.music.name : t("studio.soundMusicNot")],
+                    ["voice", t("studio.tabVoice"), t(project.voiceOff ? "studio.soundVoiceOff" : project.audioUrl ? "studio.soundVoiceOn" : "studio.soundVoiceNot")],
+                  ] as const
+                ).map(([key, label, state]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={soundTab === key}
+                    className={`sound-tab${soundTab === key ? " on" : ""}`}
+                    onClick={() => setSoundTab(key)}
+                  >
+                    <span>{label}</span>
+                    <small>{state}</small>
                   </button>
-                </div>
-              )}
+                ))}
+              </div>
+              <div className="sound-pane" role="tabpanel">
+                {soundTab === "captions" && (
+                  <>
               {project.captionsOff && (
                 <div className="voice-off-note">
                   <p className="hint" style={{ margin: 0 }}>{t("studio.captionsOffNow")}</p>
@@ -2626,7 +2856,7 @@ export default function Studio() {
               )}
             {!project.captionsOff && (
               <div className="music-block">
-                <p className="music-title">{t("studio.capStyleTitle")}</p>
+                <p className="pane-title">{t("studio.capStyleTitle")}</p>
                 <div className="pill-row" role="group" aria-label={t("studio.capStyleTitle")}>
                   {(["clean", "box", ...(!reelBrandOff && kit ? ["brand"] : [])] as ("clean" | "box" | "brand")[]).map((style) => (
                     <button
@@ -2646,6 +2876,9 @@ export default function Studio() {
                 </p>
               </div>
             )}
+                  </>
+                )}
+                {soundTab === "logo" && (
             <div className="music-block">
               <p className="music-title">{t("studio.reelLogoTitle")}</p>
               {reelBrandOff ? (
@@ -2722,11 +2955,12 @@ export default function Studio() {
                 </>
               )}
             </div>
+                )}
+                {soundTab === "music" && (
             <div className="music-block">
               <p className="music-title">{t("studio.musicTitle")}</p>
               {!project.music ? (
                 <>
-                  <p className="hint" style={{ margin: 0 }}>{t("studio.musicHint")}</p>
                   <label className={`btn ghost${busy ? " disabled" : ""}`}>
                     {busy === "music" ? t("studio.musicUploading") : t("studio.musicAdd")}
                     <input
@@ -2740,6 +2974,11 @@ export default function Studio() {
                       }}
                     />
                   </label>
+                  <p className="hint" style={{ margin: 0 }}>{t("studio.musicFiles")}</p>
+                  <details className="ready-more">
+                    <summary>{t("studio.musicMore")}</summary>
+                    <p className="hint">{t("studio.musicHowItSounds")}</p>
+                  </details>
                 </>
               ) : (
                 <>
@@ -2799,6 +3038,34 @@ export default function Studio() {
               )}
               <p className="hint" style={{ margin: 0 }}>{t(project.hasVideo ? "studio.musicFreeNow" : "studio.musicLater")}</p>
             </div>
+                )}
+                {soundTab === "voice" && (
+                  <>
+              {project.voiceOff && (
+                <div className="voice-off-note">
+                  <p className="hint" style={{ margin: 0 }}>{t("studio.voiceOffNow")}</p>
+                  <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleVoice(false)}>
+                    {t("studio.voiceOn")}
+                  </button>
+                </div>
+              )}
+                    {!project.voiceOff && project.audioUrl && (
+                      <>
+                        <p className="hint" style={{ margin: 0 }}>{t("studio.voiceRecorded")}</p>
+                        {audioSrc && <audio controls src={audioSrc} style={{ width: "100%" }} />}
+                      </>
+                    )}
+                    {!project.voiceOff && !project.audioUrl && <p className="hint" style={{ margin: 0 }}>{t("studio.voiceLater")}</p>}
+                  </>
+                )}
+              </div>
+              <p className="free-line">
+                {t("studio.freeShort")}{" "}
+                <button type="button" className="link-btn" onClick={() => setPaidOpen((v) => !v)} aria-expanded={paidOpen}>
+                  {t(paidOpen ? "studio.paidHide" : "studio.paidShow")}
+                </button>
+              </p>
+              {paidOpen && <p className="hint free-more">{t("studio.paidList", prices)}</p>}
             </details>
           )}
           {pendingRegen && STEP_REASONS[pendingRegen.step] && (
@@ -2877,9 +3144,11 @@ export default function Studio() {
               )}
             </p>
           )}
-          <p className="hint" style={{ marginTop: 18 }}>
-            {t(isInvite ? "studio.usedInvite" : isImage ? "studio.usedImage" : "studio.usedReel", { credits: project.creditsUsed })}
-          </p>
+          {!(project.hasVideo && !isImage) && (
+            <p className="hint" style={{ marginTop: 18 }}>
+              {t(isInvite ? "studio.usedInvite" : isImage ? "studio.usedImage" : "studio.usedReel", { credits: project.creditsUsed })}
+            </p>
+          )}
         </div>
       </div>
       {!busy && pendingRegen && STEP_REASONS[pendingRegen.step] ? (

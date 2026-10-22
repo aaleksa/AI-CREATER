@@ -1231,3 +1231,41 @@ details.options > .brand-toggle, details.options > .examples { margin-top: 14px;
 @keyframes spin { to { transform: rotate(360deg); } }
 .phone-busy { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; background: rgba(12, 11, 10, .38); color: #fff; pointer-events: none; }
 .phone-busy .spinner { width: 40px; height: 40px; border-width: 3px; }
+
+/* Sound, captions and logo: one section at a time. */
+.sound-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin-top: 12px; padding: 4px; border-radius: 14px; background: var(--surface-2, rgba(127,127,127,.08)); }
+.sound-tab { display: grid; gap: 2px; padding: 8px 10px; text-align: left; border: 0; border-radius: 10px; background: none; color: var(--muted); font: inherit; cursor: pointer; min-width: 0; }
+.sound-tab span { font-size: 13px; font-weight: 600; }
+.sound-tab small { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sound-tab.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+.sound-tab.on small { color: var(--accent-2); }
+.sound-pane { display: grid; gap: 10px; margin-top: 12px; }
+.sound-pane .music-block { margin-top: 0; padding: 0; border: 0; }
+.sound-pane .music-title { display: none; }
+.sound-pane .voice-off-note { margin-top: 0; }
+.pane-title { margin: 0; font-weight: 600; font-size: 14px; }
+.free-line { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: var(--muted); }
+.free-more { margin: 4px 0 0; font-size: 12px; }
+.link-btn { padding: 0; border: 0; background: none; color: var(--accent-2); font: inherit; text-decoration: underline; cursor: pointer; }
+
+.ready-actions { align-items: center; gap: 10px; margin-top: 10px; }
+.ready-more { margin-top: 8px; }
+.ready-more summary { cursor: pointer; font-size: 13px; color: var(--accent-2); list-style: none; }
+.ready-more summary::-webkit-details-marker { display: none; }
+.ready-more summary::before { content: "▸ "; }
+.ready-more[open] summary::before { content: "▾ "; }
+.ready-more .hint { margin: 6px 0 0; }
+
+.mini-note { margin-top: 12px; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 12px; }
+.mini-note-title { margin: 0; font-size: 13px; color: var(--accent-2); }
+.mini-note .reel-lang { margin: 6px 0 0; }
+.mini-note summary::-webkit-details-marker { display: none; }
+.mini-note summary::before { content: "▸ "; }
+.mini-note[open] summary::before { content: "▾ "; }
+.mini-note .reel-lang .btn { padding: 6px 12px; font-size: 13px; }
+
+.finish-row { display: grid; gap: 4px; margin-top: 10px; }
+.finish-row .btn { justify-self: start; }
+
+.version-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.version-keeps { font-size: 12px; color: var(--accent-2); }

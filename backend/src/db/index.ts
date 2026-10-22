@@ -27,6 +27,8 @@ addColumn("ALTER TABLE ai_generations ADD COLUMN finished_at TEXT");
 addColumn("ALTER TABLE ai_generations ADD COLUMN duration_ms INTEGER");
 addColumn("ALTER TABLE project_step_versions ADD COLUMN scene_id INTEGER");
 addColumn("ALTER TABLE project_step_versions ADD COLUMN rejection_reason TEXT");
+// Which version this one grew from: a script from its idea, a set of frames from its script.
+addColumn("ALTER TABLE project_step_versions ADD COLUMN parent_id TEXT");
 addColumn("ALTER TABLE brand_kits ADD COLUMN learned_summary_json TEXT");
 addColumn("ALTER TABLE projects ADD COLUMN preview_token TEXT");
 addColumn("ALTER TABLE projects ADD COLUMN preview_expires_at TEXT");
