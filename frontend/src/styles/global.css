@@ -1299,3 +1299,13 @@ details.options > .brand-toggle, details.options > .examples { margin-top: 14px;
 .caption.phone-title.title-s.cap-box, .caption.phone-title.title-s.cap-brand { font-size: 5.8cqw; }
 .field-note { font-size: 12px; color: var(--accent-2); }
 .sound-card .sound-setup { margin: 8px 0 0; }
+.lang-note { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2, rgba(127,127,127,.08)); }
+.lang-note-row { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
+.lang-note-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink); flex: 1 1 180px; }
+.lang-note-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.lang-note-more { margin-top: 6px; }
+.lang-note-more summary { cursor: pointer; font-size: 12px; color: var(--muted); list-style: none; }
+.lang-note-more summary::-webkit-details-marker { display: none; }
+.lang-note-more summary::before { content: "▸ "; }
+.lang-note-more[open] summary::before { content: "▾ "; }
+.lang-note-more .hint { margin: 6px 0 0; font-size: 12px; }

@@ -800,11 +800,14 @@ export default function Studio() {
   // Lines of the Reel script in different alphabets: Ukrainian words on screen, English voice, or the other way round.
   const reelLanguagesMixed = useMemo(() => {
     const lines = [project?.script?.cta, ...(project?.script?.scenes || []).flatMap((sc) => [sc.onScreen, sc.voiceover])];
+    // A line is Ukrainian when it has Ukrainian words, English when it has everyday English words. Addresses and names
+    // ("Eltham High Street, London SE9 1TX") are neither, so they never make a script look mixed.
+    const english = /\b(the|and|to|for|with|you|your|our|we|us|is|are|of|at|in|on|this|it|join|come|see|get|be|all|now|here|every|help)\b/i;
     const kinds = new Set(
       lines
         .map((line) => String(line || ""))
-        .filter((line) => /\p{L}{3}/u.test(line))
-        .map((line) => ((line.match(/\p{Script=Cyrillic}/gu) || []).length > (line.match(/[A-Za-z]/g) || []).length ? "uk" : "en"))
+        .map((line) => (/\p{Script=Cyrillic}{3}/u.test(line) ? "uk" : english.test(line) ? "en" : ""))
+        .filter(Boolean)
     );
     return kinds.size > 1;
   }, [project?.script]);
@@ -1655,7 +1658,13 @@ export default function Studio() {
             ? t("studio.makingPicture")
             : t("studio.making");
 
-  const sceneTime = (time: unknown) => {
+  const sceneTime = (time: unknown, index?: number) => {
+    // With a recorded voice the scenes follow it: show where each one really starts in the video.
+    const cues = !project.voiceOff && project.audioUrl ? project.captions?.cues || [] : [];
+    if (index != null && cues.length && cues.every((cue) => Number.isInteger(cue.scene))) {
+      const first = index === 0 ? 0 : cues.find((cue) => (cue.scene ?? -1) >= index)?.start;
+      if (first != null) return t("studio.sceneSec", { time: String(Math.max(0, Math.round(first))) });
+    }
     const raw = asText(time).trim();
     return /^\d+(\.\d+)?$/.test(raw) ? t("studio.sceneSec", { time: raw }) : raw;
   };
@@ -2281,7 +2290,7 @@ export default function Studio() {
               {project.script.scenes.map((s, i) => (
                 <div key={s.id} className={`scene${scene === i ? " on" : ""}`}>
                   <button className="scene-pick" onClick={() => setScene(i)}>
-                    <b>{sceneTime(s.time)}</b>
+                    <b>{sceneTime(s.time, i)}</b>
                     <span>{readableLine(isImage ? s.onScreen : s.voiceover)}</span>
                   </button>
                   {project.visuals && (
@@ -2490,9 +2499,9 @@ export default function Studio() {
                   </div>
                 </div>
                 <ol className="review-scenes">
-                  {project.script.scenes.map((sc) => (
+                  {project.script.scenes.map((sc, i) => (
                     <li key={sc.id}>
-                      <span className="time-chip">{sceneTime(sc.time)}</span>
+                      <span className="time-chip">{sceneTime(sc.time, i)}</span>
                       <div>
                         {asText(sc.onScreen) && <b>{asText(sc.onScreen)}</b>}
                         {asText(sc.voiceover) && <p className="hint">{asText(sc.voiceover)}</p>}
@@ -3319,21 +3328,27 @@ export default function Studio() {
             </div>
           )}
           {!isImage && project.script && reelLanguagesMixed && !viewStep && (
-            <div className="mini-note">
-              <p className="mini-note-title">
-                {translateRedo.total > 0
-                  ? t("studio.reelLangMixedPaid", { list: translateRedo.list, total: translateRedo.total })
-                  : t("studio.reelLangMixedShort")}
-              </p>
-              <div className="reel-lang">
-                <span className="hint">{t("studio.reelLangAsk")}</span>
-                <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => translateReel("en")}>
-                  {busy === "lang-en" ? t("studio.reelLangWorking") : t("studio.reelLangEn")}
-                </button>
-                <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={() => translateReel("uk")}>
-                  {busy === "lang-uk" ? t("studio.reelLangWorking") : t("studio.reelLangUk")}
-                </button>
+            <div className="lang-note">
+              <div className="lang-note-row">
+                <p className="lang-note-title">
+                  <span aria-hidden>🌐</span> {t("studio.reelLangTitle")}
+                </p>
+                <div className="lang-note-pills" role="group" aria-label={t("studio.reelLangAsk")}>
+                  {(reelLangIsUk ? (["uk", "en"] as const) : (["en", "uk"] as const)).map((lang) => (
+                    <button key={lang} type="button" className="btn ghost tiny" disabled={Boolean(busy)} onClick={() => translateReel(lang)}>
+                      {busy === `lang-${lang}` ? t("studio.reelLangWorking") : t(lang === "uk" ? "studio.reelLangUk" : "studio.reelLangEn")}
+                    </button>
+                  ))}
+                </div>
               </div>
+              <details className="lang-note-more">
+                <summary>{t("studio.reelLangCost")}</summary>
+                <p className="hint">
+                  {translateRedo.total > 0
+                    ? t("studio.reelLangMixedPaid", { list: translateRedo.list, total: translateRedo.total })
+                    : t("studio.reelLangMixedShort")}
+                </p>
+              </details>
             </div>
           )}
           {next?.id === "voice" && <p className="hint" style={{ marginTop: 6 }}>{t("studio.voiceOffHint")}</p>}

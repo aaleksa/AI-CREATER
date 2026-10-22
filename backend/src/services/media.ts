@@ -1124,7 +1124,7 @@ async function encodeReel(params: {
     "yuv420p",
     "-c:a",
     "aac",
-    "-shortest",
+    // Every sound path is cut to the video's length already; -shortest would end the audio early with looped stills.
     "-t",
     totalSec.toFixed(2),
     "-movflags",
