@@ -1327,3 +1327,4 @@ details.options > .brand-toggle, details.options > .examples { margin-top: 14px;
 .brief-facts { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 .brief-line .brief-facts { flex-basis: 100%; order: 4; }
 .brief-brand .brief-facts { vertical-align: middle; margin-left: 4px; }
+.more-hint .more-toggle { font-size: inherit; white-space: nowrap; }

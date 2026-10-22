@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { useLocale } from "../i18n/locale";
+import MoreHint from "../components/MoreHint";
 
 function gbp(amount: number, locale: string) {
   return new Intl.NumberFormat(locale === "uk" ? "uk-UA" : "en-GB", { style: "currency", currency: "GBP" }).format(amount / 100);
@@ -70,8 +71,10 @@ export default function Billing() {
         {t("billing.balance")} <b>{credits?.balance?.credits ?? 0}</b>
       </div>
       {econ && (
-        <p className="hint" style={{ marginTop: 12 }}>
-          {econ.readyReels
+        <MoreHint
+          style={{ marginTop: 12 }}
+          short={t("billing.econShort")}
+          full={econ.readyReels
             ? t("billing.econReady", {
                 per: econ.costPerReadyReelGbp.toFixed(3),
                 text: econ.actualCostGbp.text.toFixed(3),
@@ -85,7 +88,7 @@ export default function Billing() {
                 tts: econ.actualCostGbp.tts.toFixed(3),
                 render: econ.actualCostGbp.render.toFixed(3),
               })}
-        </p>
+        />
       )}
       {msg && <p className="hint">{msg}</p>}
 
@@ -132,7 +135,7 @@ export default function Billing() {
       {!checkoutEnabled && <p className="hint" style={{ marginTop: 16 }}>{t("billing.checkoutClosed")}</p>}
 
       <h2 className="page-title" style={{ fontSize: 28, marginTop: 48 }}>{t("billing.buyTitle")}</h2>
-      <p className="hint">{t("billing.buyHint")}</p>
+      <MoreHint short={t("billing.buyHintShort")} full={t("billing.buyHint")} />
       <div className="list" style={{ maxWidth: 640, marginTop: 12 }}>
         {packs.map((pack) => (
           <div className="item" key={pack.id}>

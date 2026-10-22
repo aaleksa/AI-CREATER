@@ -6,6 +6,7 @@ import { downloadName, shapeLabel } from "../lib/fileName";
 import { prepareImage } from "../lib/imageUpload";
 import ExampleImages, { useProjectImageSrcs } from "../components/ExampleImages";
 import { useLocale } from "../i18n/locale";
+import MoreHint from "../components/MoreHint";
 
 const VIDEO_STEPS = [
   { id: "idea", cost: 5 },
@@ -149,7 +150,7 @@ function PictureCompare({
   if (versions.length < 2) return null;
   return (
     <div style={{ marginTop: 16 }}>
-      <p className="hint">{t("studio.compareLast")}</p>
+      <MoreHint short={t("studio.compareLastShort")} full={t("studio.compareLast")} />
       {versions.length > 2 && (
         <button type="button" className="btn ghost compare-delete" disabled={busy} onClick={onKeepCurrent}>
           {t("studio.keepCurrentOnly")}
@@ -338,8 +339,9 @@ function VersionCompare({
     <details className="edit-block versions">
       <summary className="edit-block-head">
         <h3>{t(step === "script" ? "studio.scriptVersions" : "studio.ideaVersions", { n: versions.length })}</h3>
-        <p className="hint">{t(step === "script" ? "studio.scriptCompare" : onFork ? "studio.ideaCompare" : "studio.ideaCompareImage")}</p>
+        <p className="hint">{t(step === "script" ? "studio.scriptCompareShort" : onFork ? "studio.ideaCompareShort" : "studio.ideaCompareImage")}</p>
       </summary>
+      {(step === "script" || onFork) && <p className="hint">{t(step === "script" ? "studio.scriptCompare" : "studio.ideaCompare")}</p>}
       <ol className="version-list">
         {ordered.map(({ version, n }) => {
           const line =
@@ -1693,9 +1695,7 @@ export default function Studio() {
   const stepNoun = (step: string) => (step === "render" && !isImage ? t("studio.videoNoun") : stepLabel(step).toLowerCase());
   const redoList = (
     <>
-      <p className="hint">
-        {t(isImage ? "studio.keepFreeImage" : "studio.keepFree")}
-      </p>
+      <MoreHint short={t("studio.keepFreeShort")} full={t(isImage ? "studio.keepFreeImage" : "studio.keepFree")} />
       {STEPS.filter((s) => doneThrough(project, s.id))
         // A switched-off step has nothing to redo (redoing would charge and switch it back on); a finished video has
         // its own free "Update the video".
@@ -1799,7 +1799,7 @@ export default function Studio() {
           </span>
         )}
       </summary>
-      {!project.hasVideo && <p className="hint sound-setup">{t("studio.soundSetupHint")}</p>}
+      {!project.hasVideo && <MoreHint className="hint sound-setup" short={t("studio.soundSetupHintShort")} full={t("studio.soundSetupHint")} />}
       <div className="sound-tabs" role="tablist" aria-label={t("studio.soundTitle")}>
         {(
           [
@@ -1992,7 +1992,7 @@ export default function Studio() {
                     <input type="checkbox" checked={reelLogo.plate} disabled={Boolean(busy)} onChange={(e) => saveReelLogo({ plate: e.target.checked })} />
                     <span>{t("studio.reelLogoPlate")}</span>
                   </label>
-                  <p className="hint" style={{ margin: 0 }}>{t("studio.reelLogoPlateHint")}</p>
+                  <MoreHint style={{ margin: 0 }} short={t("studio.reelLogoPlateHintShort")} full={t("studio.reelLogoPlateHint")} />
                 </>
               )}
             </>
@@ -2121,7 +2121,7 @@ export default function Studio() {
                 </div>
                 {(project.voice?.voiceId || VOICE_CHOICES[0]) !== (project.voiceChoice || VOICE_CHOICES[0]) && (
                   <div className="voice-off-note">
-                    <p className="hint" style={{ margin: 0 }}>{t("studio.voiceOtherPicked")}</p>
+                    <MoreHint style={{ margin: 0 }} short={t("studio.voiceOtherPickedShort")} full={t("studio.voiceOtherPicked")} />
                     <button type="button" className="btn ghost" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => run("voice", true)}>
                       {t("studio.voiceRecordAgain", { credits: extraPrice("voice").credits })}
                     </button>
@@ -2463,11 +2463,16 @@ export default function Studio() {
                   const plan = draftPlan();
                   return plan.voiceChanged && project.audioUrl && !project.voiceOff ? (
                     <div className="voice-warn" role="note">
-                      {t(project.hasVideo ? "studio.voiceTextWarnVideo" : "studio.voiceTextWarn", { voice: prices.voice, caps: prices.caps })}
+                      <MoreHint
+                        as="span"
+                        className=""
+                        short={t(project.hasVideo ? "studio.voiceTextWarnVideoShort" : "studio.voiceTextWarnShort", { voice: prices.voice, caps: prices.caps })}
+                        full={t(project.hasVideo ? "studio.voiceTextWarnVideo" : "studio.voiceTextWarn", { voice: prices.voice, caps: prices.caps })}
+                      />
                     </div>
                   ) : null;
                 })()}
-                <p className="hint">{t("studio.scriptEditHint", prices)}</p>
+                <MoreHint short={t("studio.scriptEditHintShort", prices)} full={t("studio.scriptEditHint", prices)} />
                 <div className="action-row">
                   {(() => {
                     const plan = draftPlan();
@@ -2868,7 +2873,7 @@ export default function Studio() {
                   </summary>
                 {isPoster && (
                   <div style={{ marginTop: 16 }}>
-                    <p className="hint">{t("studio.samePictureHint")}</p>
+                    <MoreHint short={t("studio.samePictureHintShort")} full={t("studio.samePictureHint")} />
                     <div className="action-row">
                       <button
                         type="button"
@@ -2925,7 +2930,7 @@ export default function Studio() {
                             {t("studio.editPictureClose")}
                           </button>
                         </div>
-                        <p className="hint">{t("studio.editPictureHint")}</p>
+                        <MoreHint short={t("studio.editPictureHintShort")} full={t("studio.editPictureHint")} />
                         <textarea
                           className="brief-box"
                           value={copyEdit}
@@ -3035,7 +3040,7 @@ export default function Studio() {
                     <p className="hint">{t("studio.placeAutoHint")}</p>
                     {placing ? (
                       <div className="logo-place-panel">
-                        <p className="hint">{t("studio.placeHint")}</p>
+                        <MoreHint short={t("studio.placeHintShort")} full={t("studio.placeHint")} />
                         <label className="hint logo-place-size">
                           {t("studio.placeSize")}
                           <input
@@ -3111,7 +3116,7 @@ export default function Studio() {
                     </div>
                     {placing ? (
                       <div className="logo-place-panel">
-                        <p className="hint">{t("studio.placeHint")}</p>
+                        <MoreHint short={t("studio.placeHintShort")} full={t("studio.placeHint")} />
                         <label className="hint logo-place-size">
                           {t("studio.placeSize")}
                           <input

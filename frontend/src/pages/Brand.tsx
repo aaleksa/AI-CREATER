@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, fetchMedia, type BrandKitRow } from "../lib/api";
 import { useLocale } from "../i18n/locale";
 import { ImageUploadError, prepareImage } from "../lib/imageUpload";
+import MoreHint from "../components/MoreHint";
 
 const TONES = [
   { id: "warm", labelKey: "brand.toneWarm", exKey: "brand.toneWarmEx", text: "Warm and friendly. Like a regular, not an ad." },
@@ -414,6 +415,7 @@ export default function Brand() {
     onPick,
     onRemove,
     hint: tileHint,
+    hintFull: tileHintFull,
   }: {
     id: string;
     label: string;
@@ -422,6 +424,8 @@ export default function Brand() {
     onPick: (file: File | undefined) => void;
     onRemove: () => void;
     hint?: string;
+    /** The whole hint, behind "More" when the short one is shown. */
+    hintFull?: string;
   }) {
     return (
       <div className="tile">
@@ -429,7 +433,7 @@ export default function Brand() {
           {src ? <img src={src} alt="" /> : <span>+ {t("brand.tileEmpty")}</span>}
         </label>
         <b>{label}</b>
-        {tileHint && <span className="hint">{tileHint}</span>}
+        {tileHint && (tileHintFull ? <MoreHint as="span" short={tileHint} full={tileHintFull} /> : <span className="hint">{tileHint}</span>)}
         <div className="tile-actions">
           <label className="btn ghost" htmlFor={id}>{src ? t("brand.replaceRef") : t("brand.addRef")}</label>
           {src && (
@@ -594,7 +598,7 @@ export default function Brand() {
                 </>
               )}
               <p className="hint" style={{ marginTop: 10 }}>
-                <b>{t("brand.fontOwn")}.</b> {t("brand.fontOwnHint")}
+                <b>{t("brand.fontOwn")}.</b> <MoreHint as="span" className="" short={t("brand.fontOwnHintShort")} full={t("brand.fontOwnHint")} />
               </p>
               <div className="tile-actions">
                 <label className="btn ghost" htmlFor="font-file">{form.font_url ? t("brand.replaceFont") : t("brand.addFont")}</label>
@@ -619,7 +623,7 @@ export default function Brand() {
             <h2>{t("brand.assetsTitle")}</h2>
             <p className="hint">{t("brand.assetsHint")}</p>
             <div className="tiles" id="brand-logo" tabIndex={-1}>
-              <Tile id="logo" label={t("brand.logo")} src={logoSrc} contain onPick={onLogo} onRemove={removeLogo} hint={t("brand.logoHint")} />
+              <Tile id="logo" label={t("brand.logo")} src={logoSrc} contain onPick={onLogo} onRemove={removeLogo} hint={t("brand.logoHintShort")} hintFull={t("brand.logoHint")} />
               {REF_SLOTS.map((slot) => (
                 <Tile
                   key={slot.id}
@@ -669,7 +673,7 @@ export default function Brand() {
                     </button>
                   ))}
                 </div>
-                <p className="hint pill-hint">{t("brand.cornerHint")}</p>
+                <MoreHint className="hint pill-hint" short={t("brand.cornerHintShort")} full={t("brand.cornerHint")} />
                 {contactOnPhotos && stampText && form.logo_position === "bottom-left" && (
                   <p className="hint pill-hint">{t("brand.cornerContactMoves")}</p>
                 )}

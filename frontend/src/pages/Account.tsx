@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, clearSession, fetchMedia, refreshMe, saveSession, type Me } from "../lib/api";
 import { useLocale } from "../i18n/locale";
 import PasswordInput from "../components/PasswordInput";
+import MoreHint from "../components/MoreHint";
 
 type Note = { kind: "ok" | "err"; text: string } | null;
 
@@ -221,7 +222,7 @@ export default function Account() {
 
       <section className="panel account-panel">
         <h2>{t("account.data")}</h2>
-        <p className="hint">{t("account.dataHint")}</p>
+        <MoreHint short={t("account.dataHintShort")} full={t("account.dataHint")} />
         <NoteLine note={dataNote} />
         <button className="btn ghost" type="button" style={{ marginTop: 12 }} disabled={busy === "data"} onClick={downloadData}>
           {t("account.download")}
