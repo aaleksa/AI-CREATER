@@ -676,6 +676,9 @@ export default function Studio() {
     : VIDEO_STEPS;
   const stepLabel = (id: string) =>
     id === "visuals" ? t(isInvite ? "steps.invitation" : isImage ? "steps.pictures" : "steps.visuals") : t(`steps.${id}`);
+  /** The step as the object of "Make …": "Зробити ідею", "Зробити відео". */
+  const stepObject = (id: string) =>
+    t(`stepsMake.${id === "visuals" ? (isInvite ? "invitation" : isImage ? "pictures" : "visuals") : id}`);
   const next = useMemo(() => STEPS.find((s) => project && !doneThrough(project, s.id)), [project, isImage, isInvite]);
   const lastDone = useMemo(() => [...STEPS].reverse().find((s) => project && doneThrough(project, s.id)), [project, isImage, isInvite]);
   const extraPrice = (step: string, sceneId?: number) => {
@@ -766,9 +769,16 @@ export default function Studio() {
   }
 
   // Translating is free itself; what it clears has to be made again. Only what this Reel already has is counted.
-  const translateRedo = (() => {
+  // What a translation makes again: nothing for the voice when its words are already in that language (only the
+  // on-screen words change then, and the voice and its captions stay).
+  const translateCost = (lang: "en" | "uk") => {
     const parts: string[] = [];
     let total = 0;
+    const voiceMoves = (project?.script?.scenes || []).some((sc) => {
+      const kind = lineLanguage(String(sc.voiceover || ""));
+      return kind !== "" && kind !== lang;
+    });
+    if (!voiceMoves) return { list: "", total: 0 };
     if (!project?.voiceOff && project?.audioUrl) {
       parts.push(t("studio.redoVoice", { n: prices.voice }));
       total += prices.voice;
@@ -782,7 +792,7 @@ export default function Studio() {
       total += prices.video;
     }
     return { list: parts.join(", "), total };
-  })();
+  };
   const rawFrame = project?.visuals?.[scene]?.imageUrl || "";
   const currentFrame =
     (project?.visuals?.[scene] && imageSrcs[project.visuals[scene].sceneId]) ||
@@ -827,6 +837,8 @@ export default function Studio() {
   const reelMarkLoading = !reelHasMark && !reelBrandOff && Boolean(kit?.logo_url || kit?.business_name) && reelMarkChecked === "";
   // The end card also works with just the business name.
   const reelCanEndCard = !isImage && !reelBrandOff && Boolean(kit?.logo_url || kit?.business_name);
+  const recordedVoice = [project?.voice?.voiceId, project?.voice?.voice].find((name) => (VOICE_CHOICES as readonly string[]).includes(String(name)));
+  const voiceName = recordedVoice ? t(`studio.voice_${recordedVoice}`) : asText(project?.voice?.voicePreset || project?.voice?.voice);
   const reelLangIsUk = (() => {
     const kinds = (project?.script?.scenes || []).flatMap((sc) => [sc.voiceover, sc.onScreen]).map((line) => lineLanguage(String(line || "")));
     const uk = kinds.filter((kind) => kind === "uk").length;
@@ -836,7 +848,7 @@ export default function Studio() {
     return (text.match(/[\u0400-\u04FF]/g) || []).length >= (text.match(/[A-Za-z]/g) || []).length;
   })();
   const sceneNumber = (sceneId: number) => Math.max(0, project?.script?.scenes.findIndex((sc) => sc.id === sceneId) ?? 0) + 1;
-  const VIDEO_UPDATES = ["remake", "reel-logo", "caption-style", "music", "music-off", "captions-on", "captions-off", "edit-captions"];
+  const VIDEO_UPDATES = ["remake", "reel-logo", "caption-style", "reel-titles", "music", "music-off", "captions-on", "captions-off", "edit-captions"];
   // Changes to a finished Reel after which the server makes the video again (or takes it down when a new voice is needed).
   const touchesVideo = (key: string) =>
     VIDEO_UPDATES.includes(key) || ["edit-script", "voice-on", "voice-off", "lang-en", "lang-uk"].includes(key) || key.startsWith("restore-");
@@ -855,13 +867,12 @@ export default function Studio() {
     return "";
   }
   function doneText(key: string) {
+    if (key === "render") return t("studio.doneRender");
+    // Whatever the change, a video that was there and is gone now is always said out loud.
+    if (!isImage && videoAtStart.current && !project?.hasVideo) return t("studio.doneVideoDown");
     const frame = /^visual-(\d+)$/.exec(key);
     if (frame) return t(project?.hasVideo && !isImage ? "studio.doneFrameVideo" : "studio.doneFrame", { n: sceneNumber(Number(frame[1])) });
-    if (key === "render") return t("studio.doneRender");
-    if (!isImage && touchesVideo(key) && videoAtStart.current) {
-      // The video was there before: say whether it is updated or was taken down until a new voice is made.
-      return t(project?.hasVideo ? "studio.doneVideo" : "studio.doneVideoDown");
-    }
+    if (!isImage && touchesVideo(key) && videoAtStart.current) return t("studio.doneVideo");
     return "";
   }
   const busyNote = busyText(busy);
@@ -930,7 +941,9 @@ export default function Studio() {
           return execute(step, regenerate, sceneId, feedback, true);
         }
       }
-      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+      const refunded = err instanceof ApiError && err.code === "credits_refunded";
+      setError(`${err instanceof Error ? te(err.message) : t("studio.failStep")}${refunded ? ` ${t("studio.creditsBack")}` : ""}`);
+      if (refunded) refreshMe();
     } finally {
       setBusy(null);
     }
@@ -1126,7 +1139,7 @@ export default function Studio() {
   /** A new Reel from this idea or script version; this one stays as it is. */
   async function forkFrom(step: "idea" | "script", versionId: string) {
     if (!id) return;
-    if (!window.confirm(t("studio.forkConfirm"))) return;
+    if (!window.confirm(t("studio.forkConfirm", { video: STEPS.find((s) => s.id === "render")?.cost ?? 55 }))) return;
     setBusy("fork");
     setError("");
     try {
@@ -1209,6 +1222,7 @@ export default function Studio() {
 
   async function translateReel(lang: "en" | "uk") {
     if (!id || !project?.script) return;
+    const translateRedo = translateCost(lang);
     const translateVideoNote = project.hasVideo && project.audioUrl && !project.voiceOff ? t("studio.videoDownNote") : "";
     if (translateRedo.total > 0 && !window.confirm(t("studio.reelLangConfirm", { list: translateRedo.list, total: translateRedo.total, videoNote: translateVideoNote }))) return;
     setBusy(`lang-${lang}`);
@@ -1679,7 +1693,13 @@ export default function Studio() {
       <p className="hint">
         {t("studio.keepFree")}
       </p>
-      {STEPS.filter((s) => doneThrough(project, s.id)).map((s) => (
+      {STEPS.filter((s) => doneThrough(project, s.id))
+        // A switched-off step has nothing to redo (redoing would charge and switch it back on); a finished video has
+        // its own free "Update the video".
+        .filter((s) => !(s.id === "voice" && project.voiceOff))
+        .filter((s) => !(s.id === "captions" && (project.captionsOff || project.voiceOff)))
+        .filter((s) => !(s.id === "render" && !isImage && project.hasVideo))
+        .map((s) => (
         <button
           key={`regen-${s.id}`}
           className="btn ghost"
@@ -1748,6 +1768,12 @@ export default function Studio() {
             .filter(Boolean)
             .join(" · ")}
         </p>
+        {busyNote && project.hasVideo && (
+          <span className="sound-updating" role="status">
+            <span className="spinner" aria-hidden />
+            {busyNote} <span className="busy-time">{elapsedLabel}</span>
+          </span>
+        )}
       </summary>
       {!project.hasVideo && <p className="hint sound-setup">{t("studio.soundSetupHint")}</p>}
       <div className="sound-tabs" role="tablist" aria-label={t("studio.soundTitle")}>
@@ -1784,7 +1810,7 @@ export default function Studio() {
           </button>
         </div>
       )}
-      {!project.captionsOff && !project.captions && (
+      {!project.captionsOff && !project.captions && next?.id !== "captions" && (
         <div className="voice-off-note">
           <p className="hint" style={{ margin: 0 }}>{t(project.voiceOff ? "studio.captionsLaterNoVoice" : "studio.captionsLater", { caps: prices.caps })}</p>
           <button className="btn ghost" type="button" disabled={Boolean(busy)} onClick={() => toggleCaptions(true)}>
@@ -2060,7 +2086,7 @@ export default function Studio() {
             {!project.voiceOff && project.audioUrl && (
               <>
                 <p className="hint" style={{ margin: 0 }}>{t("studio.voiceRecorded")}</p>
-                {audioSrc && <audio controls src={audioSrc} style={{ width: "100%" }} />}
+                {audioSrc && next?.id !== "captions" && <audio controls src={audioSrc} style={{ width: "100%" }} />}
                 <p className="pane-title">{t("studio.voicePick")}</p>
                 <VoicePicker value={project.voiceChoice || VOICE_CHOICES[0]} onPick={pickVoice} disabled={Boolean(busy)} lang={reelLangIsUk ? "uk" : "en"} t={t} />
                 <div className="voice-off-note">
@@ -2069,7 +2095,7 @@ export default function Studio() {
                     {busy === "voice-off" ? t("studio.voiceOffSaving") : t("studio.voiceOffDo")}
                   </button>
                 </div>
-                {(project.voice?.voiceId || "nova") !== (project.voiceChoice || VOICE_CHOICES[0]) && (
+                {(project.voice?.voiceId || VOICE_CHOICES[0]) !== (project.voiceChoice || VOICE_CHOICES[0]) && (
                   <div className="voice-off-note">
                     <p className="hint" style={{ margin: 0 }}>{t("studio.voiceOtherPicked")}</p>
                     <button type="button" className="btn ghost" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => run("voice", true)}>
@@ -2079,17 +2105,14 @@ export default function Studio() {
                 )}
               </>
             )}
-            {!project.voiceOff && !project.audioUrl && (
+            {!project.voiceOff && !project.audioUrl && next?.id === "voice" && (
+              <p className="hint" style={{ margin: 0 }}>{t("studio.voicePickBelow")}</p>
+            )}
+            {!project.voiceOff && !project.audioUrl && next?.id !== "voice" && (
                 <>
-                  {next?.id === "voice" ? (
-                    <p className="hint" style={{ margin: 0 }}>{t("studio.voicePickBelow")}</p>
-                  ) : (
-                    <>
-                      <p className="pane-title">{t("studio.voicePick")}</p>
-                      <VoicePicker value={project.voiceChoice || VOICE_CHOICES[0]} onPick={pickVoice} disabled={Boolean(busy)} lang={reelLangIsUk ? "uk" : "en"} t={t} />
-                      <p className="hint" style={{ margin: 0 }}>{t("studio.voiceLater", { credits: prices.voice })}</p>
-                    </>
-                  )}
+                  <p className="pane-title">{t("studio.voicePick")}</p>
+                  <VoicePicker value={project.voiceChoice || VOICE_CHOICES[0]} onPick={pickVoice} disabled={Boolean(busy)} lang={reelLangIsUk ? "uk" : "en"} t={t} />
+                  <p className="hint" style={{ margin: 0 }}>{t("studio.voiceLater", { credits: prices.voice })}</p>
                   <div className="voice-off-note">
                     <p className="hint" style={{ margin: 0 }}>{t("studio.voiceSkipHere")}</p>
                     <button type="button" className="btn ghost" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => toggleVoice(true)}>
@@ -2140,7 +2163,7 @@ export default function Studio() {
             note={
               missedExamples && !(project.refs || []).length
                 ? t("briefImages.missed", { n: missedExamples })
-                : t("briefImages.nextTime")
+                : t(isImage ? "briefImages.nextTime" : "briefImages.nextTimeReel")
             }
             onAdd={async (image) => {
               const { refs } = await api.addProjectRef(project.id, image);
@@ -2183,17 +2206,17 @@ export default function Studio() {
           <BrandToggle
             locked
             value={project.useBrand ?? true}
-            ask={t(project.useBrand ?? true ? "studio.brandLockedOn" : "studio.brandLockedOff")}
+            ask={t(project.useBrand ?? true ? (isImage ? "studio.brandLockedOn" : "studio.brandLockedOnReel") : isImage ? "studio.brandLockedOff" : "studio.brandLockedOffReel")}
             onLabel={t("studio.useBrandOn")}
             onHint={t("home.useBrandHint")}
             offLabel={t("studio.useBrandOff")}
             offHint={t("home.skipBrandHint")}
-            usingLabel={t("studio.brandUsing")}
+            usingLabel={t(isImage ? "studio.brandUsing" : "studio.brandUsingReel")}
             kit={kit}
           />
         </>
       )}
-      {error && (
+      {error && viewStep && (
         <p className="err" style={{ marginTop: -8, marginBottom: 16 }}>
           {error}
         </p>
@@ -2563,8 +2586,7 @@ export default function Studio() {
             {viewStep === "voice" && project.voiceOff && <p className="lede">{t("studio.voiceOffNow")}</p>}
             {viewStep === "voice" && !project.voiceOff && (
               <>
-                <p><b>{asText(project.voice?.voicePreset || project.voice?.voice)}</b></p>
-                {asText(project.voice?.notes) && <p className="lede">{asText(project.voice?.notes)}</p>}
+                <p><b>{voiceName}</b></p>
                 {audioSrc && <audio controls src={audioSrc} style={{ width: "100%", marginTop: 12 }} />}
               </>
             )}
@@ -2760,8 +2782,7 @@ export default function Studio() {
           )}
           {project.audioUrl && next?.id === "captions" && (
             <>
-              <p><b>{asText(project.voice?.voicePreset || project.voice?.voice)}</b></p>
-              <p className="lede">{asText(project.voice?.notes)}</p>
+              <p><b>{voiceName}</b></p>
               {audioSrc && <audio controls src={audioSrc} style={{ width: "100%", marginTop: 12 }} />}
             </>
           )}
@@ -3297,7 +3318,11 @@ export default function Studio() {
           )}
           {next && !(isImage && next.id === "visuals" && project.idea?.shot?.summary) && (
             <div className="action-row" style={{ marginTop: 18 }}>
-              <button className="btn accent" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => run(next.id)}>
+              <button
+                className={`btn ${!isImage && project.renderPaid && !project.hasVideo && finishSteps.length > 0 ? "ghost" : "accent"}`}
+                disabled={Boolean(busy) || Boolean(pendingRegen)}
+                onClick={() => run(next.id)}
+              >
                 {busy && busy === next.id
                   ? makingLabel
                   : next.id === "captions" && project.voiceOff
@@ -3307,8 +3332,8 @@ export default function Studio() {
                         ? t("studio.makeVideoFree")
                         : t(extraPrice("render").extra ? "studio.makeVideo2x" : "studio.makeVideo", { credits: extraPrice("render").credits })
                       : extraPrice(next.id).extra
-                      ? t("studio.makeStep2x", { label: stepLabel(next.id).toLowerCase(), credits: extraPrice(next.id).credits })
-                      : t("studio.makeStep", { label: stepLabel(next.id).toLowerCase(), credits: extraPrice(next.id).credits })}
+                      ? t("studio.makeStep2x", { label: stepObject(next.id), credits: extraPrice(next.id).credits })
+                      : t("studio.makeStep", { label: stepObject(next.id), credits: extraPrice(next.id).credits })}
               </button>
               {next.id === "voice" && (
                 <button className="btn ghost" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={() => toggleVoice(true)}>
@@ -3324,12 +3349,11 @@ export default function Studio() {
           )}
           {finishSteps.length > 1 && !viewStep && !(project.renderPaid && !project.hasVideo) && (
             <div className="finish-row">
-              <button type="button" className="btn ghost" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={finishReel}>
+              <button type="button" className="link-btn" disabled={Boolean(busy) || Boolean(pendingRegen)} onClick={finishReel} title={t("studio.finishHint")}>
                 {finishTotal > 0
                   ? t("studio.finishReel", { list: finishSteps.map((step) => t(step === "render" ? "studio.videoNoun" : step === "voice" ? "studio.voiceNoun" : "studio.captionsNoun")).join(", "), total: finishTotal })
                   : t("studio.finishReelFree")}
               </button>
-              <p className="hint" style={{ margin: 0 }}>{t("studio.finishHint")}</p>
             </div>
           )}
           {!isImage && project.script && !viewStep && (
@@ -3352,11 +3376,15 @@ export default function Studio() {
               </div>
               <details className="lang-note-more">
                 <summary>{t("studio.reelLangCost")}</summary>
-                <p className="hint">
-                  {translateRedo.total > 0
-                    ? t("studio.reelLangMixedPaid", { list: translateRedo.list, total: translateRedo.total })
-                    : t("studio.reelLangMixedShort")}
-                </p>
+                {(reelLanguagesMixed ? (reelLangIsUk ? (["uk", "en"] as const) : (["en", "uk"] as const)) : ([reelLangIsUk ? "en" : "uk"] as const)).map((lang) => {
+                  const cost = translateCost(lang);
+                  const text = cost.total > 0 ? t("studio.reelLangMixedPaid", { list: cost.list, total: cost.total }) : t("studio.reelLangMixedShort");
+                  return (
+                    <p key={lang} className="hint">
+                      {reelLanguagesMixed ? `${t(lang === "uk" ? "studio.reelLangUk" : "studio.reelLangEn")}: ${text}` : text}
+                    </p>
+                  );
+                })}
               </details>
             </div>
           )}

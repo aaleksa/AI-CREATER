@@ -1108,7 +1108,8 @@ async function encodeReel(params: {
     );
   };
 
-  const out = videoFile(params.projectId);
+  // Made next to the old video and swapped in only when it is complete, so a failed remake leaves the old one playable.
+  const out = path.join(dir, `reel-render-${randomUUID()}.mp4`);
   const encode = (withSubtitles: boolean) => [
     "-y",
     ...inputs,
@@ -1133,18 +1134,20 @@ async function encodeReel(params: {
   ];
 
   try {
-    await run(ffmpegPath, encode(true));
-  } catch (first) {
-    if (!subtitles) throw first;
     try {
-      await run(ffmpegPath, encode(false));
-    } catch {
-      throw first;
+      await run(ffmpegPath, encode(true));
+    } catch (first) {
+      if (!subtitles) throw first;
+      try {
+        await run(ffmpegPath, encode(false));
+      } catch {
+        throw first;
+      }
     }
-  }
-
-  if (!hasVideoFile(params.projectId)) {
-    throw new Error("Renderer did not produce a video file.");
+    if (!fs.existsSync(out) || !fs.statSync(out).size) throw new Error("Renderer did not produce a video file.");
+    fs.renameSync(out, videoFile(params.projectId));
+  } finally {
+    fs.rmSync(out, { force: true });
   }
   return { provider: "auteur-renderer", model: "ffmpeg-1080x1920", cost: 0.01 };
 }

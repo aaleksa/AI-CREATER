@@ -327,7 +327,7 @@ function stepAttemptCount(projectId: string, step: string) {
   const row = db
     .prepare(
       `SELECT COUNT(*) AS n FROM ai_generations
-       WHERE project_id = ? AND type = ? AND status IN ('succeeded', 'running', 'failed')`
+       WHERE project_id = ? AND type = ? AND status IN ('succeeded', 'running')`
     )
     .get(projectId, step) as { n: number } | undefined;
   return Number(row?.n ?? 0);
@@ -355,7 +355,7 @@ function stepAttemptCounts(projectId: string) {
     .prepare(
       `SELECT type, COUNT(*) AS n FROM ai_generations
        WHERE project_id = ? AND type IN ('idea', 'script', 'visuals', 'voice', 'captions', 'render')
-         AND status IN ('succeeded', 'running', 'failed')
+         AND status IN ('succeeded', 'running')
        GROUP BY type`
     )
     .all(projectId) as { type: string; n: number }[];
@@ -1759,21 +1759,18 @@ export async function runStep(
       provider: "pending",
       model: "pending",
       actualCost: 0,
-      credits: providerTouched ? reserved : 0,
+      credits: 0,
       status: "failed",
-      meta,
+      meta: { ...meta, aiCalled: providerTouched },
     });
-    if (!providerTouched) {
-      refundCredits(userId, reserved, `Refund ${step} — AI was not called`);
-      db.prepare(
-        `UPDATE projects SET status = CASE WHEN status = 'generating' THEN 'draft' ELSE status END, updated_at = datetime('now') WHERE id = ?`
-      ).run(projectId);
-    } else {
-      db.prepare(
-        `UPDATE projects SET credits_used = credits_used + ?, status = CASE WHEN status = 'generating' THEN 'draft' ELSE status END, updated_at = datetime('now') WHERE id = ?`
-      ).run(reserved, projectId);
-    }
-    throw forOwner(error, `Step ${step} (${projectId})`, stepFailedText(step, type));
+    // Nothing came out, so nothing is paid — even when the AI was called (that cost is ours).
+    if (reserved > 0) refundCredits(userId, reserved, `Refund ${step} — ${providerTouched ? "the AI did not deliver" : "AI was not called"}`);
+    db.prepare(
+      `UPDATE projects SET status = CASE WHEN status = 'generating' THEN 'draft' ELSE status END, updated_at = datetime('now') WHERE id = ?`
+    ).run(projectId);
+    const failed = forOwner(error, `Step ${step} (${projectId})`, stepFailedText(step, type)) as Error & { code?: string };
+    if (reserved > 0 && !failed.code) failed.code = "credits_refunded";
+    throw failed;
   }
 }
 
@@ -2106,7 +2103,10 @@ function keepCurrentVoice(projectId: string) {
     | undefined;
   const script = parse<Script>(row?.script_json as string | null);
   if (!row || !script || Number(row.voice_off) === 1 || !hasVoiceFile(projectId)) return;
-  const voice = voiceChoiceOf(row.voice_choice);
+  // Kept under the voice it was actually read in, not the one picked since.
+  const said = parse<{ voiceId?: unknown; voice?: unknown }>(row.voice_json as string | null);
+  const recorded = [said?.voiceId, said?.voice].find((name) => (VOICE_CHOICES as readonly string[]).includes(String(name)));
+  const voice = voiceChoiceOf(recorded || row.voice_choice);
   if (hasVoiceTake(projectId, voiceTakeKeyFor(projectId, script, voice))) return;
   const key = voiceTakeKey(script, voice);
   saveVoiceTake(projectId, key, parse(row.voice_json as string | null));

@@ -6,7 +6,7 @@ Auteur is not a Canva clone. It is a simple AI content studio: the user never ch
 
 UI: **English and Ukrainian** (EN / УК, stored in the browser). The brief stays in the language they wrote. **Light and dark theme** (☀ / ☾, follows the device until you choose) and a phone layout with a bottom tab bar.
 
-Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.71). AI cost per picture and per 400 credits: [docs/COSTS.md](docs/COSTS.md).
+Full specification: [docs/TZ.md](docs/TZ.md) · [TZ.md](TZ.md) (v1.72). AI cost per picture and per 400 credits: [docs/COSTS.md](docs/COSTS.md).
 
 The first studio is **one short video** (30 seconds, Instagram or TikTok — same file) and still **Image / Posts**. A Reel is 150 credits; a still post is 13 (idea + one picture). **Video** and **Advertisement** stay as two separate Create stubs (TZ §2.3). Social post is a third stub.
 
@@ -45,6 +45,7 @@ Plans (provisional until real unit cost is measured):
 - **Change something on a finished picture** (8 credits): words, an object, the background or room for a logo — the AI changes only what you ask and keeps the rest. You can attach one small example picture (the thing to add, or the look to match).
 - **Voice and captions match the script**: the voice reads exactly the scenes’ “Voiceover” text (`gpt-4o-mini-tts`, natural Ukrainian or English, `tts-1` fallback), in a voice you pick — warm, upbeat or calm female; warm, deep or even male — each with a ▶ sample. Captions are timed to the recorded voice word by word (`whisper-1`), in short lines that never cross scenes. Prices unchanged.
 - **Scene headlines**: in a Reel with a voice, each scene’s “On screen” words show as a big headline at the top (same look as the captions, below the logo if it’s at the top); the captions at the bottom are what the voice says. Without a voice the on-screen words are the captions and there are no headlines. The phone preview in Studio shows the same.
+- **Reel review fixes (v1.72)**: the daily clean-up no longer crashes the server on the caption-fonts folder; music is kept 90 days; a failed remake leaves the old video; every failed AI try gives its credits back; no redo buttons for switched-off steps; one “No voice”, one player, one error; honest paid/free texts; “Make the idea”, last step “Video”, voices shown by name.
 - **The whole voice is heard**: fixed a cut where a longer Reel’s audio stopped around 20 s; scene times in Studio show where each scene really starts once the voice is recorded.
 - **Headlines have their own settings**: a “Headlines” tab next to “Captions” — show or hide, look (clean, on a box, brand colour) and size (small, medium, large), separate from the captions. Free; a finished video updates straight away.
 - **The video follows the voice**: each scene starts when the voice reaches its words and the video lasts as long as the voice, so nothing is cut and frames, headlines and captions change together.
