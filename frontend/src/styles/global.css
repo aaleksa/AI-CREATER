@@ -1396,3 +1396,7 @@ a, button, summary, label { -webkit-tap-highlight-color: transparent; }
 .side .admin-link { display: none; }
 .phone.placing .phone-frame { animation: none; transform: none; }
 .preview-video { display: block; width: min(360px, 100%); border-radius: 24px; margin-top: 24px; }
+.verify-code { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.verify-code input { width: 8.5em; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-field); letter-spacing: .2em; font-size: 16px; }
+.verify-code .btn { padding: 8px 16px; }
+.forgot-link { justify-self: start; align-self: flex-start; margin-top: 6px; font-size: 13px; }

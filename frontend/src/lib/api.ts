@@ -211,6 +211,12 @@ export const api = {
   verifyEmail: (token: string) =>
     request<{ ok: true }>("/auth/verify-email", { method: "POST", body: JSON.stringify({ token }) }),
   resendVerification: () => request<{ verified: boolean }>("/auth/verify-email/resend", { method: "POST" }),
+  verifyEmailCode: (code: string) =>
+    request<{ verified: boolean }>("/auth/verify-email/code", { method: "POST", body: JSON.stringify({ code }) }),
+  forgotPassword: (email: string) =>
+    request<{ ok: true }>("/auth/password/forgot", { method: "POST", body: JSON.stringify({ email }) }),
+  resetPassword: (token: string, password: string) =>
+    request<{ token: string; user: User }>("/auth/password/reset", { method: "POST", body: JSON.stringify({ token, password }) }),
   adminTables: () => request<{ tables: { name: string; rows: number }[] }>("/admin/tables"),
   adminTable: (name: string, offset = 0, limit = 50) =>
     request<AdminTable>(`/admin/tables/${encodeURIComponent(name)}?offset=${offset}&limit=${limit}`),
