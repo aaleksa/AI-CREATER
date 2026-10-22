@@ -408,7 +408,7 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
   .reel-stage { grid-template-columns: 1fr; }
   .reel-stage .phone { margin: 0 auto; }
 }
-.brief-line { display: flex; align-items: center; gap: 12px; margin: 0 0 16px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.brief-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 16px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
 .brief-line-label { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); flex: none; }
 .brief-line-text { flex: 1; min-width: 0; contain: inline-size; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
 @media (max-width: 600px) {
@@ -1314,3 +1314,16 @@ details.options > .brand-toggle, details.options > .examples { margin-top: 14px;
 .sound-updating { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 6px 10px; border-radius: 10px; font-size: 12px; color: var(--ink); background: var(--surface-2, rgba(127,127,127,.1)); }
 .sound-updating .busy-time { margin-left: auto; color: var(--muted); }
 .sound-updating .spinner { width: 14px; height: 14px; }
+.brief-edit { display: grid; gap: 8px; margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.brief-edit textarea.brief-box { min-height: 96px; }
+.brief-edit .brief-brand { margin: 0; }
+.brief-edit .brief-actions { margin: 0; gap: 8px; flex-wrap: wrap; justify-content: flex-start; }
+.brief-edit .brief-actions .btn { padding: 6px 12px; font-size: 13px; }
+.brief-examples summary { cursor: pointer; font-size: 13px; color: var(--muted); list-style: none; }
+.brief-examples summary::-webkit-details-marker { display: none; }
+.brief-examples summary::before { content: "▸ "; }
+.brief-examples[open] summary::before { content: "▾ "; }
+.brief-examples .examples-title { display: none; }
+.brief-facts { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.brief-line .brief-facts { flex-basis: 100%; order: 4; }
+.brief-brand .brief-facts { vertical-align: middle; margin-left: 4px; }

@@ -12,6 +12,7 @@ import { brandRouter } from "./routes/brand.js";
 import { billingRouter } from "./routes/billing.js";
 import { adminRouter } from "./routes/admin.js";
 import { runMaintenance } from "./services/jobs.js";
+import { failStaleRuns } from "./services/pipeline.js";
 import { shareRouter } from "./routes/share.js";
 import { findPreview, serializePreview } from "./services/share.js";
 
@@ -69,6 +70,8 @@ app.use((err: Error & { type?: string }, _req: express.Request, res: express.Res
 });
 
 db.exec("SELECT 1");
+// Nothing runs before the server starts: whatever is still "running" died with the last process.
+failStaleRuns(undefined, undefined, 0);
 runMaintenance();
 setInterval(runMaintenance, 6 * 60 * 60 * 1000).unref();
 

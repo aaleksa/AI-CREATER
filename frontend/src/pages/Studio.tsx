@@ -4,7 +4,6 @@ import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, t
 import { copyText } from "../lib/copy";
 import { downloadName, shapeLabel } from "../lib/fileName";
 import { prepareImage } from "../lib/imageUpload";
-import BrandToggle from "../components/BrandToggle";
 import ExampleImages, { useProjectImageSrcs } from "../components/ExampleImages";
 import { useLocale } from "../i18n/locale";
 
@@ -339,7 +338,7 @@ function VersionCompare({
     <details className="edit-block versions">
       <summary className="edit-block-head">
         <h3>{t(step === "script" ? "studio.scriptVersions" : "studio.ideaVersions", { n: versions.length })}</h3>
-        <p className="hint">{t(step === "script" ? "studio.scriptCompare" : "studio.ideaCompare")}</p>
+        <p className="hint">{t(step === "script" ? "studio.scriptCompare" : onFork ? "studio.ideaCompare" : "studio.ideaCompareImage")}</p>
       </summary>
       <ol className="version-list">
         {ordered.map(({ version, n }) => {
@@ -855,7 +854,8 @@ export default function Studio() {
   function busyText(key: string | null) {
     if (!key) return "";
     const frame = /^visual-(\d+)$/.exec(key);
-    if (frame) return t(project?.hasVideo && !isImage ? "studio.busyFrameVideo" : "studio.busyFrame", { n: sceneNumber(Number(frame[1])) });
+    if (frame && isImage) return t("studio.busyPictureEdit");
+    if (frame) return t(project?.hasVideo ? "studio.busyFrameVideo" : "studio.busyFrame", { n: sceneNumber(Number(frame[1])) });
     if (key === "visuals") return t(isImage ? "studio.busyPicture" : "studio.busyFrames");
     if (key === "render") return t("studio.busyRender");
     if (key === "voice") return t("studio.busyVoice");
@@ -871,7 +871,8 @@ export default function Studio() {
     // Whatever the change, a video that was there and is gone now is always said out loud.
     if (!isImage && videoAtStart.current && !project?.hasVideo) return t("studio.doneVideoDown");
     const frame = /^visual-(\d+)$/.exec(key);
-    if (frame) return t(project?.hasVideo && !isImage ? "studio.doneFrameVideo" : "studio.doneFrame", { n: sceneNumber(Number(frame[1])) });
+    if (frame && isImage) return t("studio.donePictureEdit");
+    if (frame) return t(project?.hasVideo ? "studio.doneFrameVideo" : "studio.doneFrame", { n: sceneNumber(Number(frame[1])) });
     if (!isImage && touchesVideo(key) && videoAtStart.current) return t("studio.doneVideo");
     return "";
   }
@@ -1425,7 +1426,7 @@ export default function Studio() {
     } else if (regenerate && !sceneId && (step === "idea" || step === "script")) {
       const ok = window.confirm(
         step === "idea"
-          ? t("studio.confirmBrief", { credits: price.credits })
+          ? t(isImage ? "studio.confirmBriefImage" : "studio.confirmBrief", { credits: price.credits })
           : t("studio.confirmCascade", { credits: price.credits })
       );
       if (!ok) return;
@@ -1469,6 +1470,8 @@ export default function Studio() {
 
   async function changeLogo(remove: boolean) {
     if (!id || !project) return;
+    // A corner or "remove" while placing by hand ends the placing, or the old picture stays under the box.
+    stopPlacing();
     const sceneId = project.visuals?.[scene]?.sceneId ?? 1;
     setBusy(remove ? "logo-off" : "logo");
     setError("");
@@ -1691,7 +1694,7 @@ export default function Studio() {
   const redoList = (
     <>
       <p className="hint">
-        {t("studio.keepFree")}
+        {t(isImage ? "studio.keepFreeImage" : "studio.keepFree")}
       </p>
       {STEPS.filter((s) => doneThrough(project, s.id))
         // A switched-off step has nothing to redo (redoing would charge and switch it back on); a finished video has
@@ -1718,7 +1721,28 @@ export default function Studio() {
       ))}
     </>
   );
-  const briefFolded = !isImage && Boolean(project.idea) && !briefOpen;
+  const briefFolded = Boolean(project.idea) && !briefOpen;
+  // What the post was started with besides the words: format, kind and shape, language, brand, example pictures.
+  const briefFacts = [
+    isImage ? t(`kinds.${project.imageIntent || "photo"}.label`) : t("studio.factReel"),
+    isImage ? shapeLabel(currentShape, t) : "",
+    isImage
+      ? project.imageIntent && project.imageIntent !== "photo"
+        ? t("studio.factPicLang", { lang: t(`home.picLang.${project.pictureLanguage || lineLanguage(project.prompt || "") || "brief"}`) })
+        : ""
+      : project.script
+        ? t(reelLangIsUk ? "studio.reelLangNowUk" : "studio.reelLangNowEn")
+        : "",
+    project.useBrand ?? true ? t("studio.factBrandOn", { name: kit?.business_name || t("nav.brand") }) : t("studio.factBrandOff"),
+    (project.refs || []).length ? t("studio.factExamples", { n: (project.refs || []).length }) : "",
+  ].filter(Boolean);
+  const briefFactsRow = (
+    <span className="brief-facts">
+      {briefFacts.map((fact) => (
+        <span className="options-chip" key={fact}>{fact}</span>
+      ))}
+    </span>
+  );
   const stepsNav = (
     <nav className="steps" aria-label={t("studio.stepsNav")}>
       {STEPS.map((s, i) => {
@@ -2144,37 +2168,42 @@ export default function Studio() {
           <button className="btn ghost" type="button" onClick={() => setBriefOpen(true)}>
             {t("studio.briefUnfold")}
           </button>
+          {briefFactsRow}
         </div>
       ) : (
-        <>
-          <div className="field">
-            <label htmlFor="brief">{t("studio.briefLabel")}</label>
-            <textarea
-              id="brief"
-              className="brief-box"
-              value={brief}
-              onChange={(e) => setBrief(e.target.value)}
-              maxLength={2000}
-              rows={10}
-            />
-          </div>
-          <ExampleImages
-            items={(project.refs || []).map((ref) => ({ id: ref.id, src: refSrcs[ref.id] || "" }))}
-            note={
-              missedExamples && !(project.refs || []).length
-                ? t("briefImages.missed", { n: missedExamples })
-                : t(isImage ? "briefImages.nextTime" : "briefImages.nextTimeReel")
-            }
-            onAdd={async (image) => {
-              const { refs } = await api.addProjectRef(project.id, image);
-              setProject((p) => (p ? { ...p, refs } : p));
-            }}
-            onRemove={async (slot) => {
-              const { refs } = await api.deleteProjectRef(project.id, slot);
-              setProject((p) => (p ? { ...p, refs } : p));
-            }}
+        <div className="brief-edit">
+          <label htmlFor="brief" className="brief-line-label">{t("studio.briefLabel")}</label>
+          <textarea
+            id="brief"
+            className="brief-box"
+            value={brief}
+            onChange={(e) => setBrief(e.target.value)}
+            maxLength={2000}
+            rows={4}
           />
-          <div className="row" style={{ marginBottom: 20 }}>
+          <details className="brief-examples" open={(project.refs || []).length > 0 || Boolean(missedExamples)}>
+            <summary>{t("studio.briefExamples", { n: (project.refs || []).length })}</summary>
+            <ExampleImages
+              items={(project.refs || []).map((ref) => ({ id: ref.id, src: refSrcs[ref.id] || "" }))}
+              note={
+                missedExamples && !(project.refs || []).length
+                  ? t("briefImages.missed", { n: missedExamples })
+                  : t(isImage ? "briefImages.nextTime" : "briefImages.nextTimeReel")
+              }
+              onAdd={async (image) => {
+                const { refs } = await api.addProjectRef(project.id, image);
+                setProject((p) => (p ? { ...p, refs } : p));
+              }}
+              onRemove={async (slot) => {
+                const { refs } = await api.deleteProjectRef(project.id, slot);
+                setProject((p) => (p ? { ...p, refs } : p));
+              }}
+            />
+          </details>
+          <p className="hint brief-brand">
+            {t("studio.factsChosen")} {briefFactsRow}
+          </p>
+          <div className="row brief-actions">
             <button className="btn ghost" type="button" disabled={briefSaving} onClick={saveBrief}>
               {briefSaving ? t("studio.savingBrief") : t("studio.saveBrief")}
             </button>
@@ -2197,24 +2226,13 @@ export default function Studio() {
               {briefCopied ? t("studio.briefCopied") : t("studio.copyBrief")}
             </button>
             {briefSaved && <span className="ok">{t("studio.briefSaved")}</span>}
-            {!isImage && project.idea && (
+            {project.idea && (
               <button className="btn ghost" type="button" onClick={() => setBriefOpen(false)}>
                 {t("studio.briefFold")}
               </button>
             )}
           </div>
-          <BrandToggle
-            locked
-            value={project.useBrand ?? true}
-            ask={t(project.useBrand ?? true ? (isImage ? "studio.brandLockedOn" : "studio.brandLockedOnReel") : isImage ? "studio.brandLockedOff" : "studio.brandLockedOffReel")}
-            onLabel={t("studio.useBrandOn")}
-            onHint={t("home.useBrandHint")}
-            offLabel={t("studio.useBrandOff")}
-            offHint={t("home.skipBrandHint")}
-            usingLabel={t(isImage ? "studio.brandUsing" : "studio.brandUsingReel")}
-            kit={kit}
-          />
-        </>
+        </div>
       )}
       {error && viewStep && (
         <p className="err" style={{ marginTop: -8, marginBottom: 16 }}>
@@ -2266,10 +2284,10 @@ export default function Studio() {
                 {!frame && <div className="phone-frame" style={{ background: "linear-gradient(160deg,#2b1d14,#c45c26)" }} />}
                 {frameIsPlaceholder && (
                   <div className="caption" style={{ top: 18, bottom: "auto", fontSize: 14, fontFamily: "var(--sans, inherit)" }}>
-                    {t("studio.placeholderFail")}
+                    {t(isImage ? "studio.placeholderFailImage" : "studio.placeholderFail")}
                   </div>
                 )}
-                {!isImage && busyNote && (
+                {busyNote && (
                   <div className="phone-busy" aria-hidden>
                     <span className="spinner" />
                   </div>
@@ -2665,7 +2683,7 @@ export default function Studio() {
         )}
         <div className="panel" hidden={Boolean(viewStep)}>
           <h2>{next ? t("studio.stepTitle", { label: stepLabel(next.id) }) : t("steps.ready")}</h2>
-          {lastDone && (
+          {lastDone && next && (
             <button type="button" className="btn ghost step-back" onClick={() => setViewStep(lastDone.id)}>
               {t("studio.prevStep", { label: stepLabel(lastDone.id) })}
             </button>
@@ -2757,7 +2775,25 @@ export default function Studio() {
             </>
           )}
           {isInvite && project.idea && !project.hasImages && (
-            <p className="hint">{t("studio.inviteHint")}</p>
+            <div className="invite-fields">
+              <p className="pane-title">{t("studio.inviteFieldsTitle")}</p>
+              {INVITE_FIELDS.map((field) => (
+                <label key={field.key} className="shot-field">
+                  <span>{t(`studio.inviteField_${field.key}`)}</span>
+                  <input
+                    value={inviteDraft[field.key]}
+                    maxLength={field.key === "address" ? 160 : 100}
+                    onChange={(e) => setInviteDraft({ ...inviteDraft, [field.key]: e.target.value })}
+                  />
+                </label>
+              ))}
+              <div className="action-row">
+                <button type="button" className="btn ghost" disabled={Boolean(busy)} onClick={saveInvite}>
+                  {busy === "invite" ? t("studio.voiceOffSaving") : inviteSaved ? t("studio.inviteSaved") : t("studio.inviteSave")}
+                </button>
+              </div>
+              <p className="hint" style={{ margin: 0 }}>{t("studio.inviteFieldsHint")}</p>
+            </div>
           )}
           {project.idea && !project.script && !isImage && (
             <>
@@ -2791,7 +2827,7 @@ export default function Studio() {
             <p className="hint">{t("studio.archiveWarn", { limit: archive.limit })}</p>
           )}
           {!project.hasVideo && !project.hasImages && (project.status === "expired" || project.status === "ready") && (
-            <p className="hint">{t("studio.fileGone")}</p>
+            <p className="hint">{t(isImage ? "studio.fileGoneImage" : "studio.fileGone")}</p>
           )}
           {project.hasImages && (
             <>
@@ -2799,9 +2835,6 @@ export default function Studio() {
                 <p className="ok">
                   {t(isInvite ? "studio.inviteReady" : "studio.pictureReady", { credits: project.creditsUsed })}
                 </p>
-                {shapeLabel(currentShape, t) && (
-                  <p className="hint">{t("studio.shapeNow", { shape: shapeLabel(currentShape, t) })}</p>
-                )}
                 <p className="hint">{t(isInvite ? "studio.inviteKeep" : "studio.pictureKeep")}</p>
                 <div className="action-row">
                   {downloadSrc && !String(downloadSrc).startsWith("linear") && (
@@ -2810,7 +2843,7 @@ export default function Studio() {
                       href={downloadSrc}
                       download={downloadName(project, t, "jpg")}
                     >
-                      {t(isInvite ? "studio.downloadInvite" : "studio.downloadN", { n: 1 })}
+                      {t(isInvite ? "studio.downloadInvite" : "studio.downloadPicture")}
                     </a>
                   )}
                   {SHOW_SHARE_AND_PUBLISH && (
@@ -2877,7 +2910,7 @@ export default function Studio() {
                     ) : (
                       <div className="edit-picture-panel">
                         <div className="row" style={{ marginBottom: 8 }}>
-                          <p className="hint" style={{ margin: 0 }}>{t("studio.editPictureAsk")}</p>
+                          <p className="pane-title" style={{ margin: 0 }}>{t("studio.editPictureTitle")}</p>
                           <button
                             type="button"
                             className="btn ghost"
@@ -2949,7 +2982,7 @@ export default function Studio() {
                         <div className="action-row" style={{ marginTop: 10 }}>
                           <button
                             type="button"
-                            className="btn ghost"
+                            className={`btn ${copyEdit.trim() ? "accent" : "ghost"}`}
                             disabled={Boolean(busy)}
                             onClick={applyCopyEdit}
                           >
@@ -3397,7 +3430,7 @@ export default function Studio() {
               <div className="field" style={{ marginTop: 8 }}>
                 <select value={regenReason} onChange={(e) => setRegenReason(e.target.value)}>
                   <option value="">{t("studio.chooseReason")}</option>
-                  {STEP_REASONS[pendingRegen.step].map((reason) => (
+                  {STEP_REASONS[pendingRegen.step].filter((reason) => !(isImage && reason.id === "boring_hook")).map((reason) => (
                     <option key={reason.id} value={reason.id}>
                       {t(`reasons.${reason.id}`)}
                     </option>
@@ -3430,22 +3463,8 @@ export default function Studio() {
               </div>
             </div>
           )}
-          {isImage && lastDone && !project.hasImages && !project.hasVideo && (
-            <button
-              className="btn ghost"
-              style={{ marginTop: 10 }}
-              disabled={Boolean(busy) || Boolean(pendingRegen)}
-              onClick={() => run(lastDone.id, true)}
-            >
-              {busy === lastDone.id
-                ? makingLabel
-                : extraPrice(lastDone.id).extra
-                  ? t("studio.keepOrTry", { credits: extraPrice(lastDone.id).credits })
-                  : t("studio.notThis", { label: stepLabel(lastDone.id).toLowerCase(), credits: extraPrice(lastDone.id).credits })}
-            </button>
-          )}
           {STEPS.some((s) => doneThrough(project, s.id)) &&
-            (isImage ? (
+            (isImage && !project.hasImages ? (
               <div style={{ marginTop: 18 }}>{redoList}</div>
             ) : (
               <details className="edit-block redo-card">
@@ -3456,7 +3475,7 @@ export default function Studio() {
                 {redoList}
               </details>
             ))}
-          {error && (
+          {error && !(isImage && copyEditOpen && project.hasImages) && (
             <p className="err">
               {error}
               {(error.toLowerCase().includes("credit") || error.includes("кредит")) && (
@@ -3467,7 +3486,7 @@ export default function Studio() {
               )}
             </p>
           )}
-          {!(project.hasVideo && !isImage) && (
+          {!(project.hasVideo && !isImage) && !(isImage && project.hasImages) && (
             <p className="hint" style={{ marginTop: 18 }}>
               {t(isInvite ? "studio.usedInvite" : isImage ? "studio.usedImage" : "studio.usedReel", { credits: project.creditsUsed })}
             </p>
