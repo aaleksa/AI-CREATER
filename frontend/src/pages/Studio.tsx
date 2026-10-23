@@ -122,6 +122,8 @@ function doneThrough(project: Project, step: string) {
 
 /** Remembered per browser: whether "Changes to the selected picture" is open. */
 const EDITS_OPEN_KEY = "auteur.studio.editsOpen";
+/** Remembered per browser: whether the list of picture takes is open (open until closed once). */
+const TAKES_OPEN_KEY = "auteur.studio.takesOpen";
 
 function PictureCompare({
   versions,
@@ -148,9 +150,23 @@ function PictureCompare({
   ratio?: string;
   t: (path: string, vars?: Record<string, string | number>) => string;
 }) {
+  const [open, setOpen] = useState(() => localStorage.getItem(TAKES_OPEN_KEY) !== "0");
   if (versions.length < 2) return null;
+  const selected = versions.findIndex((v) => (previewId ? v.id === previewId : v.accepted));
   return (
-    <div style={{ marginTop: 16 }}>
+    <details
+      className="edit-block takes-block"
+      open={open}
+      onToggle={(e) => {
+        const next = e.currentTarget.open;
+        setOpen(next);
+        localStorage.setItem(TAKES_OPEN_KEY, next ? "1" : "0");
+      }}
+    >
+      <summary className="edit-block-head">
+        <h3>{t("studio.pictureTakes", { n: versions.length })}</h3>
+        {selected >= 0 && <p className="hint">{t("studio.selectedIs", { label: t("studio.takeN", { n: selected + 1 }) })}</p>}
+      </summary>
       <MoreHint short={t("studio.compareLastShort")} full={t("studio.compareLast")} />
       {versions.length > 2 && (
         <button type="button" className="btn ghost compare-delete" disabled={busy} onClick={onKeepCurrent}>
@@ -195,7 +211,7 @@ function PictureCompare({
           );
         })}
       </div>
-    </div>
+    </details>
   );
 }
 

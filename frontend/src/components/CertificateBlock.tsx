@@ -29,6 +29,8 @@ export default function CertificateBlock({
   const saved = project.certificate;
   const [draft, setDraft] = useState<CertificateSettings>(() => saved || { title: "", note: "", lang: "uk", codes: true, layout: DEFAULT_LAYOUT, items: [EMPTY] });
   const [picked, setPicked] = useState(0);
+  /** Rows with their fields shown; the rest fold to one line (name · gift · code) so a long list stays short. */
+  const [openRows, setOpenRows] = useState<number[]>([0]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
@@ -257,10 +259,44 @@ export default function CertificateBlock({
         <input type="checkbox" checked={draft.codes !== false} disabled={off} onChange={(e) => setDraft({ ...draft, codes: e.target.checked })} />
         {t("cert.codesOn")}
       </label>
-      <p className="pane-title">{t("cert.people", { n: draft.items.length })}</p>
-      {draft.items.map((item, i) => (
-        <fieldset key={i} className={`certificate-row${picked === i ? " on" : ""}`} onFocus={() => setPicked(i)}>
+      <div className="certificate-people-head">
+        <p className="pane-title">{t("cert.people", { n: draft.items.length })}</p>
+        {draft.items.length > 1 && (
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => setOpenRows(openRows.length === draft.items.length ? [] : draft.items.map((_, j) => j))}
+          >
+            {openRows.length === draft.items.length ? t("cert.foldAll") : t("cert.unfoldAll")}
+          </button>
+        )}
+      </div>
+      {draft.items.map((item, i) => {
+        const open = openRows.includes(i);
+        const summary = [item.name.trim() || t("cert.noName"), item.gift.trim(), draft.codes !== false ? item.code : ""].filter(Boolean).join(" · ");
+        return (
+        <fieldset key={i} className={`certificate-row${picked === i ? " on" : ""}${open ? "" : " folded"}`} onFocus={() => setPicked(i)}>
           <legend className="hint">{t("cert.personN", { n: i + 1 })}</legend>
+          <div className="certificate-row-top">
+            <button
+              type="button"
+              className={`certificate-row-head${open ? " open" : ""}`}
+              aria-expanded={open}
+              onClick={() => {
+                setOpenRows(open ? openRows.filter((j) => j !== i) : [...openRows, i]);
+                if (!open) setPicked(i);
+              }}
+            >
+              {summary}
+            </button>
+            {!open && (
+              <button type="button" className="link-btn" disabled={off} onClick={() => download(i, "pdf")}>
+                {busy === `pdf-${i}` ? t("cert.working") : "PDF"}
+              </button>
+            )}
+          </div>
+          {open && (
+          <>
           <label className="shot-field">
             <span>{t("cert.name")}</span>
             <input value={item.name} maxLength={60} placeholder={t("cert.namePlaceholder")} onChange={(e) => setItem(i, { name: e.target.value })} />
@@ -319,20 +355,27 @@ export default function CertificateBlock({
                 onClick={() => {
                   setDraft({ ...draft, items: draft.items.filter((_, j) => j !== i) });
                   setPicked(0);
+                  setOpenRows([0]);
                 }}
               >
                 {t("cert.remove")}
               </button>
             )}
           </div>
+          </>
+          )}
         </fieldset>
-      ))}
+        );
+      })}
       <div className="action-row">
         <button
           type="button"
           className="btn ghost"
           disabled={off || draft.items.length >= 50}
-          onClick={() => setDraft({ ...draft, items: [...draft.items, { ...EMPTY, gift: draft.items[draft.items.length - 1]?.gift || "", giftNote: draft.items[draft.items.length - 1]?.giftNote || "", validFrom: draft.items[draft.items.length - 1]?.validFrom || "", validUntil: draft.items[draft.items.length - 1]?.validUntil || "" }] })}
+          onClick={() => {
+            setOpenRows([draft.items.length]);
+            setDraft({ ...draft, items: [...draft.items, { ...EMPTY, gift: draft.items[draft.items.length - 1]?.gift || "", giftNote: draft.items[draft.items.length - 1]?.giftNote || "", validFrom: draft.items[draft.items.length - 1]?.validFrom || "", validUntil: draft.items[draft.items.length - 1]?.validUntil || "" }] });
+          }}
         >
           {t("cert.add")}
         </button>
