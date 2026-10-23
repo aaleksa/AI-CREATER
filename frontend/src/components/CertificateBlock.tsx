@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
-import { api, fetchMedia, type CertificateItem, type CertificateSettings, type Project } from "../lib/api";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { api, fetchMedia, type CertificateItem, type CertificateLayout, type CertificateSettings, type Project } from "../lib/api";
 import { useLocale } from "../i18n/locale";
 
-const EMPTY: CertificateItem = { name: "", gift: "", validFrom: "", validUntil: "", code: "" };
+const EMPTY: CertificateItem = { name: "", gift: "", giftNote: "", validFrom: "", validUntil: "", code: "" };
 /** The headings the studio prints by default; they follow the label language, an owner's own heading does not. */
 const STANDARD_TITLE = { uk: "Подарунковий сертифікат", en: "Gift certificate" } as const;
 const STANDARD_TITLES: string[] = Object.values(STANDARD_TITLE);
+const DEFAULT_LAYOUT: CertificateLayout = { x: 0.5, y: 0.5, scale: 1 };
+const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
 
 /**
  * Gift certificates from one painted design: the owner's exact words and a list of people, each with a code.
@@ -25,11 +27,18 @@ export default function CertificateBlock({
 }) {
   const { t, te } = useLocale();
   const saved = project.certificate;
-  const [draft, setDraft] = useState<CertificateSettings>(() => saved || { title: "", note: "", lang: "uk", codes: true, items: [EMPTY] });
+  const [draft, setDraft] = useState<CertificateSettings>(() => saved || { title: "", note: "", lang: "uk", codes: true, layout: DEFAULT_LAYOUT, items: [EMPTY] });
   const [picked, setPicked] = useState(0);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  const [stageSrc, setStageSrc] = useState("");
+  const stageRef = useRef<HTMLDivElement>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const saveTimer = useRef<number | undefined>(undefined);
+  const layout = draft.layout || DEFAULT_LAYOUT;
+  const box = saved?.boxes?.[picked] || { w: 0.57, h: 0.45 };
 
   useEffect(() => {
     if (saved) setDraft(saved);
@@ -43,6 +52,7 @@ export default function CertificateBlock({
       .then((blob) => {
         if (cancelled) return;
         url = URL.createObjectURL(blob);
+        setStageSrc(url);
         onPreview(url);
       })
       .catch(() => onPreview(""));
@@ -60,7 +70,7 @@ export default function CertificateBlock({
     setBusy("save");
     setError("");
     try {
-      const { project: next } = await api.saveCertificate(project.id, draft);
+      const { project: next } = await api.saveCertificate(project.id, draftRef.current);
       onSaved(next);
       if (next.certificate) setDraft(next.certificate);
     } catch (err) {
@@ -68,6 +78,47 @@ export default function CertificateBlock({
     } finally {
       setBusy("");
     }
+  }
+
+  function setLayout(next: CertificateLayout) {
+    setDraft((d) => ({ ...d, layout: next }));
+  }
+
+  /** The block moved or resized: save a moment later, so the preview and every PDF follow. */
+  function saveSoon() {
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => void save(), 400);
+  }
+
+  /** Drag the block of words, or its corner to change its size; works with a finger too. */
+  function startDrag(e: ReactPointerEvent, mode: "move" | "size") {
+    if (disabled || busy) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const start = { px: e.clientX, py: e.clientY, ...layout };
+    const move = (ev: PointerEvent) => {
+      const dx = (ev.clientX - start.px) / rect.width;
+      const dy = (ev.clientY - start.py) / rect.height;
+      // The block stays on the page whatever its size.
+      const inside = (l: CertificateLayout) => {
+        const hw = Math.min(0.5, (box.w * l.scale) / 2);
+        const hh = Math.min(0.5, (box.h * l.scale) / 2);
+        return { ...l, x: clamp(l.x, hw, 1 - hw), y: clamp(l.y, hh, 1 - hh) };
+      };
+      if (mode === "move") setLayout(inside({ ...start, x: start.x + dx, y: start.y + dy }));
+      else setLayout(inside({ ...start, scale: clamp(start.scale * (1 + (dx * 2) / (box.w * start.scale)), 0.5, 1.6) }));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      saveSoon();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }
 
   /** Picking the language puts the printed labels and the owner's own words in it, in one click. */
@@ -125,6 +176,55 @@ export default function CertificateBlock({
     <div className="certificate-block">
       <h3>{t("cert.title")}</h3>
       <p className="hint">{t("cert.hint")}</p>
+      {stageSrc && (
+        <div className="cert-stage" ref={stageRef}>
+          <img src={stageSrc} alt={t("cert.previewAlt")} draggable={false} />
+          <div
+            className="cert-box"
+            role="slider"
+            tabIndex={0}
+            aria-label={t("cert.moveBlock")}
+            aria-valuenow={Math.round(layout.scale * 100)}
+            style={{
+              left: `${(layout.x - (box.w * layout.scale) / 2) * 100}%`,
+              top: `${(layout.y - (box.h * layout.scale) / 2) * 100}%`,
+              width: `${box.w * layout.scale * 100}%`,
+              height: `${box.h * layout.scale * 100}%`,
+            }}
+            onPointerDown={(e) => startDrag(e, "move")}
+          >
+            <span className="cert-box-handle" aria-hidden onPointerDown={(e) => startDrag(e, "size")} />
+          </div>
+        </div>
+      )}
+      <div className="cert-size">
+        <span className="hint">{t("cert.size")}</span>
+        <input
+          type="range"
+          min={50}
+          max={160}
+          step={5}
+          value={Math.round(layout.scale * 100)}
+          disabled={disabled || Boolean(busy)}
+          onChange={(e) => {
+            setLayout({ ...layout, scale: Number(e.target.value) / 100 });
+            saveSoon();
+          }}
+          aria-label={t("cert.size")}
+        />
+        <button
+          type="button"
+          className="link-btn"
+          disabled={disabled || Boolean(busy) || (layout.x === 0.5 && layout.y === 0.5 && layout.scale === 1)}
+          onClick={() => {
+            setLayout(DEFAULT_LAYOUT);
+            saveSoon();
+          }}
+        >
+          {t("cert.resetLayout")}
+        </button>
+      </div>
+      <p className="hint">{t("cert.dragHint")}</p>
       <label className="shot-field">
         <span>{t("cert.heading")}</span>
         <input value={draft.title} maxLength={60} onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
@@ -168,6 +268,10 @@ export default function CertificateBlock({
           <label className="shot-field">
             <span>{t("cert.gift")}</span>
             <input value={item.gift} maxLength={80} placeholder={t("cert.giftPlaceholder")} onChange={(e) => setItem(i, { gift: e.target.value })} />
+          </label>
+          <label className="shot-field">
+            <span>{t("cert.giftNote")}</span>
+            <input value={item.giftNote || ""} maxLength={120} placeholder={t("cert.giftNotePlaceholder")} onChange={(e) => setItem(i, { giftNote: e.target.value })} />
           </label>
           <div className="certificate-pair">
             <label className="shot-field">
@@ -228,7 +332,7 @@ export default function CertificateBlock({
           type="button"
           className="btn ghost"
           disabled={off || draft.items.length >= 50}
-          onClick={() => setDraft({ ...draft, items: [...draft.items, { ...EMPTY, gift: draft.items[draft.items.length - 1]?.gift || "", validFrom: draft.items[draft.items.length - 1]?.validFrom || "", validUntil: draft.items[draft.items.length - 1]?.validUntil || "" }] })}
+          onClick={() => setDraft({ ...draft, items: [...draft.items, { ...EMPTY, gift: draft.items[draft.items.length - 1]?.gift || "", giftNote: draft.items[draft.items.length - 1]?.giftNote || "", validFrom: draft.items[draft.items.length - 1]?.validFrom || "", validUntil: draft.items[draft.items.length - 1]?.validUntil || "" }] })}
         >
           {t("cert.add")}
         </button>

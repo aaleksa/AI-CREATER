@@ -27,9 +27,26 @@ const SANS_FONTS = [
   "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 ].filter((file) => fs.existsSync(file));
 
-export type CertificateItem = { name: string; gift: string; validFrom: string; validUntil: string; code: string };
+/** gift: the big line ("COMPLIMENTARY COCKTAIL"); giftNote: a smaller line under it ("Enjoy a cocktail on us!"). */
+export type CertificateItem = { name: string; gift: string; giftNote: string; validFrom: string; validUntil: string; code: string };
 /** codes: print a code on each certificate (made for the empty ones). Off: no code at all. */
-export type CertificateSettings = { title: string; note: string; lang: "uk" | "en"; codes: boolean; items: CertificateItem[] };
+/** Where the block of words sits (its centre, as a share of the page) and how big it is (1 = as designed). */
+export type CertificateLayout = { x: number; y: number; scale: number };
+export type CertificateSettings = { title: string; note: string; lang: "uk" | "en"; codes: boolean; layout: CertificateLayout; items: CertificateItem[] };
+
+export const DEFAULT_LAYOUT: CertificateLayout = { x: 0.5, y: 0.5, scale: 1 };
+
+function parseLayout(raw: unknown): CertificateLayout {
+  const row = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const num = (value: unknown, min: number, max: number, fallback: number) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n * 1000) / 1000)) : fallback;
+  };
+  const scale = num(row.scale, 0.5, 1.6, 1);
+  // The words never leave the page: the block's half-width (at this size) is the margin.
+  const half = Math.min(0.5, (0.66 * 0.86 * scale) / 2);
+  return { x: num(row.x, half, 1 - half, 0.5), y: num(row.y, 0.1, 0.9, 0.5), scale };
+}
 
 const LABELS = {
   uk: { title: "Подарунковий сертифікат", valid: "Дійсний до", from: "Дійсний з", fromTo: "до", code: "Код" },
@@ -58,6 +75,7 @@ export function parseCertificate(raw: unknown, fallbackLang: "uk" | "en"): Certi
       return {
         name: clip(row.name, 60),
         gift: clip(row.gift, 80),
+        giftNote: clip(row.giftNote, 120),
         validFrom: clip(row.validFrom, 40),
         validUntil: clip(row.validUntil, 40),
         code: clip(row.code, 24).toUpperCase(),
@@ -66,7 +84,14 @@ export function parseCertificate(raw: unknown, fallbackLang: "uk" | "en"): Certi
   // The standard heading follows the label language; a heading the owner wrote stays as written.
   const title = clip(body.title, 60);
   const standard = !title || Object.values(LABELS).some((labels) => labels.title === title);
-  return { title: standard ? LABELS[lang].title : title, note: clip(body.note, 120), lang, codes: body.codes !== false, items };
+  return {
+    title: standard ? LABELS[lang].title : title,
+    note: clip(body.note, 120),
+    lang,
+    codes: body.codes !== false,
+    layout: parseLayout(body.layout),
+    items,
+  };
 }
 
 /** Every row gets a code: the owner's own, or a fresh one. */
@@ -148,7 +173,11 @@ function certificateSvg(settings: CertificateSettings, item: CertificateItem, br
   y += 140;
   if (item.gift) {
     parts.push(`<text x="${cx}" y="${y + 20}" text-anchor="middle" font-family="${sans}" font-weight="800" font-size="${fitSize(item.gift, 110, inner, 0.62)}" fill="${accent}">${xml(item.gift)}</text>`);
-    y += 170;
+    y += item.giftNote ? 120 : 170;
+  }
+  if (item.giftNote) {
+    parts.push(`<text x="${cx}" y="${y}" text-anchor="middle" font-family="${sans}" font-size="${fitSize(item.giftNote, 58, inner)}" fill="${ink}">${xml(item.giftNote)}</text>`);
+    y += 120;
   }
   const dates = item.validFrom
     ? item.validUntil
@@ -166,13 +195,18 @@ function certificateSvg(settings: CertificateSettings, item: CertificateItem, br
     parts.push(`<text x="${cx}" y="${y}" text-anchor="middle" font-family="${sans}" font-size="${fitSize(settings.note, 44, inner)}" fill="${muted}">${xml(settings.note)}</text>`);
     y += 80;
   }
-  // The block of words sits in the middle of the design's calm centre, however many lines it has.
-  const shift = Math.round(panel.y + panel.h / 2 - (top - 70 + (y - (top - 70)) / 2));
-  const words = `<g transform="translate(0 ${shift})">${parts.join("")}</g>`;
   const contact = [brand?.address, brand?.instagram, brand?.website].map((v) => clip(v, 60)).filter(Boolean).join("  ·  ");
-  const contactLine = contact
-    ? `<text x="${cx}" y="${Math.max(y + shift + 40, panel.y + panel.h - 40)}" text-anchor="middle" font-family="${sans}" font-size="${fitSize(contact, 40, inner)}" fill="${muted}">${xml(contact)}</text>`
-    : "";
+  if (contact) {
+    parts.push(`<text x="${cx}" y="${y + 20}" text-anchor="middle" font-family="${sans}" font-size="${fitSize(contact, 40, inner)}" fill="${muted}">${xml(contact)}</text>`);
+    y += 80;
+  }
+  // The whole block of words — at the place and size the owner dragged it to (the middle of the page by default).
+  const layout = settings.layout || DEFAULT_LAYOUT;
+  const start = top - 70;
+  const middle = (start + y) / 2;
+  const at = { x: Math.round(layout.x * W), y: Math.round(layout.y * H) };
+  const words = `<g transform="translate(${at.x} ${at.y}) scale(${layout.scale}) translate(${-cx} ${-Math.round(middle)})">${parts.join("")}</g>`;
+  const wash = { rx: Math.round(panel.w * 0.62 * layout.scale), ry: Math.round(Math.max(panel.h * 0.62, (y - start) * 0.75) * layout.scale) };
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <image href="${background}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="xMidYMid slice"/>
   <defs>
@@ -183,10 +217,23 @@ function certificateSvg(settings: CertificateSettings, item: CertificateItem, br
     </radialGradient>
   </defs>
   <!-- The words sit on the design's own calm centre; a soft wash only, so they read on any paper tone. -->
-  <ellipse cx="${W / 2}" cy="${panel.y + panel.h / 2}" rx="${panel.w * 0.62}" ry="${panel.h * 0.62}" fill="url(#wash)"/>
+  <ellipse cx="${at.x}" cy="${at.y}" rx="${wash.rx}" ry="${wash.ry}" fill="url(#wash)"/>
   ${words}
-  ${contactLine}
 </svg>`;
+}
+
+/** How big the block of words is (share of the page width and height, before the owner's scale) — for the drag frame. */
+export function certificateBlockBox(settings: CertificateSettings, item: CertificateItem, brand: BrandKit | null) {
+  let h = 70;
+  if (brand?.user_id && brandLogoPath(brand.user_id)) h += 220;
+  else if (brand?.business_name) h += 120;
+  h += 190 + 140;
+  if (item.gift) h += item.giftNote ? 120 : 170;
+  if (item.giftNote) h += 120;
+  if (item.validFrom || item.validUntil || (settings.codes && item.code)) h += 100;
+  if (settings.note) h += 80;
+  if ([brand?.address, brand?.instagram, brand?.website].some((v) => String(v || "").trim())) h += 80;
+  return { w: 0.66 * 0.86, h: Math.round((h / PRINT.h) * 1000) / 1000 };
 }
 
 function run(args: string[]) {
@@ -242,7 +289,7 @@ export async function renderCertificate(
   brand: BrandKit | null,
   format: "png" | "pdf" | "preview"
 ) {
-  const item = settings.items[index] || { name: "", gift: "", validFrom: "", validUntil: "", code: "" };
+  const item = settings.items[index] || { name: "", gift: "", giftNote: "", validFrom: "", validUntil: "", code: "" };
   const design = stillFile(projectId, 1);
   if (!fs.existsSync(design)) throw Object.assign(new Error("Make the picture first."), { status: 400 });
   const fonts = [...SANS_FONTS];

@@ -99,7 +99,7 @@ import {
 } from "./media.js";
 import { assertArchiveRoom, evictOverLimit } from "./archive.js";
 import { inviteFrom, parseInvite, preferBriefInvite, type InviteCard } from "./invite.js";
-import { parseCertificate, renderCertificate, withCodes, type CertificateSettings } from "./certificate.js";
+import { certificateBlockBox, parseCertificate, renderCertificate, withCodes, type CertificateSettings } from "./certificate.js";
 import { parseStepFeedback, recordStepRejection } from "./feedback.js";
 import { maybeRefreshLearnedSummary } from "./learning.js";
 import { previewState } from "./share.js";
@@ -328,7 +328,14 @@ function certificateOf(row: Record<string, unknown>): CertificateSettings {
     : /[\u0400-\u04FF]/.test(String(row.prompt || "")) ? "uk" : "en";
   const saved = parse<unknown>(row.certificate_json as string | null);
   const settings = parseCertificate(saved, lang as "uk" | "en");
-  return settings.items.length ? settings : { ...settings, items: [{ name: "", gift: "", validFrom: "", validUntil: "", code: "" }] };
+  return settings.items.length ? settings : { ...settings, items: [{ name: "", gift: "", giftNote: "", validFrom: "", validUntil: "", code: "" }] };
+}
+
+/** The certificate as the Studio shows it: the saved words plus the size of each block of words, for the drag frame. */
+function certificateView(row: Record<string, unknown>) {
+  const settings = certificateOf(row);
+  const brand = Number(row.use_brand) === 0 ? null : brandFor(String(row.user_id));
+  return { ...settings, boxes: settings.items.map((item) => certificateBlockBox(settings, item, brand)) };
 }
 
 /** Saves the certificate words and the list of people (codes filled in); free, nothing is painted. */
@@ -340,22 +347,34 @@ export function updateCertificate(userId: string, projectId: string, raw: unknow
   return serializeProject(getProject(projectId, userId));
 }
 
-/** The owner's words (heading, gifts, note) in the label language; free like the Reel translation. */
+/** The owner's words (heading, gifts and their smaller lines, note) in the label language; free like the Reel translation. */
 export async function translateCertificate(userId: string, projectId: string, rawLang: unknown) {
   const project = getProject(projectId, userId);
   if (project.image_intent !== "certificate") throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   const lang = rawLang === "en" ? "en" : "uk";
   const current = certificateOf(project);
   const ownTitle = parseCertificate({ title: current.title }, current.lang).title === parseCertificate({}, current.lang).title ? "" : current.title;
-  const input = { title: ownTitle, note: current.note, gifts: current.items.map((item) => item.gift) };
-  const hasWords = Boolean(input.title || input.note || input.gifts.some(Boolean));
+  const input = {
+    title: ownTitle,
+    note: current.note,
+    gifts: current.items.map((item) => item.gift),
+    giftNotes: current.items.map((item) => item.giftNote || ""),
+  };
+  const hasWords = Boolean(input.title || input.note || input.gifts.some(Boolean) || input.giftNotes.some(Boolean));
   let out = input;
   if (hasWords) {
     const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
     const result = await translateCertificateWords(input, lang, brand?.business_name || "");
     const data = result.data;
     // The same words back are fine: they were already in that language.
-    if (result.provider !== "openai" || !data || !Array.isArray(data.gifts) || data.gifts.length !== input.gifts.length) {
+    if (
+      result.provider !== "openai" ||
+      !data ||
+      !Array.isArray(data.gifts) ||
+      data.gifts.length !== input.gifts.length ||
+      !Array.isArray(data.giftNotes) ||
+      data.giftNotes.length !== input.giftNotes.length
+    ) {
       throw Object.assign(new Error(USER_ERRORS.textFailed), { status: 502 });
     }
     out = data;
@@ -367,7 +386,11 @@ export async function translateCertificate(userId: string, projectId: string, ra
         lang,
         title: ownTitle ? String(out.title || ownTitle) : "",
         note: input.note ? String(out.note || input.note) : "",
-        items: current.items.map((item, i) => ({ ...item, gift: String(out.gifts[i] || item.gift) })),
+        items: current.items.map((item, i) => ({
+          ...item,
+          gift: String(out.gifts[i] || item.gift),
+          giftNote: String(out.giftNotes[i] || item.giftNote || ""),
+        })),
       },
       lang
     )
@@ -641,7 +664,7 @@ export function serializeProject(row: Record<string, unknown>) {
     useBrand: Number(row.use_brand) !== 0,
     refs: exampleRefList(id),
     invite: row.invite_json ? parseInvite(parse(row.invite_json)) : null,
-    certificate: row.image_intent === "certificate" ? certificateOf(row) : null,
+    certificate: row.image_intent === "certificate" ? certificateView(row) : null,
     status: running ? "generating" : row.status,
     currentStep: row.current_step,
     runningStep: running?.type || null,

@@ -71,8 +71,19 @@ export type InviteItem = {
   title: string;
   detail: string;
 };
-export type CertificateItem = { name: string; gift: string; validFrom: string; validUntil: string; code: string };
-export type CertificateSettings = { title: string; note: string; lang: "uk" | "en"; codes: boolean; items: CertificateItem[] };
+export type CertificateItem = { name: string; gift: string; giftNote: string; validFrom: string; validUntil: string; code: string };
+export type CertificateLayout = { x: number; y: number; scale: number };
+export type CertificateSettings = {
+  title: string;
+  note: string;
+  lang: "uk" | "en";
+  codes: boolean;
+  /** Where the block of words sits and how big it is; the same for every certificate of the design. */
+  layout?: CertificateLayout;
+  items: CertificateItem[];
+  /** Size of each person's block of words (share of the page), from the server — for the drag frame. */
+  boxes?: { w: number; h: number }[];
+};
 
 export type InviteCard = {
   name: string;
