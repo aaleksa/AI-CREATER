@@ -233,6 +233,17 @@ export const api = {
     request<{ ok: true }>("/auth/password/forgot", { method: "POST", body: JSON.stringify({ email }) }),
   resetPassword: (token: string, password: string) =>
     request<{ token: string; user: User }>("/auth/password/reset", { method: "POST", body: JSON.stringify({ token, password }) }),
+  adminImportPart: (uploadId: string, index: number, part: Blob) =>
+    request<{ received: number }>(`/admin/import/${uploadId}/part/${index}`, {
+      method: "POST",
+      body: part,
+      headers: { "Content-Type": "application/octet-stream" },
+    }),
+  adminImportFinish: (uploadId: string) =>
+    request<{ email: string; accountExisted: boolean; projects: number; versions: number; files: number }>(
+      `/admin/import/${uploadId}/finish`,
+      { method: "POST" }
+    ),
   adminTables: () => request<{ tables: { name: string; rows: number }[] }>("/admin/tables"),
   adminTable: (name: string, offset = 0, limit = 50) =>
     request<AdminTable>(`/admin/tables/${encodeURIComponent(name)}?offset=${offset}&limit=${limit}`),

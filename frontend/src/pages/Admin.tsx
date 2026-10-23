@@ -42,6 +42,8 @@ export default function Admin() {
       <h1 className="page-title">Database</h1>
       <p className="lede">Live, read-only. Newest rows first. Passwords and share tokens are never shown.</p>
 
+      <ImportAccount onDone={load} />
+
       <div className="admin-bar">
         <select
           value={name}
@@ -96,5 +98,61 @@ export default function Admin() {
         </div>
       )}
     </div>
+  );
+}
+
+const PART = 20 * 1024 * 1024;
+
+/** Adds one account exported with backend/scripts/export-account.ts to this server. */
+function ImportAccount({ onDone }: { onDone: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [progress, setProgress] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function start() {
+    if (!file) return;
+    setBusy(true);
+    setError("");
+    const uploadId = crypto.randomUUID();
+    const parts = Math.ceil(file.size / PART);
+    try {
+      for (let i = 0; i < parts; i++) {
+        setProgress(`Uploading ${i + 1} of ${parts}…`);
+        await api.adminImportPart(uploadId, i, file.slice(i * PART, (i + 1) * PART));
+      }
+      setProgress("Adding to the database…");
+      const r = await api.adminImportFinish(uploadId);
+      setProgress(
+        `Done: ${r.email} — ${r.projects} projects, ${r.versions} versions, ${r.files} files` +
+          (r.accountExisted ? " (added to the existing account)." : " (new account, same password).")
+      );
+      setFile(null);
+      onDone();
+    } catch (err) {
+      setProgress("");
+      setError(err instanceof Error ? err.message : "Could not import.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <details className="admin-import">
+      <summary>Import an account</summary>
+      <p className="hint">
+        The .tar.gz from <code>npx tsx scripts/export-account.ts you@example.com</code>. Projects and the brand kit are added to the
+        account with the same email here (or a new one); nothing else on this server changes.
+      </p>
+      <div className="admin-bar">
+        <input type="file" accept=".gz,.tgz,application/gzip" disabled={busy} onChange={(e) => setFile(e.target.files?.[0] || null)} />
+        <button type="button" className="btn" disabled={!file || busy} onClick={start}>
+          {busy ? "Importing…" : "Import"}
+        </button>
+        {file && !busy && <span className="hint">{(file.size / 1024 / 1024).toFixed(1)} MB</span>}
+      </div>
+      {progress && <p className="hint">{progress}</p>}
+      {error && <p className="error">{error}</p>}
+    </details>
   );
 }

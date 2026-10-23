@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
+import { finishImport, saveImportChunk } from "../services/accountImport.js";
 
 /**
  * Read-only look at the live database for the owner(s).
@@ -89,4 +90,24 @@ adminRouter.get("/tables/:name", (req, res) => {
     return out;
   });
   res.json({ name, total, limit, offset, columns, rows });
+});
+
+/** "Import an account": the archive from scripts/export-account.ts, sent in parts so no single request is huge. */
+adminRouter.post("/import/:uploadId/part/:index", async (req, res) => {
+  try {
+    res.json(await saveImportChunk(String(req.params.uploadId), Number(req.params.index), req));
+  } catch (err) {
+    const status = (err as { status?: number }).status || 500;
+    res.status(status).json({ error: err instanceof Error ? err.message : "Could not save the part." });
+  }
+});
+
+adminRouter.post("/import/:uploadId/finish", (req, res) => {
+  try {
+    res.json(finishImport(String(req.params.uploadId)));
+  } catch (err) {
+    const status = (err as { status?: number }).status || 500;
+    console.error("[admin] import failed:", err);
+    res.status(status).json({ error: err instanceof Error ? err.message : "Could not import." });
+  }
 });
