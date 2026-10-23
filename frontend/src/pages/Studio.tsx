@@ -7,6 +7,7 @@ import { prepareImage } from "../lib/imageUpload";
 import ExampleImages, { useProjectImageSrcs } from "../components/ExampleImages";
 import { useLocale } from "../i18n/locale";
 import MoreHint from "../components/MoreHint";
+import CertificateBlock from "../components/CertificateBlock";
 
 const VIDEO_STEPS = [
   { id: "idea", cost: 5 },
@@ -421,6 +422,7 @@ export default function Studio() {
   const [versionSrcs, setVersionSrcs] = useState<Record<string, string>>({});
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
   const [copyEdit, setCopyEdit] = useState("");
+  const [certPreview, setCertPreview] = useState("");
   const [copyEditOpen, setCopyEditOpen] = useState(false);
   const [copyEditImage, setCopyEditImage] = useState("");
   const [pendingRegen, setPendingRegen] = useState<{ step: string; sceneId?: number } | null>(null);
@@ -667,6 +669,7 @@ export default function Studio() {
 
   const isImage = project?.type === "image_post";
   const isInvite = Boolean(isImage && project?.imageIntent === "invite");
+  const isCertificate = Boolean(isImage && project?.imageIntent === "certificate");
   const shapeRatio = isImage && project?.imageFormat ? SHAPE_RATIO[project.imageFormat] : undefined;
   const isPoster = Boolean(isImage && (project?.imageIntent === "invite" || project?.imageIntent === "info" || project?.imageIntent === "offer"));
   const STEPS = isImage
@@ -800,7 +803,8 @@ export default function Studio() {
     (rawFrame.startsWith("data:") ? "" : rawFrame);
   const acceptedVersionId = project?.versions?.visuals?.find((version) => version.accepted)?.id;
   const selectedVersionId = previewVersionId || acceptedVersionId;
-  const frame = previewVersionId ? versionSrcs[previewVersionId] || "" : currentFrame;
+  // A certificate shows the picked person's page — the painted design with the printed words.
+  const frame = previewVersionId ? versionSrcs[previewVersionId] || "" : isCertificate && certPreview ? certPreview : currentFrame;
   const workingVersionId = selectedVersionId || undefined;
   const downloadSrc = frame && !frame.startsWith("linear") ? frame : currentFrame;
   const makingPicture = Boolean(busy === "visuals" || (typeof busy === "string" && busy.startsWith("visual-")));
@@ -2846,11 +2850,12 @@ export default function Studio() {
             <>
               <div className="ready-block">
                 <p className="ok">
-                  {t(isInvite ? "studio.inviteReady" : "studio.pictureReady", { credits: project.creditsUsed })}
+                  {t(isInvite ? "studio.inviteReady" : isCertificate ? "studio.certificateReady" : "studio.pictureReady", { credits: project.creditsUsed })}
                 </p>
-                <p className="hint">{t(isInvite ? "studio.inviteKeep" : "studio.pictureKeep")}</p>
+                {!isCertificate && <p className="hint">{t(isInvite ? "studio.inviteKeep" : "studio.pictureKeep")}</p>}
+                {isCertificate && <CertificateBlock project={project} onSaved={setProject} onPreview={setCertPreview} disabled={Boolean(busy)} />}
                 <div className="action-row">
-                  {downloadSrc && !String(downloadSrc).startsWith("linear") && (
+                  {!isCertificate && downloadSrc && !String(downloadSrc).startsWith("linear") && (
                     <a
                       className="btn accent"
                       href={downloadSrc}
@@ -3008,7 +3013,7 @@ export default function Studio() {
                     )}
                   </div>
                 )}
-                {isImage && (
+                {isImage && !isCertificate && (
                   <div style={{ marginTop: 16 }}>
                     <p className="hint">
                       <b>{t("studio.reformatAsk")}</b> · {t("studio.reformatHint")}
@@ -3043,7 +3048,7 @@ export default function Studio() {
                     )}
                   </div>
                 )}
-                {isImage && autoLogo && frameHasOurLogo && (
+                {isImage && !isCertificate && autoLogo && frameHasOurLogo && (
                   <div style={{ marginTop: 16 }}>
                     <p className="hint">{t("studio.placeAutoHint")}</p>
                     {placing ? (
@@ -3084,7 +3089,7 @@ export default function Studio() {
                     )}
                   </div>
                 )}
-                {isImage && !autoLogo && (
+                {isImage && !isCertificate && !autoLogo && (
                   <div style={{ marginTop: 16 }}>
                     <p className="hint">{t(frameHasOurLogo ? "studio.logoOnIt" : "studio.logoAsk")}</p>
                     {hasBrandMark && (

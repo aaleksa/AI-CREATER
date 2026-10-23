@@ -14,7 +14,7 @@ const EMOJI: Record<string, string> = {
   advertisement: "📢",
   social_post: "✍️",
 };
-const KIND_IDS = ["photo", "invite", "info", "offer"] as const;
+const KIND_IDS = ["photo", "invite", "info", "offer", "certificate"] as const;
 const PIC_LANGS = ["", "en", "uk"] as const;
 
 const SHAPES = ["square", "portrait", "portrait34", "story", "wide"] as const;
@@ -24,7 +24,7 @@ export default function Home() {
   const { t, te, locale } = useLocale();
   const [type, setType] = useState("instagram_reel");
   const [imageIntent, setImageIntent] = useState("photo");
-  const [imageFormat, setImageFormat] = useState<(typeof SHAPES)[number]>("square");
+  const [imageFormat, setImageFormat] = useState<(typeof SHAPES)[number] | "a5">("square");
   const [shapeTouched, setShapeTouched] = useState(false);
   const [pictureLanguage, setPictureLanguage] = useState<"" | "en" | "uk">("");
   const [prompt, setPrompt] = useState(() => translate(detectLocale(), "examples.instagram_reel"));
@@ -180,7 +180,8 @@ export default function Home() {
                 className={`pill ${imageIntent === id ? "on" : ""}`}
                 onClick={() => {
                   setImageIntent(id);
-                  if (!shapeTouched) setImageFormat(id === "photo" ? "square" : "portrait");
+                  if (id === "certificate") setImageFormat("a5");
+                  else if (!shapeTouched || imageFormat === "a5") setImageFormat(id === "photo" ? "square" : "portrait");
                   if (id === "photo") setPictureLanguage("");
                   if (Object.values(kindExamples).includes(prompt) || !prompt.trim()) {
                     setPrompt(kindExamples[id]);
@@ -193,6 +194,10 @@ export default function Home() {
           </div>
           <p className="hint pill-hint" aria-live="polite">{kindHint}</p>
 
+          {imageIntent === "certificate" ? (
+            <p className="hint" style={{ marginTop: 18 }}>{t("home.certificateShape")}</p>
+          ) : (
+          <>
           <p className="step-label" style={{ marginTop: 18 }}>{t("shapes.ask")}</p>
           <div className="pills" role="group" aria-label={t("shapes.ask")}>
             {SHAPES.map((id) => (
@@ -215,6 +220,8 @@ export default function Home() {
             {t(`shapes.${imageFormat}Where`)} · {t(`shapes.${imageFormat}Hint`)}
           </p>
           <p className="hint">{t("shapes.why")}</p>
+          </>
+          )}
           {isPoster && (
             <div className="pic-lang">
               <p className="step-label" style={{ marginTop: 18 }}>{t("home.picLangAsk")}</p>

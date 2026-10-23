@@ -30,6 +30,7 @@ import {
   readPaintedCopy,
   translateBrief,
   translateScript,
+  translateCertificateWords,
   translatePictureCopy,
   tidyIdea,
   tidyVoice,
@@ -98,6 +99,7 @@ import {
 } from "./media.js";
 import { assertArchiveRoom, evictOverLimit } from "./archive.js";
 import { inviteFrom, parseInvite, preferBriefInvite, type InviteCard } from "./invite.js";
+import { certificateBlockBox, parseCertificate, renderCertificate, withCodes, type CertificateSettings } from "./certificate.js";
 import { parseStepFeedback, recordStepRejection } from "./feedback.js";
 import { maybeRefreshLearnedSummary } from "./learning.js";
 import { previewState } from "./share.js";
@@ -113,7 +115,7 @@ export function isImagePost(type: string) {
   return type === "image_post";
 }
 
-export const IMAGE_INTENTS = ["photo", "invite", "info", "offer"] as const;
+export const IMAGE_INTENTS = ["photo", "invite", "info", "offer", "certificate"] as const;
 export type ImageIntent = (typeof IMAGE_INTENTS)[number];
 
 export function isInvitePoster(type: string, intent: string) {
@@ -179,7 +181,7 @@ export function readCreatePictureLanguage(
   intent: ImageIntent | "",
   raw: unknown
 ): { language: PictureLanguage } | { error: string } {
-  if (!isTextPoster(type, intent)) return { language: "" };
+  if (!isTextPoster(type, intent) && intent !== "certificate") return { language: "" };
   if (raw == null || raw === "") return { language: "" };
   if (raw === "en" || raw === "uk") return { language: raw };
   return { error: "Choose English, Ukrainian, or follow the brief." };
@@ -191,6 +193,8 @@ export function readCreateImageFormat(
   raw: unknown
 ): { format: (typeof IMAGE_FORMATS)[number] | "" } | { error: string } {
   if (type !== "image_post") return { format: "" };
+  // A gift certificate is printed: always A5 landscape.
+  if (intent === "certificate") return { format: "a5" };
   if (raw == null || raw === "") return { format: isTextPoster(type, intent) ? "portrait" : "square" };
   const format = parseImageFormat(raw);
   if (!format) return { error: "Choose where the picture will be posted." };
@@ -315,6 +319,95 @@ function saveStepVersion(projectId: string, step: string, payload: unknown, gene
      VALUES (?, ?, ?, ?, ?, 1, ?, ?)`
   ).run(id, projectId, step, sceneId ?? null, JSON.stringify(payload), generationId, parent?.id ?? null);
   return id;
+}
+
+/** The words printed on a gift certificate and the people it is for. */
+function certificateOf(row: Record<string, unknown>): CertificateSettings {
+  const lang = row.picture_language === "en" || row.picture_language === "uk"
+    ? row.picture_language
+    : /[\u0400-\u04FF]/.test(String(row.prompt || "")) ? "uk" : "en";
+  const saved = parse<unknown>(row.certificate_json as string | null);
+  const settings = parseCertificate(saved, lang as "uk" | "en");
+  return settings.items.length ? settings : { ...settings, items: [{ name: "", gift: "", giftNote: "", validFrom: "", validUntil: "", code: "" }] };
+}
+
+/** The certificate as the Studio shows it: the saved words plus the size of each block of words, for the drag frame. */
+function certificateView(row: Record<string, unknown>) {
+  const settings = certificateOf(row);
+  const brand = Number(row.use_brand) === 0 ? null : brandFor(String(row.user_id));
+  return { ...settings, boxes: settings.items.map((item) => certificateBlockBox(settings, item, brand)) };
+}
+
+/** Saves the certificate words and the list of people (codes filled in); free, nothing is painted. */
+export function updateCertificate(userId: string, projectId: string, raw: unknown) {
+  const project = getProject(projectId, userId);
+  if (project.image_intent !== "certificate") throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  const settings = withCodes(parseCertificate(raw, certificateOf(project).lang));
+  db.prepare("UPDATE projects SET certificate_json = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(settings), projectId);
+  return serializeProject(getProject(projectId, userId));
+}
+
+/** The owner's words (heading, gifts and their smaller lines, note) in the label language; free like the Reel translation. */
+export async function translateCertificate(userId: string, projectId: string, rawLang: unknown) {
+  const project = getProject(projectId, userId);
+  if (project.image_intent !== "certificate") throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  const lang = rawLang === "en" ? "en" : "uk";
+  const current = certificateOf(project);
+  const ownTitle = parseCertificate({ title: current.title }, current.lang).title === parseCertificate({}, current.lang).title ? "" : current.title;
+  const input = {
+    title: ownTitle,
+    note: current.note,
+    gifts: current.items.map((item) => item.gift),
+    giftNotes: current.items.map((item) => item.giftNote || ""),
+  };
+  const hasWords = Boolean(input.title || input.note || input.gifts.some(Boolean) || input.giftNotes.some(Boolean));
+  let out = input;
+  if (hasWords) {
+    const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
+    const result = await translateCertificateWords(input, lang, brand?.business_name || "");
+    const data = result.data;
+    // The same words back are fine: they were already in that language.
+    if (
+      result.provider !== "openai" ||
+      !data ||
+      !Array.isArray(data.gifts) ||
+      data.gifts.length !== input.gifts.length ||
+      !Array.isArray(data.giftNotes) ||
+      data.giftNotes.length !== input.giftNotes.length
+    ) {
+      throw Object.assign(new Error(USER_ERRORS.textFailed), { status: 502 });
+    }
+    out = data;
+  }
+  const next = withCodes(
+    parseCertificate(
+      {
+        ...current,
+        lang,
+        title: ownTitle ? String(out.title || ownTitle) : "",
+        note: input.note ? String(out.note || input.note) : "",
+        items: current.items.map((item, i) => ({
+          ...item,
+          gift: String(out.gifts[i] || item.gift),
+          giftNote: String(out.giftNotes[i] || item.giftNote || ""),
+        })),
+      },
+      lang
+    )
+  );
+  db.prepare("UPDATE projects SET certificate_json = ?, picture_language = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(next), lang, projectId);
+  return serializeProject(getProject(projectId, userId));
+}
+
+/** One person's certificate as a print PNG, a PDF or a small preview — our words on the painted design. */
+export async function certificateFile(userId: string, projectId: string, index: number, format: "png" | "pdf" | "preview") {
+  const project = getProject(projectId, userId);
+  if (project.image_intent !== "certificate") throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  const settings = certificateOf(project);
+  const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
+  const file = await renderCertificate(projectId, settings, Math.max(0, Math.min(index, settings.items.length - 1)), brand, format);
+  const item = settings.items[index];
+  return { ...file, name: [item?.name || "certificate", item?.gift?.slice(0, 40), settings.codes ? item?.code : "", settings.lang].filter(Boolean).join("-") };
 }
 
 function brandFor(userId: string): BrandKit | null {
@@ -571,6 +664,7 @@ export function serializeProject(row: Record<string, unknown>) {
     useBrand: Number(row.use_brand) !== 0,
     refs: exampleRefList(id),
     invite: row.invite_json ? parseInvite(parse(row.invite_json)) : null,
+    certificate: row.image_intent === "certificate" ? certificateView(row) : null,
     status: running ? "generating" : row.status,
     currentStep: row.current_step,
     runningStep: running?.type || null,
@@ -1532,9 +1626,11 @@ export async function runStep(
       const poster = isImagePost(type) && isTextPoster(type, imageIntent || "photo");
       const kind = poster ? "poster" : isImagePost(type) ? "still" : "video";
       // A Reel's logo is one layer over the finished video, never painted into the frames.
-      const skipLogoStamp = keepStill || kind === "video";
+      // A gift certificate gets its logo and contacts on the printed page itself, with the exact words.
+      const isCertificate = imageIntent === "certificate";
+      const skipLogoStamp = keepStill || kind === "video" || isCertificate;
       // The contact line goes on photo posts only: flyers already carry their own text, Reels have captions.
-      const stampContact = kind === "still" && !keepStill;
+      const stampContact = kind === "still" && !keepStill && !isCertificate;
       let paintedCopy = "";
       let translatedBrief = "";
       if (keepStill && requestedLang) {

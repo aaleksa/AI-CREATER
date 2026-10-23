@@ -506,6 +506,8 @@ const IMAGE_KIND_GUIDE: Record<string, string> = {
   invite: "Finished invitation flyer: photography and words are one designed page (title, programme, date), like ChatGPT would design — not a stock photo with a caption.",
   info: "Information post: a designed page from their fact — photography plus short readable type, one layout.",
   offer: "Offer post: a designed page from their offer — photography plus short readable type, not a price sticker on a stock photo.",
+  certificate:
+    "Printed gift certificate (A5 landscape): only the decorative design — frame, motif from their trade, brand colours. We print every word ourselves, so the picture has no letters at all and a calm empty centre.",
 };
 
 function mockIdea(prompt: string, type: string, brand?: BrandKit | null, imageIntent = ""): Idea {
@@ -1041,6 +1043,19 @@ export function stillPicturePrompt(
   const withCopy = kind === "invite" || kind === "info" || kind === "offer";
   const shot = idea.shot?.summary ? idea.shot : fallbackShot(idea, asked);
   const confirmed = shotLines(shot);
+  if (kind === "certificate") {
+    return [
+      "Create the decorative design of a printed gift certificate, A5 landscape. It is a background: we print every word on it afterwards.",
+      confirmed.length ? ["The owner approved this look. Follow it:", ...confirmed.filter((line) => !/^Words/i.test(line))].join("\n") : idea.visualDirection && `Look: ${idea.visualDirection}`,
+      `Their business and occasion (for the motif only, never as text):\n${asked}`,
+      brandLook(brand, "designed"),
+      "Layout: an elegant border or frame and decoration around the edges (motif from their trade, flowers, ribbon, pattern — as fits). The centre — about two thirds of the width and two thirds of the height — stays calm, light and empty, a plain paper tone, so printed text reads clearly on it.",
+      "Absolutely no letters, no numbers, no words, no logo, no signature, no barcode, no fake text anywhere. Print quality, crisp, no watermark, no mock-up, no hands, no table — just the flat certificate artwork filling the canvas.",
+      regenInstruction(feedback),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  }
   return [
     withCopy
       ? "Create one finished designed picture from this request. Do what they asked — layout, words and photograph together."
@@ -1108,7 +1123,9 @@ export async function generateIdea(
     }\nReturn JSON with keys: ${keys}.${
       imageIntent === "invite"
         ? " Never translate. Proofread names, dates, place and programme; keep facts, fix spelling, keep normal spaces between words. intro/closing only if they wrote them. program only if they listed times. visualDirection = how a designed flyer is composed (photo area + type blocks), not a single stock portrait with a caption."
-        : imageIntent === "info" || imageIntent === "offer"
+        : imageIntent === "certificate"
+          ? " visualDirection = the decorative design of a printed gift certificate: a frame or border, a motif from their trade at the edges, their colours, a calm empty light centre for the text we print. No words in the picture (shot words: none)."
+          : imageIntent === "info" || imageIntent === "offer"
           ? " visualDirection = a designed post: photography plus type as one layout, not a stock photo with a paragraph on top. Proofread. Do not invent a different story."
           : " visualDirection = one concrete photograph from their words, not a generic mood. Do not invent a different story."
     }${shotGuide}`,
@@ -1231,6 +1248,26 @@ export function videoFramePrompt(scene: ScriptScene, brand?: BrandKit | null, re
 }
 
 /** The whole Reel script in one language: on-screen words, voiceover and the call to action. Names stay as written. */
+/** The owner's own words on a gift certificate, in another language. Names, dates and codes are not sent. */
+export async function translateCertificateWords(
+  input: { title: string; note: string; gifts: string[]; giftNotes: string[] },
+  lang: "en" | "uk",
+  brandName = ""
+) {
+  const target = lang === "uk" ? "Ukrainian" : "English";
+  return jsonCompletion<typeof input>(
+    [
+      `Translate these words of a printed gift certificate into ${target}. Every value must end up in ${target}.`,
+      "Short and natural, as a shop would write on a gift certificate. Keep prices, amounts and currency symbols exactly (£50 stays £50).",
+      keepNamesRule(brandName),
+      "Keep capital letters where they wrote capitals (COMPLIMENTARY COCKTAIL stays in capitals). Empty strings stay empty. gifts and giftNotes keep their length and order.",
+    ].join(" "),
+    `${JSON.stringify(input)}\nReturn JSON: { title, note, gifts: [string], giftNotes: [string] }`,
+    input,
+    { temperature: 0 }
+  );
+}
+
 export async function translateScript(script: Script, lang: "en" | "uk", brandName = "") {
   const target = lang === "uk" ? "Ukrainian" : "English";
   const input = {

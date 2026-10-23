@@ -8,12 +8,13 @@ const SHAPE: Record<string, string> = {
   portrait34: "3x4",
   story: "9x16",
   wide: "1.91x1",
+  a5: "A5",
   tall: "2x3",
 };
 
 /** "портрет 4:5", "сторіз 9:16" — the shape of a picture in a few characters. */
 export function shapeLabel(shape: string, t: T) {
-  return SHAPE[shape] ? `${t(`fileName.${shape}`)} ${SHAPE[shape].replace("x", ":")}` : "";
+  return SHAPE[shape] ? (shape === "a5" ? t("fileName.a5") : `${t(`fileName.${shape}`)} ${SHAPE[shape].replace("x", ":")}`) : "";
 }
 
 /** Words of the title, safe for a file name on any computer. Letters of any alphabet stay. */
