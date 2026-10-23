@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { api, type AdminTable, type Me } from "../lib/api";
+import { api, ApiError, type AdminTable, type Me } from "../lib/api";
 
 const PAGE = 50;
 
@@ -116,12 +116,15 @@ function ImportAccount({ onDone }: { onDone: () => void }) {
     setError("");
     const uploadId = crypto.randomUUID();
     const parts = Math.ceil(file.size / PART);
+    let step = "";
     try {
       for (let i = 0; i < parts; i++) {
-        setProgress(`Uploading ${i + 1} of ${parts}…`);
+        step = `Uploading ${i + 1} of ${parts}`;
+        setProgress(`${step}…`);
         await api.adminImportPart(uploadId, i, file.slice(i * PART, (i + 1) * PART));
       }
-      setProgress("Adding to the database…");
+      step = "Adding to the database";
+      setProgress(`${step}…`);
       const r = await api.adminImportFinish(uploadId);
       setProgress(
         `Done: ${r.email} — ${r.projects} projects, ${r.versions} versions, ${r.files} files` +
@@ -131,7 +134,8 @@ function ImportAccount({ onDone }: { onDone: () => void }) {
       onDone();
     } catch (err) {
       setProgress("");
-      setError(err instanceof Error ? err.message : "Could not import.");
+      const status = err instanceof ApiError ? ` (${err.status})` : "";
+      setError(`${step}: ${err instanceof Error ? err.message : "Could not import."}${status}`);
     } finally {
       setBusy(false);
     }
@@ -152,7 +156,7 @@ function ImportAccount({ onDone }: { onDone: () => void }) {
         {file && !busy && <span className="hint">{(file.size / 1024 / 1024).toFixed(1)} MB</span>}
       </div>
       {progress && <p className="hint">{progress}</p>}
-      {error && <p className="error">{error}</p>}
+      {error && <p className="err">{error}</p>}
     </details>
   );
 }
