@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { ApiError, api, clearSession, type Me } from "../lib/api";
 import LanguageSwitch from "./LanguageSwitch";
 import ThemeSwitch from "./ThemeSwitch";
@@ -9,6 +9,22 @@ function VerifyBanner({ email }: { email: string }) {
   const { t, te } = useLocale();
   const [status, setStatus] = useState<"idle" | "sending" | "sent">("idle");
   const [error, setError] = useState("");
+  const [code, setCode] = useState("");
+  const [checking, setChecking] = useState(false);
+
+  async function confirmCode(e: FormEvent) {
+    e.preventDefault();
+    setChecking(true);
+    setError("");
+    try {
+      await api.verifyEmailCode(code);
+      window.dispatchEvent(new Event("auteur:refresh"));
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("auth.fallback"));
+    } finally {
+      setChecking(false);
+    }
+  }
 
   async function resend() {
     setStatus("sending");
@@ -26,6 +42,21 @@ function VerifyBanner({ email }: { email: string }) {
   return (
     <div className="verify-banner" role="status">
       <span>{t("verify.banner", { email })}</span>
+      <form className="verify-code" onSubmit={confirmCode}>
+        <input
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          pattern="[0-9 ]*"
+          maxLength={7}
+          placeholder={t("verify.codePlaceholder")}
+          aria-label={t("verify.codeLabel")}
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/[^0-9 ]/g, ""))}
+        />
+        <button type="submit" className="btn" disabled={checking || code.replace(/\D/g, "").length !== 6}>
+          {checking ? t("verify.checking") : t("verify.codeSubmit")}
+        </button>
+      </form>
       {status === "sent" ? (
         <span className="hint">{t("verify.sent")}</span>
       ) : (

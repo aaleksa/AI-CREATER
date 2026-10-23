@@ -10,10 +10,14 @@ import { rateLimit } from "../middleware/rateLimit.js";
 import { isAdminUser } from "./admin.js";
 import {
   confirmEmail,
+  confirmEmailCode,
   FREE_CREDITS_NOTE,
   langOf,
   needsVerification,
+  notifyEmailChanged,
   resendVerificationLink,
+  resetPassword,
+  sendPasswordReset,
   sendVerificationLink,
   verificationRequired,
 } from "../services/emailVerification.js";
@@ -68,7 +72,8 @@ authRouter.post("/signup", rateLimit(5, 60 * 60_000, "Too many attempts. Wait a 
   }
 });
 
-authRouter.post("/login", (req, res) => {
+// Guessing passwords: 10 tries per 15 minutes from one address.
+authRouter.post("/login", rateLimit(10, 15 * 60_000, "Too many attempts. Wait a few minutes, then try again.", "login"), (req, res) => {
   const { email, password } = req.body ?? {};
   const row = db.prepare("SELECT * FROM users WHERE email = ?").get(String(email || "").toLowerCase().trim()) as
     | { id: string; email: string; name: string; password_hash: string; token_version: number }
@@ -121,6 +126,50 @@ authRouter.post("/verify-email", rateLimit(20, 15 * 60_000, "Too many attempts. 
     res.status(err.status || 500).json({ error: err.status ? err.message : "Something went wrong. Try again in a minute." });
   }
 });
+
+authRouter.post(
+  "/verify-email/code",
+  requireAuth,
+  rateLimit(10, 15 * 60_000, "Too many attempts. Wait a few minutes, then try again.", "verify-code"),
+  (req, res) => {
+    try {
+      res.json(confirmEmailCode(req.user!.id, req.body?.code));
+    } catch (error) {
+      const err = error as Error & { status?: number };
+      res.status(err.status || 500).json({ error: err.status ? err.message : "Something went wrong. Try again in a minute." });
+    }
+  }
+);
+
+authRouter.post(
+  "/password/forgot",
+  rateLimit(5, 60 * 60_000, "Too many attempts. Wait a few minutes, then try again.", "password-forgot"),
+  async (req, res) => {
+    try {
+      await sendPasswordReset(req.body?.email, langOf(req.get("Accept-Language")));
+      // The same answer whether or not there is such an account.
+      res.json({ ok: true });
+    } catch (error) {
+      const err = error as Error & { status?: number };
+      res.status(err.status || 500).json({ error: err.status ? err.message : "Something went wrong. Try again in a minute." });
+    }
+  }
+);
+
+authRouter.post(
+  "/password/reset",
+  rateLimit(10, 15 * 60_000, "Too many attempts. Wait a few minutes, then try again.", "password-reset"),
+  (req, res) => {
+    try {
+      const { user, version } = resetPassword(req.body?.token, req.body?.password);
+      ensureBrandKit(user.id, user.name);
+      res.json({ token: signToken(user, version), user });
+    } catch (error) {
+      const err = error as Error & { status?: number };
+      res.status(err.status || 500).json({ error: err.status ? err.message : "Something went wrong. Try again in a minute." });
+    }
+  }
+);
 
 authRouter.post(
   "/verify-email/resend",
@@ -180,7 +229,9 @@ authRouter.patch("/profile", requireAuth, sensitive, async (req, res) => {
   if (email !== row.email) {
     // A new address must be confirmed again; credits already given are not given twice.
     db.prepare("UPDATE users SET email_verified_at = NULL WHERE id = ?").run(row.id);
-    if (verificationRequired()) await sendVerificationLink(row.id, langOf(req.get("Accept-Language")));
+    const lang = langOf(req.get("Accept-Language"));
+    await notifyEmailChanged(row.email, name, email, lang);
+    if (verificationRequired()) await sendVerificationLink(row.id, lang);
   }
   const user = { id: row.id, email, name };
   res.json({ token: signToken(user, Number(row.token_version || 0)), user });

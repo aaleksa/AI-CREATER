@@ -63,6 +63,9 @@ export default function Auth({ mode }: { mode: "login" | "signup" }) {
             minLength={6}
             autoComplete={mode === "signup" ? "new-password" : "current-password"}
           />
+          {mode === "login" && (
+            <Link to="/forgot-password" className="hint forgot-link">{t("auth.forgot")}</Link>
+          )}
         </div>
         {error && <p className="err">{error}</p>}
         <button className="btn" disabled={busy}>

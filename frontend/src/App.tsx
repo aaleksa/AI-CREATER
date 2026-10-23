@@ -12,6 +12,7 @@ import Library from "./pages/Library";
 import Preview from "./pages/Preview";
 import Admin from "./pages/Admin";
 import VerifyEmail from "./pages/VerifyEmail";
+import PasswordReset from "./pages/PasswordReset";
 import { hasSession } from "./lib/api";
 
 function Private({ children }: { children: ReactNode }) {
@@ -27,6 +28,8 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Auth mode="login" />} />
         <Route path="/signup" element={<Auth mode="signup" />} />
+        <Route path="/forgot-password" element={<PasswordReset mode="forgot" />} />
+        <Route path="/reset-password" element={<PasswordReset mode="reset" />} />
         <Route path="/preview/:token" element={<Preview />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
         <Route

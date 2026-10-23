@@ -63,6 +63,10 @@ if (!userColumns.some((column) => column.name === "email_verified_at")) {
 }
 addColumn("ALTER TABLE users ADD COLUMN verify_token_hash TEXT");
 addColumn("ALTER TABLE users ADD COLUMN verify_sent_at TEXT");
+addColumn("ALTER TABLE users ADD COLUMN verify_code_hash TEXT");
+addColumn("ALTER TABLE users ADD COLUMN verify_code_tries INTEGER NOT NULL DEFAULT 0");
+addColumn("ALTER TABLE users ADD COLUMN reset_token_hash TEXT");
+addColumn("ALTER TABLE users ADD COLUMN reset_sent_at TEXT");
 
 try {
   sqlite.exec(`
