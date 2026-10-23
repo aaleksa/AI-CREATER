@@ -1400,3 +1400,11 @@ a, button, summary, label { -webkit-tap-highlight-color: transparent; }
 .verify-code input { width: 8.5em; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-field); letter-spacing: .2em; font-size: 16px; }
 .verify-code .btn { padding: 8px 16px; }
 .forgot-link { justify-self: start; align-self: flex-start; margin-top: 6px; font-size: 13px; }
+.certificate-block { display: grid; gap: 10px; margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-soft, var(--surface)); }
+.certificate-block h3 { margin: 0; }
+.certificate-block .hint { margin: 0; }
+.certificate-preview { width: 100%; border-radius: 12px; border: 1px solid var(--line); aspect-ratio: 1414 / 1000; object-fit: cover; }
+.certificate-row { display: grid; gap: 8px; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.certificate-row.on { border-color: var(--accent-2); }
+.certificate-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 420px) { .certificate-pair { grid-template-columns: minmax(0, 1fr); } }

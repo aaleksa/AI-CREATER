@@ -71,6 +71,9 @@ export type InviteItem = {
   title: string;
   detail: string;
 };
+export type CertificateItem = { name: string; gift: string; validUntil: string; code: string };
+export type CertificateSettings = { title: string; note: string; lang: "uk" | "en"; codes: boolean; items: CertificateItem[] };
+
 export type InviteCard = {
   name: string;
   date: string;
@@ -103,6 +106,7 @@ export const SHAPE_RATIO: Record<string, string> = {
   square: "1 / 1",
   portrait: "4 / 5",
   portrait34: "3 / 4",
+  a5: "1414 / 1000",
   story: "9 / 16",
   wide: "191 / 100",
   tall: "2 / 3",
@@ -115,9 +119,10 @@ export type Project = {
   imageIntent?: string;
   pictureLanguage?: "en" | "uk" | "";
   useBrand?: boolean;
-  imageFormat?: "square" | "portrait" | "portrait34" | "story" | "wide" | "tall" | "";
+  imageFormat?: "square" | "portrait" | "portrait34" | "story" | "wide" | "a5" | "tall" | "";
   refs?: { id: string; url: string }[];
   invite?: InviteCard | null;
+  certificate?: CertificateSettings | null;
   status: string;
   currentStep: string;
   idea: Idea | null;
@@ -235,6 +240,8 @@ export const api = {
     request<{ project: Project }>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify({ prompt }) }),
   updateUseBrand: (id: string, useBrand: boolean) =>
     request<{ project: Project }>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify({ useBrand }) }),
+  saveCertificate: (id: string, certificate: CertificateSettings) =>
+    request<{ project: Project }>(`/projects/${id}/certificate`, { method: "PATCH", body: JSON.stringify(certificate) }),
   updateInvite: (id: string, invite: InviteCard) =>
     request<{ project: Project }>(`/projects/${id}/invite`, { method: "PATCH", body: JSON.stringify({ invite }) }),
   runStep: (
