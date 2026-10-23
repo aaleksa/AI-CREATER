@@ -328,7 +328,7 @@ function certificateOf(row: Record<string, unknown>): CertificateSettings {
     : /[\u0400-\u04FF]/.test(String(row.prompt || "")) ? "uk" : "en";
   const saved = parse<unknown>(row.certificate_json as string | null);
   const settings = parseCertificate(saved, lang as "uk" | "en");
-  return settings.items.length ? settings : { ...settings, items: [{ name: "", gift: "", validUntil: "", code: "" }] };
+  return settings.items.length ? settings : { ...settings, items: [{ name: "", gift: "", validFrom: "", validUntil: "", code: "" }] };
 }
 
 /** Saves the certificate words and the list of people (codes filled in); free, nothing is painted. */
@@ -354,7 +354,8 @@ export async function translateCertificate(userId: string, projectId: string, ra
     const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
     const result = await translateCertificateWords(input, lang, brand?.business_name || "");
     const data = result.data;
-    if (!data || !Array.isArray(data.gifts) || data.gifts.length !== input.gifts.length || JSON.stringify(data) === JSON.stringify(input)) {
+    // The same words back are fine: they were already in that language.
+    if (result.provider !== "openai" || !data || !Array.isArray(data.gifts) || data.gifts.length !== input.gifts.length) {
       throw Object.assign(new Error(USER_ERRORS.textFailed), { status: 502 });
     }
     out = data;
@@ -383,7 +384,7 @@ export async function certificateFile(userId: string, projectId: string, index: 
   const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
   const file = await renderCertificate(projectId, settings, Math.max(0, Math.min(index, settings.items.length - 1)), brand, format);
   const item = settings.items[index];
-  return { ...file, name: [item?.name || "certificate", settings.codes ? item?.code : ""].filter(Boolean).join("-") };
+  return { ...file, name: [item?.name || "certificate", item?.gift?.slice(0, 40), settings.codes ? item?.code : "", settings.lang].filter(Boolean).join("-") };
 }
 
 function brandFor(userId: string): BrandKit | null {

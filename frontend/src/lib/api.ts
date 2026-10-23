@@ -71,7 +71,7 @@ export type InviteItem = {
   title: string;
   detail: string;
 };
-export type CertificateItem = { name: string; gift: string; validUntil: string; code: string };
+export type CertificateItem = { name: string; gift: string; validFrom: string; validUntil: string; code: string };
 export type CertificateSettings = { title: string; note: string; lang: "uk" | "en"; codes: boolean; items: CertificateItem[] };
 
 export type InviteCard = {

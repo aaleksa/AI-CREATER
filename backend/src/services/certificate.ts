@@ -27,13 +27,13 @@ const SANS_FONTS = [
   "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 ].filter((file) => fs.existsSync(file));
 
-export type CertificateItem = { name: string; gift: string; validUntil: string; code: string };
+export type CertificateItem = { name: string; gift: string; validFrom: string; validUntil: string; code: string };
 /** codes: print a code on each certificate (made for the empty ones). Off: no code at all. */
 export type CertificateSettings = { title: string; note: string; lang: "uk" | "en"; codes: boolean; items: CertificateItem[] };
 
 const LABELS = {
-  uk: { title: "Подарунковий сертифікат", for: "Для", valid: "Дійсний до", code: "Код" },
-  en: { title: "Gift certificate", for: "For", valid: "Valid until", code: "Code" },
+  uk: { title: "Подарунковий сертифікат", valid: "Дійсний до", from: "Дійсний з", fromTo: "до", code: "Код" },
+  en: { title: "Gift certificate", valid: "Valid until", from: "Valid from", fromTo: "to", code: "Code" },
 };
 
 function clip(value: unknown, max: number) {
@@ -58,6 +58,7 @@ export function parseCertificate(raw: unknown, fallbackLang: "uk" | "en"): Certi
       return {
         name: clip(row.name, 60),
         gift: clip(row.gift, 80),
+        validFrom: clip(row.validFrom, 40),
         validUntil: clip(row.validUntil, 40),
         code: clip(row.code, 24).toUpperCase(),
       };
@@ -139,19 +140,24 @@ function certificateSvg(settings: CertificateSettings, item: CertificateItem, br
   parts.push(`<text x="${cx}" y="${y + 60}" text-anchor="middle" font-family="${titleFamily}" font-weight="700" font-size="${fitSize(title, 118, inner, 0.6)}" fill="${accent}">${xml(title)}</text>`);
   y += 190;
   if (item.name) {
-    const line = `${L.for}: ${item.name}`;
-    parts.push(`<text x="${cx}" y="${y}" text-anchor="middle" font-family="${sans}" font-size="${fitSize(line, 76, inner)}" fill="${ink}">${xml(line)}</text>`);
+    parts.push(`<text x="${cx}" y="${y}" text-anchor="middle" font-family="${sans}" font-size="${fitSize(item.name, 80, inner)}" fill="${ink}">${xml(item.name)}</text>`);
   } else {
-    // No name yet: "For:" and a line to write it by hand.
-    parts.push(`<text x="${cx - 330}" y="${y}" text-anchor="end" font-family="${sans}" font-size="64" fill="${ink}">${xml(L.for)}:</text>`);
-    parts.push(`<rect x="${cx - 300}" y="${y + 8}" width="${770}" height="4" rx="2" fill="${ink}" fill-opacity="0.55"/>`);
+    // No name yet: a line to write it by hand.
+    parts.push(`<rect x="${cx - 420}" y="${y + 8}" width="840" height="4" rx="2" fill="${ink}" fill-opacity="0.55"/>`);
   }
   y += 140;
   if (item.gift) {
     parts.push(`<text x="${cx}" y="${y + 20}" text-anchor="middle" font-family="${sans}" font-weight="800" font-size="${fitSize(item.gift, 110, inner, 0.62)}" fill="${accent}">${xml(item.gift)}</text>`);
     y += 170;
   }
-  const meta = [item.validUntil && `${L.valid}: ${item.validUntil}`, settings.codes && item.code && `${L.code}: ${item.code}`].filter(Boolean).join("  ·  ");
+  const dates = item.validFrom
+    ? item.validUntil
+      ? `${L.from} ${item.validFrom} ${L.fromTo} ${item.validUntil}`
+      : `${L.from} ${item.validFrom}`
+    : item.validUntil
+      ? `${L.valid}: ${item.validUntil}`
+      : "";
+  const meta = [dates, settings.codes && item.code && `${L.code}: ${item.code}`].filter(Boolean).join("  ·  ");
   if (meta) {
     parts.push(`<text x="${cx}" y="${y}" text-anchor="middle" font-family="${sans}" font-size="${fitSize(meta, 54, inner)}" fill="${ink}">${xml(meta)}</text>`);
     y += 100;
@@ -236,7 +242,7 @@ export async function renderCertificate(
   brand: BrandKit | null,
   format: "png" | "pdf" | "preview"
 ) {
-  const item = settings.items[index] || { name: "", gift: "", validUntil: "", code: "" };
+  const item = settings.items[index] || { name: "", gift: "", validFrom: "", validUntil: "", code: "" };
   const design = stillFile(projectId, 1);
   if (!fs.existsSync(design)) throw Object.assign(new Error("Make the picture first."), { status: 400 });
   const fonts = [...SANS_FONTS];

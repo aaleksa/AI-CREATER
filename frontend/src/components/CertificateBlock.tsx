@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, fetchMedia, type CertificateItem, type CertificateSettings, type Project } from "../lib/api";
 import { useLocale } from "../i18n/locale";
 
-const EMPTY: CertificateItem = { name: "", gift: "", validUntil: "", code: "" };
+const EMPTY: CertificateItem = { name: "", gift: "", validFrom: "", validUntil: "", code: "" };
 /** The headings the studio prints by default; they follow the label language, an owner's own heading does not. */
 const STANDARD_TITLE = { uk: "Подарунковий сертифікат", en: "Gift certificate" } as const;
 const STANDARD_TITLES: string[] = Object.values(STANDARD_TITLE);
@@ -70,7 +70,8 @@ export default function CertificateBlock({
     }
   }
 
-  async function translate() {
+  /** Picking the language puts the printed labels and the owner's own words in it, in one click. */
+  async function translate(lang: "uk" | "en") {
     setBusy("translate");
     setError("");
     try {
@@ -78,7 +79,7 @@ export default function CertificateBlock({
         const { project: savedNow } = await api.saveCertificate(project.id, draft);
         onSaved(savedNow);
       }
-      const { project: next } = await api.translateCertificate(project.id, draft.lang);
+      const { project: next } = await api.translateCertificate(project.id, lang);
       onSaved(next);
       if (next.certificate) setDraft(next.certificate);
     } catch (err) {
@@ -98,7 +99,16 @@ export default function CertificateBlock({
       const a = document.createElement("a");
       const item = draft.items[i];
       a.href = url;
-      a.download = `${(item?.name || t("cert.fileName")).replace(/[\\/:*?"<>|]+/g, "").trim() || "certificate"}${draft.codes !== false && item?.code ? `-${item.code}` : ""}.${format}`;
+      // Who it is for (or "certificate"), what it is for, its code and language: easy to find in Downloads.
+      const safe = (text: string, max: number) => text.replace(/[\\/:*?"<>|]+/g, "").replace(/\s+/g, " ").trim().slice(0, max).trim();
+      a.download = `${[
+        safe(item?.name || "", 40) || t("cert.fileName"),
+        safe(item?.gift || "", 40),
+        draft.codes !== false ? safe(item?.code || "", 24) : "",
+        t(draft.lang === "en" ? "fileName.en" : "fileName.uk"),
+      ]
+        .filter(Boolean)
+        .join("-")}.${format}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -132,19 +142,17 @@ export default function CertificateBlock({
             className={`btn ghost tiny${draft.lang === lang ? " on" : ""}`}
             aria-pressed={draft.lang === lang}
             disabled={off}
-            onClick={() => setDraft({ ...draft, lang, title: STANDARD_TITLES.includes(draft.title.trim()) || !draft.title.trim() ? STANDARD_TITLE[lang] : draft.title })}
+            onClick={() => {
+              if (draft.lang === lang) return;
+              setDraft({ ...draft, lang, title: STANDARD_TITLES.includes(draft.title.trim()) || !draft.title.trim() ? STANDARD_TITLE[lang] : draft.title });
+              void translate(lang);
+            }}
           >
             {t(lang === "uk" ? "home.picLang.uk" : "home.picLang.en")}
           </button>
         ))}
       </div>
-      <p className="hint">{t("cert.langHint")}</p>
-      <div className="action-row" style={{ marginTop: 0 }}>
-        <button type="button" className="btn ghost tiny" disabled={off} onClick={translate}>
-          {busy === "translate" ? t("cert.translating") : t("cert.translate", { lang: t(draft.lang === "uk" ? "home.picLang.uk" : "home.picLang.en") })}
-        </button>
-      </div>
-      <p className="hint">{t("cert.translateHint")}</p>
+      <p className="hint">{busy === "translate" ? t("cert.translating") : t("cert.translateHint")}</p>
       <label className="check-row">
         <input type="checkbox" checked={draft.codes !== false} disabled={off} onChange={(e) => setDraft({ ...draft, codes: e.target.checked })} />
         {t("cert.codesOn")}
@@ -161,11 +169,17 @@ export default function CertificateBlock({
             <span>{t("cert.gift")}</span>
             <input value={item.gift} maxLength={80} placeholder={t("cert.giftPlaceholder")} onChange={(e) => setItem(i, { gift: e.target.value })} />
           </label>
-          <div className={draft.codes !== false ? "certificate-pair" : ""}>
+          <div className="certificate-pair">
+            <label className="shot-field">
+              <span>{t("cert.validFrom")}</span>
+              <input value={item.validFrom || ""} maxLength={40} placeholder={t("cert.validFromPlaceholder")} onChange={(e) => setItem(i, { validFrom: e.target.value })} />
+            </label>
             <label className="shot-field">
               <span>{t("cert.valid")}</span>
               <input value={item.validUntil} maxLength={40} placeholder={t("cert.validPlaceholder")} onChange={(e) => setItem(i, { validUntil: e.target.value })} />
             </label>
+          </div>
+          <div className={draft.codes !== false ? "certificate-pair" : ""}>
             {draft.codes !== false && (
             <label className="shot-field">
               <span>{t("cert.code")}</span>
@@ -214,7 +228,7 @@ export default function CertificateBlock({
           type="button"
           className="btn ghost"
           disabled={off || draft.items.length >= 50}
-          onClick={() => setDraft({ ...draft, items: [...draft.items, { ...EMPTY, gift: draft.items[draft.items.length - 1]?.gift || "", validUntil: draft.items[draft.items.length - 1]?.validUntil || "" }] })}
+          onClick={() => setDraft({ ...draft, items: [...draft.items, { ...EMPTY, gift: draft.items[draft.items.length - 1]?.gift || "", validFrom: draft.items[draft.items.length - 1]?.validFrom || "", validUntil: draft.items[draft.items.length - 1]?.validUntil || "" }] })}
         >
           {t("cert.add")}
         </button>
