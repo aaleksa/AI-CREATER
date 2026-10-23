@@ -102,6 +102,7 @@ export const ERROR_UK: Record<string, string> = {
     "Голос цього Reel уже не зберігається (тримаємо 7 днів), тож безкоштовно оновити відео не вийде. Запишіть голос знову, а потім зробіть відео.",
   "We couldn't update the video. Try again in a minute.": "Не вдалося оновити відео. Спробуйте за хвилину — попереднє відео лишилося.",
   "That file is too big.": "Файл завеликий.",
+  "Upload a PNG, JPG or WebP logo.": "Завантажте логотип у PNG, JPG або WebP.",
   "Confirm your email first — we sent you a link. Your 400 free credits arrive right after.":
     "Спочатку підтвердіть пошту — ми надіслали посилання. Одразу після цього отримаєте 400 безкоштовних кредитів.",
   "We just sent a link. Check your inbox and spam, or try again in a minute.":

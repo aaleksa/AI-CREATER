@@ -23,6 +23,8 @@ const KEEP = (name: string) =>
   name === "music.m4a" ||
   name.startsWith("still-") ||
   name.startsWith("example-") ||
+  // A certificate's own logo: every PDF is printed again from it.
+  name.startsWith("cert-logo") ||
   // The pictures without our logo: every logo move, removal and edit starts from them. Lost, the logo doubles.
   name.startsWith("clean-");
 

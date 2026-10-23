@@ -8,6 +8,7 @@ import { Resvg } from "@resvg/resvg-js";
 import type { BrandKit } from "./ai.js";
 import { brandFont } from "./brandFont.js";
 import { brandLogoPath } from "./brandAssets.js";
+import { imageDimensions } from "./imageFormats.js";
 import { projectMediaDir, stillFile } from "./media.js";
 
 const require = createRequire(import.meta.url);
@@ -15,6 +16,7 @@ const ffmpegPath = (require("ffmpeg-static") as string | null) || "ffmpeg";
 
 /** A5 landscape at 300 dpi: what a print shop expects. */
 const PRINT = { w: 2480, h: 1748 };
+export const PRINT_HEIGHT = PRINT.h;
 /** The same page in PDF points (1/72 inch). */
 const PAGE = { w: 595.28, h: 419.53 };
 const MAX_ITEMS = 50;
@@ -43,6 +45,9 @@ export type CertificateLayout = { x: number; y: number; scale: number };
 export const CERTIFICATE_FONTS = ["brand", "montserrat", "playfair", "cormorant", "script"] as const;
 export type CertificateFont = (typeof CERTIFICATE_FONTS)[number];
 export type CertificateStyle = { font: CertificateFont; accent: string; ink: string };
+/** Whose logo tops the words: the brand kit's, a file for this certificate only, or none. */
+export const CERTIFICATE_LOGOS = ["brand", "own", "none"] as const;
+export type CertificateLogo = (typeof CERTIFICATE_LOGOS)[number];
 export type CertificateSettings = {
   title: string;
   note: string;
@@ -50,8 +55,48 @@ export type CertificateSettings = {
   codes: boolean;
   layout: CertificateLayout;
   style: CertificateStyle;
+  logo: CertificateLogo;
+  /** Set once the logo is dragged off the words: its own centre (share of the page) and size; null = above the heading. */
+  logoLayout: CertificateLayout | null;
   items: CertificateItem[];
 };
+
+/** The logo's space above the heading (print px): the file is fitted into it, proportions kept. */
+const LOGO_BOX = { w: 520, h: 170 };
+/** Block units the attached logo takes (its box and the gap under it); half of it is how far the words move when it leaves. */
+export const LOGO_ROOM = 220;
+
+function logoFit(file: string) {
+  const d = imageDimensions(file);
+  if (!d?.w || !d?.h) return LOGO_BOX;
+  const r = Math.min(LOGO_BOX.w / d.w, LOGO_BOX.h / d.h);
+  return { w: d.w * r, h: d.h * r };
+}
+
+function parseLogoLayout(raw: unknown): CertificateLayout | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const num = (value: unknown, min: number, max: number, fallback: number) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n * 1000) / 1000)) : fallback;
+  };
+  return { x: num(row.x, 0.03, 0.97, 0.5), y: num(row.y, 0.03, 0.97, 0.2), scale: num(row.scale, 0.3, 3, 1) };
+}
+
+/** This certificate's own logo (PNG, JPEG or WebP; the type is read from the bytes). */
+export function ownLogoFile(projectId: string) {
+  return path.join(projectMediaDir(projectId), "cert-logo.img");
+}
+
+/**
+ * The logo file printed on the certificate, or "" (then the brand name is printed when the brand is used).
+ * The brand kit's logo is the owner's own file: it can go on a certificate made without the brand look too.
+ */
+export function certificateLogoPath(projectId: string, settings: CertificateSettings, ownerId: string) {
+  if (settings.logo === "none") return "";
+  if (settings.logo === "own") return fs.existsSync(ownLogoFile(projectId)) ? ownLogoFile(projectId) : "";
+  return brandLogoPath(ownerId) || "";
+}
 
 /** Family names as written inside the font files. */
 const FONT_FAMILY: Record<Exclude<CertificateFont, "brand">, string> = {
@@ -99,7 +144,8 @@ export function newCertificateCode() {
   return `${chars.slice(0, 4).join("")}-${chars.slice(4).join("")}`;
 }
 
-export function parseCertificate(raw: unknown, fallbackLang: "uk" | "en"): CertificateSettings {
+/** defaultLogo: for a certificate never set up — the brand kit's when made with the brand, else none (as it printed before). */
+export function parseCertificate(raw: unknown, fallbackLang: "uk" | "en", defaultLogo: CertificateLogo = "brand"): CertificateSettings {
   const body = (raw && typeof raw === "object" ? raw : {}) as Partial<Record<keyof CertificateSettings, unknown>>;
   const lang = body.lang === "en" || body.lang === "uk" ? body.lang : fallbackLang;
   const items = (Array.isArray(body.items) ? body.items : [])
@@ -125,6 +171,8 @@ export function parseCertificate(raw: unknown, fallbackLang: "uk" | "en"): Certi
     codes: body.codes !== false,
     layout: parseLayout(body.layout),
     style: parseStyle(body.style),
+    logo: CERTIFICATE_LOGOS.includes(body.logo as CertificateLogo) ? (body.logo as CertificateLogo) : defaultLogo,
+    logoLayout: parseLogoLayout((body as Record<string, unknown>).logoLayout),
     items,
   };
 }
@@ -170,15 +218,17 @@ function fitSize(text: string, size: number, width: number, perChar = 0.56) {
 }
 
 /** The page as SVG: the painted design, a quiet panel in the middle, our exact words on it. */
-function certificateSvg(settings: CertificateSettings, item: CertificateItem, brand: BrandKit | null, background: string) {
+function certificateSvg(settings: CertificateSettings, item: CertificateItem, brand: BrandKit | null, background: string, logo: string) {
   const L = LABELS[settings.lang];
   const style = settings.style || parseStyle(null);
   const font = brand?.user_id ? brandFont(brand.user_id, brand.font) : null;
   const sans = "Montserrat, Arial, DejaVu Sans, sans-serif";
   const display = style.font === "brand" ? (font ? xml(font.family) : "Montserrat") : `${FONT_FAMILY[style.font]}, Montserrat`;
   const titleFamily = display;
+  // "Brand font": only the heading, as before (a brand file often has no bold for the gift); the rest stays Montserrat.
+  const wordsFamily = style.font === "brand" ? sans : display;
   // A script face is lovely big and hard to read small: the line under the gift stays plain then.
-  const noteFamily = style.font === "script" ? sans : display;
+  const noteFamily = style.font === "script" ? sans : wordsFamily;
   // Script letters are small for their size: the big lines get a little larger.
   const big = style.font === "script" ? 1.2 : 1;
   const primary = hexOk(brand?.primary_color) ? brand!.primary_color! : "#7a3b1d";
@@ -197,11 +247,11 @@ function certificateSvg(settings: CertificateSettings, item: CertificateItem, br
   const parts: string[] = [];
   const top = panel.y + 110;
   let y = top;
-  const logo = brand?.user_id ? brandLogoPath(brand.user_id) : "";
-  if (logo) {
-    parts.push(`<image href="${dataUri(logo)}" x="${cx - 260}" y="${y - 40}" width="520" height="170" preserveAspectRatio="xMidYMid meet"/>`);
-    y += 220;
-  } else if (brand?.business_name) {
+  const loose = Boolean(logo && settings.logoLayout);
+  if (logo && !loose) {
+    parts.push(`<image href="${dataUri(logo)}" x="${cx - LOGO_BOX.w / 2}" y="${y - 40}" width="${LOGO_BOX.w}" height="${LOGO_BOX.h}" preserveAspectRatio="xMidYMid meet"/>`);
+    y += LOGO_ROOM;
+  } else if (settings.logo === "brand" && brand?.business_name) {
     parts.push(`<text x="${cx}" y="${y + 40}" text-anchor="middle" font-family="${titleFamily}" font-size="${fitSize(brand.business_name, 64, inner)}" fill="${muted}"${mutedOpacity}>${xml(clip(brand.business_name, 40))}</text>`);
     y += 120;
   }
@@ -209,14 +259,14 @@ function certificateSvg(settings: CertificateSettings, item: CertificateItem, br
   parts.push(`<text x="${cx}" y="${y + 60}" text-anchor="middle" font-family="${titleFamily}" font-weight="700" font-size="${fitSize(title, 118 * big, inner, 0.6 / big)}" fill="${accent}">${xml(title)}</text>`);
   y += 190;
   if (item.name) {
-    parts.push(`<text x="${cx}" y="${y}" text-anchor="middle" font-family="${display}" font-size="${fitSize(item.name, 80 * big, inner, 0.56 / big)}" fill="${ink}">${xml(item.name)}</text>`);
+    parts.push(`<text x="${cx}" y="${y}" text-anchor="middle" font-family="${wordsFamily}" font-size="${fitSize(item.name, 80 * big, inner, 0.56 / big)}" fill="${ink}">${xml(item.name)}</text>`);
   } else {
     // No name yet: a line to write it by hand.
     parts.push(`<rect x="${cx - 420}" y="${y + 8}" width="840" height="4" rx="2" fill="${ink}" fill-opacity="0.55"/>`);
   }
   y += 140;
   if (item.gift) {
-    parts.push(`<text x="${cx}" y="${y + 20}" text-anchor="middle" font-family="${display}" font-weight="800" font-size="${fitSize(item.gift, 110 * big, inner, 0.62 / big)}" fill="${accent}">${xml(item.gift)}</text>`);
+    parts.push(`<text x="${cx}" y="${y + 20}" text-anchor="middle" font-family="${wordsFamily}" font-weight="800" font-size="${fitSize(item.gift, 110 * big, inner, 0.62 / big)}" fill="${accent}">${xml(item.gift)}</text>`);
     y += item.giftNote ? 120 : 170;
   }
   if (item.giftNote) {
@@ -250,6 +300,16 @@ function certificateSvg(settings: CertificateSettings, item: CertificateItem, br
   const middle = (start + y) / 2;
   const at = { x: Math.round(layout.x * W), y: Math.round(layout.y * H) };
   const words = `<g transform="translate(${at.x} ${at.y}) scale(${layout.scale}) translate(${-cx} ${-Math.round(middle)})">${parts.join("")}</g>`;
+  // A logo dragged off the words: on its own, where the owner put it.
+  let looseLogo = "";
+  if (loose && settings.logoLayout) {
+    const fit = logoFit(logo);
+    const w = Math.round(fit.w * settings.logoLayout.scale);
+    const h = Math.round(fit.h * settings.logoLayout.scale);
+    const lx = Math.round(settings.logoLayout.x * W - w / 2);
+    const ly = Math.round(settings.logoLayout.y * H - h / 2);
+    looseLogo = `<image href="${dataUri(logo)}" x="${lx}" y="${ly}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/>`;
+  }
   const wash = { rx: Math.round(panel.w * 0.62 * layout.scale), ry: Math.round(Math.max(panel.h * 0.62, (y - start) * 0.75) * layout.scale) };
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <image href="${background}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="xMidYMid slice"/>
@@ -263,14 +323,15 @@ function certificateSvg(settings: CertificateSettings, item: CertificateItem, br
   <!-- The words sit on the design's own calm centre; a soft wash only, so they read on any paper tone. -->
   <ellipse cx="${at.x}" cy="${at.y}" rx="${wash.rx}" ry="${wash.ry}" fill="url(#wash)"/>
   ${words}
+  ${looseLogo}
 </svg>`;
 }
 
 /** How big the block of words is (share of the page width and height, before the owner's scale) — for the drag frame. */
-export function certificateBlockBox(settings: CertificateSettings, item: CertificateItem, brand: BrandKit | null) {
+export function certificateBlockBox(settings: CertificateSettings, item: CertificateItem, brand: BrandKit | null, logo: string) {
   let h = 70;
-  if (brand?.user_id && brandLogoPath(brand.user_id)) h += 220;
-  else if (brand?.business_name) h += 120;
+  if (logo && !settings.logoLayout) h += LOGO_ROOM;
+  else if (settings.logo === "brand" && brand?.business_name) h += 120;
   h += 190 + 140;
   if (item.gift) h += item.giftNote ? 120 : 170;
   if (item.giftNote) h += 120;
@@ -278,6 +339,26 @@ export function certificateBlockBox(settings: CertificateSettings, item: Certifi
   if (settings.note) h += 80;
   if ([brand?.address, brand?.instagram, brand?.website].some((v) => String(v || "").trim())) h += 80;
   return { w: 0.66 * 0.86, h: Math.round((h / PRINT.h) * 1000) / 1000 };
+}
+
+/** Where the logo is on the page (centre and size, shares of the page) — for its drag frame; null when none prints. */
+export function certificateLogoBox(settings: CertificateSettings, item: CertificateItem, brand: BrandKit | null, logo: string) {
+  if (!logo) return null;
+  const fit = logoFit(logo);
+  const round = (n: number) => Math.round(n * 1000) / 1000;
+  if (settings.logoLayout) {
+    const l = settings.logoLayout;
+    return { x: l.x, y: l.y, w: round((fit.w * l.scale) / PRINT.w), h: round((fit.h * l.scale) / PRINT.h) };
+  }
+  // Above the heading: its centre sits 115 block units below the block's top (the block starts 70 above the first line).
+  const layout = settings.layout || DEFAULT_LAYOUT;
+  const blockH = certificateBlockBox(settings, item, brand, logo).h * PRINT.h;
+  return {
+    x: layout.x,
+    y: round(layout.y + ((115 - blockH / 2) * layout.scale) / PRINT.h),
+    w: round((fit.w * layout.scale) / PRINT.w),
+    h: round((fit.h * layout.scale) / PRINT.h),
+  };
 }
 
 function run(args: string[]) {
@@ -331,7 +412,8 @@ export async function renderCertificate(
   settings: CertificateSettings,
   index: number,
   brand: BrandKit | null,
-  format: "png" | "pdf" | "preview"
+  format: "png" | "pdf" | "preview",
+  ownerId: string
 ) {
   const item = settings.items[index] || { name: "", gift: "", giftNote: "", validFrom: "", validUntil: "", code: "" };
   const design = stillFile(projectId, 1);
@@ -339,7 +421,7 @@ export async function renderCertificate(
   const fonts = [...SANS_FONTS];
   const own = brand?.user_id ? brandFont(brand.user_id, brand.font) : null;
   if (own) fonts.unshift(own.file);
-  const svg = certificateSvg(settings, item, brand, dataUri(design));
+  const svg = certificateSvg(settings, item, brand, dataUri(design), certificateLogoPath(projectId, settings, ownerId));
   const width = format === "preview" ? 1240 : PRINT.w;
   const png = new Resvg(svg, {
     fitTo: { mode: "width", value: width },

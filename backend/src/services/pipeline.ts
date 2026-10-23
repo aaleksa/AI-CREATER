@@ -1,6 +1,7 @@
 import fs from "node:fs";
+import path from "node:path";
 import { v4 as uuid } from "uuid";
-import { brandImageUrls } from "./brandAssets.js";
+import { brandImageUrls, brandLogoPath } from "./brandAssets.js";
 import { exampleRefList, listExampleRefs, readExampleUpload, writeEditExample } from "./projectRefs.js";
 import type { BrandImageFile } from "./brandAssets.js";
 import { logoLook } from "./logoLook.js";
@@ -99,7 +100,7 @@ import {
 } from "./media.js";
 import { assertArchiveRoom, evictOverLimit } from "./archive.js";
 import { inviteFrom, parseInvite, preferBriefInvite, type InviteCard } from "./invite.js";
-import { certificateBlockBox, parseCertificate, renderCertificate, withCodes, type CertificateSettings } from "./certificate.js";
+import { LOGO_ROOM, PRINT_HEIGHT, certificateBlockBox, certificateLogoBox, certificateLogoPath, ownLogoFile, parseCertificate, renderCertificate, withCodes, type CertificateSettings } from "./certificate.js";
 import { parseStepFeedback, recordStepRejection } from "./feedback.js";
 import { maybeRefreshLearnedSummary } from "./learning.js";
 import { previewState } from "./share.js";
@@ -321,29 +322,114 @@ function saveStepVersion(projectId: string, step: string, payload: unknown, gene
   return id;
 }
 
-/** The words printed on a gift certificate and the people it is for. */
+/** The selected design (picture take) of a certificate: its look (place, font, colours, logo) is kept for it alone. */
+function certificateTake(projectId: string) {
+  const row = db
+    .prepare("SELECT id FROM project_step_versions WHERE project_id = ? AND step = 'visuals' AND accepted = 1 ORDER BY created_at DESC LIMIT 1")
+    .get(projectId) as { id: string } | undefined;
+  return row?.id || "";
+}
+
+type SavedCertificate = Record<string, unknown> & { looks?: Record<string, Record<string, unknown>> };
+
+/**
+ * The words printed on a gift certificate and the people it is for — shared by every design — plus the look of the
+ * selected design (`looks[takeId]`). A design never set up takes the look saved before looks were per design (or the default).
+ */
 function certificateOf(row: Record<string, unknown>): CertificateSettings {
   const lang = row.picture_language === "en" || row.picture_language === "uk"
     ? row.picture_language
     : /[\u0400-\u04FF]/.test(String(row.prompt || "")) ? "uk" : "en";
-  const saved = parse<unknown>(row.certificate_json as string | null);
-  const settings = parseCertificate(saved, lang as "uk" | "en");
+  const saved = (parse<SavedCertificate>(row.certificate_json as string | null) || {}) as SavedCertificate;
+  const take = certificateTake(String(row.id));
+  const look = (take && saved.looks && typeof saved.looks === "object" && saved.looks[take]) || {};
+  const settings = parseCertificate({ ...saved, ...look }, lang as "uk" | "en", Number(row.use_brand) === 0 ? "none" : "brand");
   return settings.items.length ? settings : { ...settings, items: [{ name: "", gift: "", giftNote: "", validFrom: "", validUntil: "", code: "" }] };
+}
+
+/** Saves the shared words, and the look under the selected design only (the other designs keep theirs). */
+function writeCertificate(projectId: string, settings: CertificateSettings, pictureLanguage?: string) {
+  const row = db.prepare("SELECT certificate_json FROM projects WHERE id = ?").get(projectId) as { certificate_json: string | null } | undefined;
+  const saved = (parse<SavedCertificate>(row?.certificate_json ?? null) || {}) as SavedCertificate;
+  const take = certificateTake(projectId);
+  const { layout, style, logo, logoLayout, ...words } = settings;
+  const next = take
+    ? {
+        ...words,
+        // The look from before per-design looks stays as the starting point for designs never set up.
+        layout: saved.layout,
+        style: saved.style,
+        logo: saved.logo,
+        logoLayout: saved.logoLayout,
+        looks: { ...(saved.looks || {}), [take]: { layout, style, logo, logoLayout } },
+      }
+    : { ...settings, looks: saved.looks };
+  if (pictureLanguage) {
+    db.prepare("UPDATE projects SET certificate_json = ?, picture_language = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(next), pictureLanguage, projectId);
+  } else {
+    db.prepare("UPDATE projects SET certificate_json = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(next), projectId);
+  }
 }
 
 /** The certificate as the Studio shows it: the saved words plus the size of each block of words, for the drag frame. */
 function certificateView(row: Record<string, unknown>) {
   const settings = certificateOf(row);
   const brand = Number(row.use_brand) === 0 ? null : brandFor(String(row.user_id));
-  return { ...settings, boxes: settings.items.map((item) => certificateBlockBox(settings, item, brand)) };
+  const logo = certificateLogoPath(String(row.id), settings, String(row.user_id));
+  return {
+    ...settings,
+    boxes: settings.items.map((item) => certificateBlockBox(settings, item, brand, logo)),
+    logoBoxes: settings.items.map((item) => certificateLogoBox(settings, item, brand, logo)),
+    take: certificateTake(String(row.id)),
+    ownLogo: fs.existsSync(ownLogoFile(String(row.id))),
+    brandLogo: Boolean(brandLogoPath(String(row.user_id))),
+  };
+}
+
+const CERT_LOGO_MAX = 2 * 1024 * 1024;
+
+/** A logo for this certificate only (works without the brand kit); it replaces the brand's on the certificate. */
+export function setCertificateLogo(userId: string, projectId: string, body: Buffer) {
+  const project = getProject(projectId, userId);
+  if (project.image_intent !== "certificate") throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  const png = body[0] === 0x89 && body[1] === 0x50;
+  const jpeg = body[0] === 0xff && body[1] === 0xd8;
+  const webp = body.subarray(8, 12).toString("latin1") === "WEBP";
+  if (!body.length || !(png || jpeg || webp)) throw Object.assign(new Error("Upload a PNG, JPG or WebP logo."), { status: 400 });
+  if (body.length > CERT_LOGO_MAX) throw Object.assign(new Error("That file is too big."), { status: 413 });
+  fs.mkdirSync(path.dirname(ownLogoFile(projectId)), { recursive: true });
+  fs.writeFileSync(ownLogoFile(projectId), body);
+  const settings = { ...certificateOf(project), logo: "own" as const };
+  writeCertificate(projectId, settings);
+  return serializeProject(getProject(projectId, userId));
+}
+
+export function removeCertificateLogo(userId: string, projectId: string) {
+  const project = getProject(projectId, userId);
+  if (project.image_intent !== "certificate") throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  fs.rmSync(ownLogoFile(projectId), { force: true });
+  const current = certificateOf(project);
+  const back = Number(project.use_brand) === 0 ? ("none" as const) : ("brand" as const);
+  const settings = { ...current, logo: current.logo === "own" ? back : current.logo };
+  writeCertificate(projectId, settings);
+  return serializeProject(getProject(projectId, userId));
 }
 
 /** Saves the certificate words and the list of people (codes filled in); free, nothing is painted. */
 export function updateCertificate(userId: string, projectId: string, raw: unknown) {
   const project = getProject(projectId, userId);
   if (project.image_intent !== "certificate") throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
-  const settings = withCodes(parseCertificate(raw, certificateOf(project).lang));
-  db.prepare("UPDATE projects SET certificate_json = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(settings), projectId);
+  const current = certificateOf(project);
+  let settings = withCodes(parseCertificate(raw, current.lang, current.logo));
+  // The logo leaves the words (or comes back): the words keep their place on the page instead of jumping by its height.
+  const printsLogo = Boolean(certificateLogoPath(projectId, settings, userId));
+  const left = !current.logoLayout && settings.logoLayout;
+  const back = current.logoLayout && !settings.logoLayout;
+  if (printsLogo && (left || back)) {
+    const shift = ((LOGO_ROOM / 2) * settings.layout.scale) / PRINT_HEIGHT;
+    settings = parseCertificate({ ...settings, layout: { ...settings.layout, y: settings.layout.y + (left ? shift : -shift) } }, settings.lang, settings.logo);
+  }
+  writeCertificate(projectId, settings);
   return serializeProject(getProject(projectId, userId));
 }
 
@@ -395,7 +481,7 @@ export async function translateCertificate(userId: string, projectId: string, ra
       lang
     )
   );
-  db.prepare("UPDATE projects SET certificate_json = ?, picture_language = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(next), lang, projectId);
+  writeCertificate(projectId, next, lang);
   return serializeProject(getProject(projectId, userId));
 }
 
@@ -405,7 +491,7 @@ export async function certificateFile(userId: string, projectId: string, index: 
   if (project.image_intent !== "certificate") throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   const settings = certificateOf(project);
   const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
-  const file = await renderCertificate(projectId, settings, Math.max(0, Math.min(index, settings.items.length - 1)), brand, format);
+  const file = await renderCertificate(projectId, settings, Math.max(0, Math.min(index, settings.items.length - 1)), brand, format, userId);
   const item = settings.items[index];
   return { ...file, name: [item?.name || "certificate", item?.gift?.slice(0, 40), settings.codes ? item?.code : "", settings.lang].filter(Boolean).join("-") };
 }
