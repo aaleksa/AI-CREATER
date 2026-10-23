@@ -1248,6 +1248,22 @@ export function videoFramePrompt(scene: ScriptScene, brand?: BrandKit | null, re
 }
 
 /** The whole Reel script in one language: on-screen words, voiceover and the call to action. Names stay as written. */
+/** The owner's own words on a gift certificate, in another language. Names, dates and codes are not sent. */
+export async function translateCertificateWords(input: { title: string; note: string; gifts: string[] }, lang: "en" | "uk", brandName = "") {
+  const target = lang === "uk" ? "Ukrainian" : "English";
+  return jsonCompletion<typeof input>(
+    [
+      `Translate these words of a printed gift certificate into ${target}. Every value must end up in ${target}.`,
+      "Short and natural, as a shop would write on a gift certificate. Keep prices, amounts and currency symbols exactly (£50 stays £50).",
+      keepNamesRule(brandName),
+      "Empty strings stay empty. Same number of gifts, same order.",
+    ].join(" "),
+    `${JSON.stringify(input)}\nReturn JSON: { title, note, gifts: [string] }`,
+    input,
+    { temperature: 0 }
+  );
+}
+
 export async function translateScript(script: Script, lang: "en" | "uk", brandName = "") {
   const target = lang === "uk" ? "Ukrainian" : "English";
   const input = {

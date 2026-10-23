@@ -240,6 +240,8 @@ export const api = {
     request<{ project: Project }>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify({ prompt }) }),
   updateUseBrand: (id: string, useBrand: boolean) =>
     request<{ project: Project }>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify({ useBrand }) }),
+  translateCertificate: (id: string, lang: "uk" | "en") =>
+    request<{ project: Project }>(`/projects/${id}/certificate/translate`, { method: "POST", body: JSON.stringify({ lang }) }),
   saveCertificate: (id: string, certificate: CertificateSettings) =>
     request<{ project: Project }>(`/projects/${id}/certificate`, { method: "PATCH", body: JSON.stringify(certificate) }),
   updateInvite: (id: string, invite: InviteCard) =>

@@ -30,6 +30,7 @@ import {
   readPaintedCopy,
   translateBrief,
   translateScript,
+  translateCertificateWords,
   translatePictureCopy,
   tidyIdea,
   tidyVoice,
@@ -336,6 +337,41 @@ export function updateCertificate(userId: string, projectId: string, raw: unknow
   if (project.image_intent !== "certificate") throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   const settings = withCodes(parseCertificate(raw, certificateOf(project).lang));
   db.prepare("UPDATE projects SET certificate_json = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(settings), projectId);
+  return serializeProject(getProject(projectId, userId));
+}
+
+/** The owner's words (heading, gifts, note) in the label language; free like the Reel translation. */
+export async function translateCertificate(userId: string, projectId: string, rawLang: unknown) {
+  const project = getProject(projectId, userId);
+  if (project.image_intent !== "certificate") throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  const lang = rawLang === "en" ? "en" : "uk";
+  const current = certificateOf(project);
+  const ownTitle = parseCertificate({ title: current.title }, current.lang).title === parseCertificate({}, current.lang).title ? "" : current.title;
+  const input = { title: ownTitle, note: current.note, gifts: current.items.map((item) => item.gift) };
+  const hasWords = Boolean(input.title || input.note || input.gifts.some(Boolean));
+  let out = input;
+  if (hasWords) {
+    const brand = Number(project.use_brand) === 0 ? null : brandFor(userId);
+    const result = await translateCertificateWords(input, lang, brand?.business_name || "");
+    const data = result.data;
+    if (!data || !Array.isArray(data.gifts) || data.gifts.length !== input.gifts.length || JSON.stringify(data) === JSON.stringify(input)) {
+      throw Object.assign(new Error(USER_ERRORS.textFailed), { status: 502 });
+    }
+    out = data;
+  }
+  const next = withCodes(
+    parseCertificate(
+      {
+        ...current,
+        lang,
+        title: ownTitle ? String(out.title || ownTitle) : "",
+        note: input.note ? String(out.note || input.note) : "",
+        items: current.items.map((item, i) => ({ ...item, gift: String(out.gifts[i] || item.gift) })),
+      },
+      lang
+    )
+  );
+  db.prepare("UPDATE projects SET certificate_json = ?, picture_language = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(next), lang, projectId);
   return serializeProject(getProject(projectId, userId));
 }
 

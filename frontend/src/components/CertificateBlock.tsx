@@ -3,6 +3,9 @@ import { api, fetchMedia, type CertificateItem, type CertificateSettings, type P
 import { useLocale } from "../i18n/locale";
 
 const EMPTY: CertificateItem = { name: "", gift: "", validUntil: "", code: "" };
+/** The headings the studio prints by default; they follow the label language, an owner's own heading does not. */
+const STANDARD_TITLE = { uk: "Подарунковий сертифікат", en: "Gift certificate" } as const;
+const STANDARD_TITLES: string[] = Object.values(STANDARD_TITLE);
 
 /**
  * Gift certificates from one painted design: the owner's exact words and a list of people, each with a code.
@@ -67,6 +70,24 @@ export default function CertificateBlock({
     }
   }
 
+  async function translate() {
+    setBusy("translate");
+    setError("");
+    try {
+      if (dirty) {
+        const { project: savedNow } = await api.saveCertificate(project.id, draft);
+        onSaved(savedNow);
+      }
+      const { project: next } = await api.translateCertificate(project.id, draft.lang);
+      onSaved(next);
+      if (next.certificate) setDraft(next.certificate);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("auth.fallback"));
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function download(i: number, format: "pdf" | "png") {
     setBusy(`${format}-${i}`);
     setError("");
@@ -105,11 +126,25 @@ export default function CertificateBlock({
       <div className="pill-row" role="group" aria-label={t("cert.lang")}>
         <span className="hint">{t("cert.lang")}</span>
         {(["uk", "en"] as const).map((lang) => (
-          <button key={lang} type="button" className={`btn ghost tiny${draft.lang === lang ? " on" : ""}`} aria-pressed={draft.lang === lang} disabled={off} onClick={() => setDraft({ ...draft, lang })}>
+          <button
+            key={lang}
+            type="button"
+            className={`btn ghost tiny${draft.lang === lang ? " on" : ""}`}
+            aria-pressed={draft.lang === lang}
+            disabled={off}
+            onClick={() => setDraft({ ...draft, lang, title: STANDARD_TITLES.includes(draft.title.trim()) || !draft.title.trim() ? STANDARD_TITLE[lang] : draft.title })}
+          >
             {t(lang === "uk" ? "home.picLang.uk" : "home.picLang.en")}
           </button>
         ))}
       </div>
+      <p className="hint">{t("cert.langHint")}</p>
+      <div className="action-row" style={{ marginTop: 0 }}>
+        <button type="button" className="btn ghost tiny" disabled={off} onClick={translate}>
+          {busy === "translate" ? t("cert.translating") : t("cert.translate", { lang: t(draft.lang === "uk" ? "home.picLang.uk" : "home.picLang.en") })}
+        </button>
+      </div>
+      <p className="hint">{t("cert.translateHint")}</p>
       <label className="check-row">
         <input type="checkbox" checked={draft.codes !== false} disabled={off} onChange={(e) => setDraft({ ...draft, codes: e.target.checked })} />
         {t("cert.codesOn")}

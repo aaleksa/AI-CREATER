@@ -2,7 +2,7 @@ import express, { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_INVITE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, logoBaseFile, logoLayout, logoMarkFile, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, editCaptions, editScript, translateReelScript, setMusic, updateMusic, removeMusic, updateReelLogo, updateCaptionStyle, updateReelTitles, refreshReelVideo, forkReel, setVoiceChoice, setCaptionsOff, setVoiceOff, stampLogoOnPicture, updateInvite, updateShot, updateCertificate, certificateFile } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, logoBaseFile, logoLayout, logoMarkFile, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, editCaptions, editScript, translateReelScript, setMusic, updateMusic, removeMusic, updateReelLogo, updateCaptionStyle, updateReelTitles, refreshReelVideo, forkReel, setVoiceChoice, setCaptionsOff, setVoiceOff, stampLogoOnPicture, updateInvite, updateShot, updateCertificate, certificateFile, translateCertificate } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
 import { voiceSampleFile, voiceChoiceOf, VOICE_CHOICES, hasMusicFile, hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, MUSIC_MAX_BYTES, musicFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
 import { archiveState } from "../services/archive.js";
@@ -297,6 +297,15 @@ projectsRouter.get("/:id", (req, res) => {
 projectsRouter.patch("/:id/certificate", (req, res) => {
   try {
     res.json({ project: updateCertificate(req.user!.id, String(req.params.id), req.body) });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.post("/:id/certificate/translate", rateLimit(10, 60_000), async (req, res) => {
+  try {
+    res.json({ project: await translateCertificate(req.user!.id, String(req.params.id), req.body?.lang) });
   } catch (error) {
     const { status, body } = publicError(error, `${req.method} ${req.path}`);
     res.status(status).json(body);

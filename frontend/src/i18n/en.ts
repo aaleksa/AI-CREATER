@@ -114,7 +114,6 @@ export const en = {
     signIn: "Sign in",
     codeLabel: "Code from the email",
     codePlaceholder: "6 digits",
-    codesOn: "Print a code (we make the empty ones)",
     codeSubmit: "Confirm",
   },
   fileName: {
@@ -253,7 +252,7 @@ export const en = {
     heading: "Heading",
     note: "Note (optional)",
     notePlaceholder: "Book by phone 07700 900123",
-    lang: "Label language:",
+    lang: "Language of the printed labels (“For”, “Valid until”, “Code”):",
     people: "For ({n})",
     personN: "Certificate {n}",
     name: "For whom",
@@ -273,6 +272,11 @@ export const en = {
     saved: "Saved",
     working: "Please wait…",
     fileName: "certificate",
+    langHint: "Your own words (name, gift, note) print as written — write them in English for an English certificate.",
+    codesOn: "Print a code (we make the empty ones)",
+    translate: "Translate my words: {lang}",
+    translateHint: "We translate the heading, the gift and the note — free. Names, dates and codes stay as they are.",
+    translating: "Translating…",
   },
   steps: {
     idea: "Idea",

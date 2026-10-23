@@ -62,7 +62,10 @@ export function parseCertificate(raw: unknown, fallbackLang: "uk" | "en"): Certi
         code: clip(row.code, 24).toUpperCase(),
       };
     });
-  return { title: clip(body.title, 60) || LABELS[lang].title, note: clip(body.note, 120), lang, codes: body.codes !== false, items };
+  // The standard heading follows the label language; a heading the owner wrote stays as written.
+  const title = clip(body.title, 60);
+  const standard = !title || Object.values(LABELS).some((labels) => labels.title === title);
+  return { title: standard ? LABELS[lang].title : title, note: clip(body.note, 120), lang, codes: body.codes !== false, items };
 }
 
 /** Every row gets a code: the owner's own, or a fresh one. */
