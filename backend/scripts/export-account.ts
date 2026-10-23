@@ -57,8 +57,8 @@ if (fs.existsSync(brandDir)) fs.cpSync(brandDir, path.join(work, "media", "brand
 
 const stamp = new Date().toISOString().slice(0, 10);
 const out = path.resolve(process.argv[3] || path.join(os.homedir(), "Downloads", `auteur-${email.replace(/[^a-z0-9]+/g, "-")}-${stamp}.tar.gz`));
-// No macOS "._" side files in the archive.
-execFileSync("tar", ["-czf", out, "-C", work, "account.json", "media"], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
+// No macOS "._" side files or extended attributes in the archive.
+execFileSync("tar", ["--no-xattrs", "--no-mac-metadata", "-czf", out, "-C", work, "account.json", "media"], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
 fs.rmSync(work, { recursive: true, force: true });
 const size = fs.statSync(out).size;
 console.log(`Saved ${out}`);

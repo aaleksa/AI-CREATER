@@ -102,9 +102,9 @@ adminRouter.post("/import/:uploadId/part/:index", async (req, res) => {
   }
 });
 
-adminRouter.post("/import/:uploadId/finish", (req, res) => {
+adminRouter.post("/import/:uploadId/finish", async (req, res) => {
   try {
-    res.json(finishImport(String(req.params.uploadId)));
+    res.json(await finishImport(String(req.params.uploadId)));
   } catch (err) {
     const status = (err as { status?: number }).status || 500;
     console.error("[admin] import failed:", err);

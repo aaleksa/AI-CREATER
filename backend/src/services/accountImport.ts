@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import zlib from "node:zlib";
+import { once } from "node:events";
+import { Writable } from "node:stream";
 import { v4 as uuid } from "uuid";
 import { db } from "../db/index.js";
 import { dataDir } from "../dataDir.js";
@@ -8,7 +10,7 @@ import { FREE_CREDITS } from "../config.js";
 import { ensureCreditAccount } from "./credits.js";
 import { FREE_CREDITS_NOTE } from "./emailVerification.js";
 
-/** Chunks of an upload land here until the last one arrives. */
+/** The upload is unpacked here, then its files are moved into media/. */
 const IMPORT_DIR = path.join(dataDir, "import");
 const CHUNK_MAX = 25 * 1024 * 1024;
 const ARCHIVE_MAX = 2 * 1024 * 1024 * 1024;
@@ -40,60 +42,199 @@ function put(table: string, row: Row, mode: "REPLACE" | "IGNORE") {
 }
 
 const SAFE_ID = /^[A-Za-z0-9-]{8,64}$/;
+/** account.json, and files under media/<projectId>/ or media/brand/account/ — nothing else is written. */
+const ALLOWED = /^(account\.json|media\/(brand\/account|[A-Za-z0-9-]{8,64})\/[^/].*)$/;
 
-function uploadDir(uploadId: string) {
-  if (!SAFE_ID.test(uploadId)) throw Object.assign(new Error("Unknown upload."), { status: 400 });
-  return path.join(IMPORT_DIR, uploadId);
+/** Reads a .tar stream and writes its plain files into one folder; links, devices, macOS "._" files and anything outside are skipped. */
+class TarToFolder extends Writable {
+  private buf: Buffer = Buffer.alloc(0);
+  private left = 0;
+  private pad = 0;
+  private fd: number | null = null;
+  private meta: Buffer[] | null = null;
+  private metaKind = "";
+  private nextPath = "";
+  private total = 0;
+  files = 0;
+
+  constructor(private readonly dir: string) {
+    super();
+  }
+
+  _write(chunk: Buffer, _enc: BufferEncoding, done: (err?: Error | null) => void) {
+    try {
+      this.total += chunk.length;
+      if (this.total > ARCHIVE_MAX) throw Object.assign(new Error("The archive is too big."), { status: 413 });
+      this.buf = this.buf.length ? Buffer.concat([this.buf, chunk]) : chunk;
+      this.consume();
+      done();
+    } catch (err) {
+      this.closeFile();
+      done(err as Error);
+    }
+  }
+
+  _final(done: (err?: Error | null) => void) {
+    this.closeFile();
+    done(this.left > 0 ? Object.assign(new Error("The archive ends too early — upload it again."), { status: 400 }) : null);
+  }
+
+  private consume() {
+    for (;;) {
+      if (this.left > 0) {
+        if (!this.buf.length) return;
+        const take = Math.min(this.left, this.buf.length);
+        const piece = this.buf.subarray(0, take);
+        if (this.fd != null) fs.writeSync(this.fd, piece);
+        else if (this.meta) this.meta.push(Buffer.from(piece));
+        this.buf = this.buf.subarray(take);
+        this.left -= take;
+        if (this.left > 0) return;
+        this.endEntry();
+      }
+      if (this.pad > 0) {
+        const take = Math.min(this.pad, this.buf.length);
+        this.buf = this.buf.subarray(take);
+        this.pad -= take;
+        if (this.pad > 0) return;
+      }
+      if (this.buf.length < 512) return;
+      const header = this.buf.subarray(0, 512);
+      this.buf = this.buf.subarray(512);
+      if (header.every((b) => b === 0)) continue;
+      this.startEntry(header);
+    }
+  }
+
+  private startEntry(h: Buffer) {
+    const text = (from: number, len: number) => h.subarray(from, from + len).toString("utf8").replace(/\0.*$/s, "");
+    const size = parseInt(text(124, 12).trim() || "0", 8) || 0;
+    const type = String.fromCharCode(h[156] || 48);
+    const prefix = text(257, 6).startsWith("ustar") ? text(345, 155) : "";
+    let name = prefix ? `${prefix}/${text(0, 100)}` : text(0, 100);
+    if (this.nextPath) name = this.nextPath;
+    this.left = size;
+    this.pad = (512 - (size % 512)) % 512;
+    if (type === "x" || type === "L") {
+      this.meta = [];
+      this.metaKind = type;
+      return;
+    }
+    this.nextPath = "";
+    if (type === "g") {
+      this.meta = null;
+      return;
+    }
+    const clean = name.replace(/^(\.\/)+/, "");
+    const parts = clean.split("/");
+    if ((type === "0" || type === "\0") && ALLOWED.test(clean) && !parts.some((p) => p === ".." || p === "." || p === "" || p.startsWith("._"))) {
+      const dest = path.join(this.dir, clean);
+      if (!dest.startsWith(this.dir + path.sep)) return;
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      this.fd = fs.openSync(dest, "w");
+      this.files++;
+    }
+    if (size === 0) this.endEntry();
+  }
+
+  private endEntry() {
+    if (this.meta) {
+      const body = Buffer.concat(this.meta).toString("utf8");
+      if (this.metaKind === "L") this.nextPath = body.replace(/\0.*$/s, "");
+      else {
+        const found = /(?:^|\n)\d+ path=([^\n]*)\n/.exec(body);
+        if (found) this.nextPath = found[1];
+      }
+      this.meta = null;
+    }
+    this.closeFile();
+  }
+
+  private closeFile() {
+    if (this.fd != null) {
+      fs.closeSync(this.fd);
+      this.fd = null;
+    }
+  }
 }
 
-/** One part of the archive (sent in order, 0, 1, 2…). */
-export async function saveImportChunk(uploadId: string, index: number, body: NodeJS.ReadableStream) {
-  const dir = uploadDir(uploadId);
-  if (!Number.isInteger(index) || index < 0 || index > 999) throw Object.assign(new Error("Bad part number."), { status: 400 });
+/** One upload at a time: the parts are unpacked as they arrive, so the archive itself is never kept on the disk. */
+type Session = { id: string; next: number; gunzip: zlib.Gunzip; tar: TarToFolder; done: Promise<void>; error?: Error };
+let session: Session | null = null;
+
+function dropSession() {
+  if (session) {
+    session.gunzip.destroy();
+    session.tar.destroy();
+  }
+  session = null;
+  fs.rmSync(IMPORT_DIR, { recursive: true, force: true });
+}
+
+function startSession(id: string): Session {
+  dropSession();
+  const dir = path.join(IMPORT_DIR, id);
   fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, `part-${String(index).padStart(4, "0")}`);
-  let size = 0;
-  await new Promise<void>((resolve, reject) => {
-    const out = fs.createWriteStream(file);
-    body.on("data", (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > CHUNK_MAX) {
-        out.destroy();
-        reject(Object.assign(new Error("A part is too big."), { status: 413 }));
-      }
-    });
-    body.on("error", reject);
-    out.on("error", reject);
-    out.on("finish", () => resolve());
-    body.pipe(out);
+  const gunzip = zlib.createGunzip();
+  const tar = new TarToFolder(dir);
+  const s: Session = { id, next: 0, gunzip, tar, done: Promise.resolve() };
+  s.done = new Promise<void>((resolve) => {
+    const fail = (err: Error) => {
+      s.error ||= err;
+      resolve();
+    };
+    gunzip.on("error", fail);
+    tar.on("error", fail);
+    tar.on("finish", () => resolve());
   });
+  gunzip.pipe(tar);
+  session = s;
+  return s;
+}
+
+function failure(err: Error) {
+  const message = /ENOSPC/.test(String(err.message)) ? "The server disk is full." : err.message;
+  return Object.assign(new Error(message), { status: (err as { status?: number }).status || 500 });
+}
+
+/** One part of the archive, in order 0, 1, 2… Part 0 starts a new upload (and clears any unfinished one). */
+export async function saveImportChunk(uploadId: string, index: number, body: NodeJS.ReadableStream) {
+  if (!SAFE_ID.test(uploadId)) throw Object.assign(new Error("Unknown upload."), { status: 400 });
+  if (!Number.isInteger(index) || index < 0 || index > 999) throw Object.assign(new Error("Bad part number."), { status: 400 });
+  const s = index === 0 ? startSession(uploadId) : session;
+  if (!s || s.id !== uploadId || s.next !== index) {
+    throw Object.assign(new Error("This upload was interrupted — start the import again."), { status: 409 });
+  }
+  let size = 0;
+  try {
+    for await (const chunk of body as AsyncIterable<Buffer>) {
+      size += chunk.length;
+      if (size > CHUNK_MAX) throw Object.assign(new Error("A part is too big."), { status: 413 });
+      if (s.error) throw s.error;
+      if (!s.gunzip.write(chunk)) await once(s.gunzip, "drain");
+    }
+    if (s.error) throw s.error;
+  } catch (err) {
+    dropSession();
+    throw failure(err as Error);
+  }
+  s.next++;
   return { received: index, size };
 }
 
-/** All parts are in: put them together, check the archive and add the account to this server. */
-export function finishImport(uploadId: string) {
-  const dir = uploadDir(uploadId);
-  const parts = fs.existsSync(dir) ? fs.readdirSync(dir).filter((n) => n.startsWith("part-")).sort() : [];
-  if (!parts.length) throw Object.assign(new Error("Nothing was uploaded."), { status: 400 });
-  const archive = path.join(dir, "account.tar.gz");
-  const out = fs.openSync(archive, "w");
-  let total = 0;
-  for (const part of parts) {
-    const buf = fs.readFileSync(path.join(dir, part));
-    total += buf.length;
-    if (total > ARCHIVE_MAX) {
-      fs.closeSync(out);
-      fs.rmSync(dir, { recursive: true, force: true });
-      throw Object.assign(new Error("The archive is too big."), { status: 413 });
-    }
-    fs.writeSync(out, buf);
-    fs.rmSync(path.join(dir, part));
-  }
-  fs.closeSync(out);
+/** All parts are in: finish unpacking and add the account to this server. */
+export async function finishImport(uploadId: string) {
+  const s = session;
+  if (!s || s.id !== uploadId) throw Object.assign(new Error("Nothing was uploaded — start the import again."), { status: 409 });
   try {
-    return importArchive(archive, path.join(dir, "x"));
+    s.gunzip.end();
+    await s.done;
+    if (s.error) throw s.error;
+    return importFolder(path.join(IMPORT_DIR, uploadId));
+  } catch (err) {
+    throw failure(err as Error);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    dropSession();
   }
 }
 
@@ -115,18 +256,10 @@ function moveInto(from: string, to: string): number {
   return count;
 }
 
-function importArchive(archive: string, into: string) {
-  // Only plain files under account.json and media/ — nothing that could step outside the folder.
-  const listing = execFileSync("tar", ["-tzf", archive], { maxBuffer: 64 * 1024 * 1024 }).toString().split("\n").filter(Boolean);
-  for (const name of listing) {
-    const clean = name.replace(/^\.\//, "");
-    if (path.isAbsolute(clean) || clean.split("/").includes("..") || !(clean === "account.json" || clean.startsWith("media/") || clean === "media")) {
-      throw Object.assign(new Error(`Unexpected file in the archive: ${name.slice(0, 80)}`), { status: 400 });
-    }
+function importFolder(into: string) {
+  if (!fs.existsSync(path.join(into, "account.json"))) {
+    throw Object.assign(new Error("This is not an account export."), { status: 400 });
   }
-  fs.mkdirSync(into, { recursive: true });
-  execFileSync("tar", ["-xzf", archive, "-C", into, "--no-same-owner", "--no-same-permissions"]);
-  fs.rmSync(archive);
   const payload = JSON.parse(fs.readFileSync(path.join(into, "account.json"), "utf8")) as Payload;
   if (payload.format !== "auteur-account-1" || !payload.user?.email) {
     throw Object.assign(new Error("This is not an account export."), { status: 400 });
