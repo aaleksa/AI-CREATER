@@ -73,6 +73,9 @@ export type InviteItem = {
 };
 export type CertificateItem = { name: string; gift: string; giftNote: string; validFrom: string; validUntil: string; code: string };
 export type CertificateLayout = { x: number; y: number; scale: number };
+export type CertificateFont = "brand" | "montserrat" | "playfair" | "cormorant" | "script";
+/** Font and colours of the big words; an empty colour means the studio picks it. */
+export type CertificateStyle = { font: CertificateFont; accent: string; ink: string };
 export type CertificateSettings = {
   title: string;
   note: string;
@@ -80,6 +83,7 @@ export type CertificateSettings = {
   codes: boolean;
   /** Where the block of words sits and how big it is; the same for every certificate of the design. */
   layout?: CertificateLayout;
+  style?: CertificateStyle;
   items: CertificateItem[];
   /** Size of each person's block of words (share of the page), from the server — for the drag frame. */
   boxes?: { w: number; h: number }[];

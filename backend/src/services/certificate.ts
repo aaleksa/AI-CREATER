@@ -23,6 +23,9 @@ const FONT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 const SANS_FONTS = [
   path.join(FONT_DIR, "Montserrat-Bold.ttf"),
   path.join(FONT_DIR, "Montserrat-ExtraBold.ttf"),
+  path.join(FONT_DIR, "PlayfairDisplay-Bold.ttf"),
+  path.join(FONT_DIR, "CormorantGaramond-Bold.ttf"),
+  path.join(FONT_DIR, "GreatVibes-Regular.ttf"),
   "/System/Library/Fonts/Supplemental/Arial.ttf",
   "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 ].filter((file) => fs.existsSync(file));
@@ -32,7 +35,38 @@ export type CertificateItem = { name: string; gift: string; giftNote: string; va
 /** codes: print a code on each certificate (made for the empty ones). Off: no code at all. */
 /** Where the block of words sits (its centre, as a share of the page) and how big it is (1 = as designed). */
 export type CertificateLayout = { x: number; y: number; scale: number };
-export type CertificateSettings = { title: string; note: string; lang: "uk" | "en"; codes: boolean; layout: CertificateLayout; items: CertificateItem[] };
+/**
+ * The look of the big words (heading, name, gift): font and two colours. Empty colour = as the studio picks it
+ * (brand colour for the heading and gift, near-black for the rest). Small lines (dates, code, note, contacts) stay in
+ * Montserrat so they always read; only their colour follows `ink`.
+ */
+export const CERTIFICATE_FONTS = ["brand", "montserrat", "playfair", "cormorant", "script"] as const;
+export type CertificateFont = (typeof CERTIFICATE_FONTS)[number];
+export type CertificateStyle = { font: CertificateFont; accent: string; ink: string };
+export type CertificateSettings = {
+  title: string;
+  note: string;
+  lang: "uk" | "en";
+  codes: boolean;
+  layout: CertificateLayout;
+  style: CertificateStyle;
+  items: CertificateItem[];
+};
+
+/** Family names as written inside the font files. */
+const FONT_FAMILY: Record<Exclude<CertificateFont, "brand">, string> = {
+  montserrat: "Montserrat",
+  playfair: "Playfair Display",
+  cormorant: "Cormorant Garamond Light",
+  script: "Great Vibes",
+};
+
+function parseStyle(raw: unknown): CertificateStyle {
+  const row = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const color = (value: unknown) => (typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : "");
+  const font = CERTIFICATE_FONTS.includes(row.font as CertificateFont) ? (row.font as CertificateFont) : "brand";
+  return { font, accent: color(row.accent), ink: color(row.ink) };
+}
 
 export const DEFAULT_LAYOUT: CertificateLayout = { x: 0.5, y: 0.5, scale: 1 };
 
@@ -90,6 +124,7 @@ export function parseCertificate(raw: unknown, fallbackLang: "uk" | "en"): Certi
     lang,
     codes: body.codes !== false,
     layout: parseLayout(body.layout),
+    style: parseStyle(body.style),
     items,
   };
 }
@@ -137,14 +172,23 @@ function fitSize(text: string, size: number, width: number, perChar = 0.56) {
 /** The page as SVG: the painted design, a quiet panel in the middle, our exact words on it. */
 function certificateSvg(settings: CertificateSettings, item: CertificateItem, brand: BrandKit | null, background: string) {
   const L = LABELS[settings.lang];
+  const style = settings.style || parseStyle(null);
   const font = brand?.user_id ? brandFont(brand.user_id, brand.font) : null;
-  const titleFamily = font ? xml(font.family) : "Montserrat";
   const sans = "Montserrat, Arial, DejaVu Sans, sans-serif";
+  const display = style.font === "brand" ? (font ? xml(font.family) : "Montserrat") : `${FONT_FAMILY[style.font]}, Montserrat`;
+  const titleFamily = display;
+  // A script face is lovely big and hard to read small: the line under the gift stays plain then.
+  const noteFamily = style.font === "script" ? sans : display;
+  // Script letters are small for their size: the big lines get a little larger.
+  const big = style.font === "script" ? 1.2 : 1;
   const primary = hexOk(brand?.primary_color) ? brand!.primary_color! : "#7a3b1d";
   // A light brand colour (yellow, pastel) does not read on the paper: then the words go dark.
-  const accent = luminance(primary) > 0.5 ? "#1a1612" : primary;
-  const ink = "#1a1612";
-  const muted = "#5c534c";
+  const accent = style.accent || (luminance(primary) > 0.5 ? "#1a1612" : primary);
+  const ink = style.ink || "#1a1612";
+  const muted = style.ink ? style.ink : "#5c534c";
+  const mutedOpacity = style.ink ? ' fill-opacity="0.8"' : "";
+  // Light words (white, gold) need a dark wash under them instead of the light one.
+  const washColor = luminance(ink) > 0.6 ? "#1a1612" : "#fffdf9";
   const W = PRINT.w;
   const H = PRINT.h;
   const panel = { x: W * 0.17, y: H * 0.16, w: W * 0.66, h: H * 0.68 };
@@ -158,25 +202,25 @@ function certificateSvg(settings: CertificateSettings, item: CertificateItem, br
     parts.push(`<image href="${dataUri(logo)}" x="${cx - 260}" y="${y - 40}" width="520" height="170" preserveAspectRatio="xMidYMid meet"/>`);
     y += 220;
   } else if (brand?.business_name) {
-    parts.push(`<text x="${cx}" y="${y + 40}" text-anchor="middle" font-family="${titleFamily}" font-size="${fitSize(brand.business_name, 64, inner)}" fill="${muted}">${xml(clip(brand.business_name, 40))}</text>`);
+    parts.push(`<text x="${cx}" y="${y + 40}" text-anchor="middle" font-family="${titleFamily}" font-size="${fitSize(brand.business_name, 64, inner)}" fill="${muted}"${mutedOpacity}>${xml(clip(brand.business_name, 40))}</text>`);
     y += 120;
   }
   const title = settings.title || L.title;
-  parts.push(`<text x="${cx}" y="${y + 60}" text-anchor="middle" font-family="${titleFamily}" font-weight="700" font-size="${fitSize(title, 118, inner, 0.6)}" fill="${accent}">${xml(title)}</text>`);
+  parts.push(`<text x="${cx}" y="${y + 60}" text-anchor="middle" font-family="${titleFamily}" font-weight="700" font-size="${fitSize(title, 118 * big, inner, 0.6 / big)}" fill="${accent}">${xml(title)}</text>`);
   y += 190;
   if (item.name) {
-    parts.push(`<text x="${cx}" y="${y}" text-anchor="middle" font-family="${sans}" font-size="${fitSize(item.name, 80, inner)}" fill="${ink}">${xml(item.name)}</text>`);
+    parts.push(`<text x="${cx}" y="${y}" text-anchor="middle" font-family="${display}" font-size="${fitSize(item.name, 80 * big, inner, 0.56 / big)}" fill="${ink}">${xml(item.name)}</text>`);
   } else {
     // No name yet: a line to write it by hand.
     parts.push(`<rect x="${cx - 420}" y="${y + 8}" width="840" height="4" rx="2" fill="${ink}" fill-opacity="0.55"/>`);
   }
   y += 140;
   if (item.gift) {
-    parts.push(`<text x="${cx}" y="${y + 20}" text-anchor="middle" font-family="${sans}" font-weight="800" font-size="${fitSize(item.gift, 110, inner, 0.62)}" fill="${accent}">${xml(item.gift)}</text>`);
+    parts.push(`<text x="${cx}" y="${y + 20}" text-anchor="middle" font-family="${display}" font-weight="800" font-size="${fitSize(item.gift, 110 * big, inner, 0.62 / big)}" fill="${accent}">${xml(item.gift)}</text>`);
     y += item.giftNote ? 120 : 170;
   }
   if (item.giftNote) {
-    parts.push(`<text x="${cx}" y="${y}" text-anchor="middle" font-family="${sans}" font-size="${fitSize(item.giftNote, 58, inner)}" fill="${ink}">${xml(item.giftNote)}</text>`);
+    parts.push(`<text x="${cx}" y="${y}" text-anchor="middle" font-family="${noteFamily}" font-size="${fitSize(item.giftNote, 58, inner)}" fill="${ink}">${xml(item.giftNote)}</text>`);
     y += 120;
   }
   const dates = item.validFrom
@@ -192,12 +236,12 @@ function certificateSvg(settings: CertificateSettings, item: CertificateItem, br
     y += 100;
   }
   if (settings.note) {
-    parts.push(`<text x="${cx}" y="${y}" text-anchor="middle" font-family="${sans}" font-size="${fitSize(settings.note, 44, inner)}" fill="${muted}">${xml(settings.note)}</text>`);
+    parts.push(`<text x="${cx}" y="${y}" text-anchor="middle" font-family="${sans}" font-size="${fitSize(settings.note, 44, inner)}" fill="${muted}"${mutedOpacity}>${xml(settings.note)}</text>`);
     y += 80;
   }
   const contact = [brand?.address, brand?.instagram, brand?.website].map((v) => clip(v, 60)).filter(Boolean).join("  ·  ");
   if (contact) {
-    parts.push(`<text x="${cx}" y="${y + 20}" text-anchor="middle" font-family="${sans}" font-size="${fitSize(contact, 40, inner)}" fill="${muted}">${xml(contact)}</text>`);
+    parts.push(`<text x="${cx}" y="${y + 20}" text-anchor="middle" font-family="${sans}" font-size="${fitSize(contact, 40, inner)}" fill="${muted}"${mutedOpacity}>${xml(contact)}</text>`);
     y += 80;
   }
   // The whole block of words — at the place and size the owner dragged it to (the middle of the page by default).
@@ -211,9 +255,9 @@ function certificateSvg(settings: CertificateSettings, item: CertificateItem, br
   <image href="${background}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="xMidYMid slice"/>
   <defs>
     <radialGradient id="wash" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#fffdf9" stop-opacity="0.55"/>
-      <stop offset="70%" stop-color="#fffdf9" stop-opacity="0.35"/>
-      <stop offset="100%" stop-color="#fffdf9" stop-opacity="0"/>
+      <stop offset="0%" stop-color="${washColor}" stop-opacity="0.55"/>
+      <stop offset="70%" stop-color="${washColor}" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="${washColor}" stop-opacity="0"/>
     </radialGradient>
   </defs>
   <!-- The words sit on the design's own calm centre; a soft wash only, so they read on any paper tone. -->

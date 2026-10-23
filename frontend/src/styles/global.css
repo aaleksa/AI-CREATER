@@ -1071,6 +1071,9 @@ details.learned > summary { font-family: var(--serif); font-size: 20px; }
 .mock-line { margin: 0; font-size: 16px; line-height: 1.35; max-width: 80%; }
 @font-face { font-family: "Nunito"; src: url("/fonts/Nunito-Regular.ttf") format("truetype"); font-display: swap; }
 @font-face { font-family: "Montserrat"; src: url("/fonts/Montserrat-Regular.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Playfair Display"; src: url("/fonts/PlayfairDisplay-Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "Cormorant Garamond"; src: url("/fonts/CormorantGaramond-Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "Great Vibes"; src: url("/fonts/GreatVibes-Regular.ttf") format("truetype"); font-display: swap; }
 .mock-logo { position: absolute; right: 6%; bottom: 6%; height: 12%; max-width: 30%; object-fit: contain; }
 .mock-wordmark {
   position: absolute; right: 6%; bottom: 6%; max-width: 40%;
@@ -1409,6 +1412,18 @@ a, button, summary, label { -webkit-tap-highlight-color: transparent; }
 .certificate-row { display: grid; gap: 8px; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
 .certificate-row.on { border-color: var(--accent-2); }
 .certificate-row.folded { padding: 6px 12px; }
+.cert-fonts .btn { font-size: 15px; }
+.cert-look > * + * { margin-top: 12px; }
+.cert-look > .hint { margin-bottom: 0; }
+.cert-look > .cert-stage { margin-top: 14px; margin-bottom: 18px; }
+.cert-colors { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cert-swatch {
+  width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); padding: 0; cursor: pointer;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .5);
+}
+.cert-swatch.on { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.cert-swatch-own { position: relative; overflow: hidden; background: conic-gradient(#e34, #fb3, #4c6, #39f, #a4e, #e34); }
+.cert-swatch-own input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .certificate-people-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .certificate-row-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .certificate-row-head {
@@ -1423,10 +1438,12 @@ a, button, summary, label { -webkit-tap-highlight-color: transparent; }
 .certificate-row-head.open::after { transform: none; }
 .certificate-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 @media (max-width: 420px) { .certificate-pair { grid-template-columns: minmax(0, 1fr); } }
-.cert-stage { position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); user-select: none; }
+.cert-stage { position: relative; max-width: 460px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); user-select: none; }
 .cert-stage img { display: block; width: 100%; height: auto; pointer-events: none; }
-.cert-box { position: absolute; border: 2px dashed var(--accent-2); border-radius: 10px; cursor: move; touch-action: none; background: rgba(196, 92, 38, .06); }
-.cert-box:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+/* Invisible until pointed at; a click turns on moving (solid frame, corner handle), a click outside turns it off. */
+.cert-box { position: absolute; border: 2px dashed transparent; border-radius: 10px; cursor: pointer; background: transparent; transition: border-color .12s ease, background .12s ease; }
+.cert-box:hover, .cert-box:focus-visible { border-color: color-mix(in srgb, var(--accent-2) 55%, transparent); }
+.cert-box.editing { border: 2px solid var(--accent-2); background: rgba(196, 92, 38, .08); cursor: move; touch-action: none; outline: none; }
 .cert-box-handle { position: absolute; right: -2px; bottom: -2px; width: 22px; height: 22px; border-radius: 6px 0 8px 0; background: var(--accent-2); cursor: nwse-resize; touch-action: none; }
 @media (max-width: 960px) { .cert-box-handle { width: 30px; height: 30px; } }
 .cert-size { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

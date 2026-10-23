@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { api, fetchMedia, type CertificateItem, type CertificateLayout, type CertificateSettings, type Project } from "../lib/api";
+import { api, fetchMedia, type CertificateFont, type CertificateItem, type CertificateLayout, type CertificateSettings, type CertificateStyle, type Project } from "../lib/api";
 import { useLocale } from "../i18n/locale";
 
 const EMPTY: CertificateItem = { name: "", gift: "", giftNote: "", validFrom: "", validUntil: "", code: "" };
@@ -8,6 +8,18 @@ const STANDARD_TITLE = { uk: "Подарунковий сертифікат", en
 const STANDARD_TITLES: string[] = Object.values(STANDARD_TITLE);
 const DEFAULT_LAYOUT: CertificateLayout = { x: 0.5, y: 0.5, scale: 1 };
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+/** Remembered per browser: whether "Position, font and colour" is open (open until closed once). */
+const LOOK_OPEN_KEY = "auteur.studio.certLookOpen";
+const DEFAULT_STYLE: CertificateStyle = { font: "brand", accent: "", ink: "" };
+/** Each choice is shown in its own face (the files in /fonts). */
+const FONTS: { id: CertificateFont; css: string }[] = [
+  { id: "brand", css: "inherit" },
+  { id: "montserrat", css: "Montserrat, sans-serif" },
+  { id: "playfair", css: "'Playfair Display', serif" },
+  { id: "cormorant", css: "'Cormorant Garamond', serif" },
+  { id: "script", css: "'Great Vibes', cursive" },
+];
+const COLORS = ["#1a1612", "#5c3a21", "#7a3b1d", "#8b1e2d", "#9a7b2f", "#2f5d3a", "#1f3a5f", "#ffffff"];
 
 /**
  * Gift certificates from one painted design: the owner's exact words and a list of people, each with a code.
@@ -40,6 +52,76 @@ export default function CertificateBlock({
   draftRef.current = draft;
   const saveTimer = useRef<number | undefined>(undefined);
   const layout = draft.layout || DEFAULT_LAYOUT;
+  /** The frame on the preview moves the words only after a click on it, so a stray drag changes nothing. */
+  const [editing, setEditing] = useState(false);
+  /** Earlier font and colours, newest last (this visit only): "Back to the previous" steps through them. */
+  const [styleBack, setStyleBack] = useState<CertificateStyle[]>([]);
+  const lastStyleAt = useRef(0);
+  useEffect(() => setStyleBack([]), [project.id]);
+  const [lookOpen, setLookOpen] = useState(() => localStorage.getItem(LOOK_OPEN_KEY) !== "0");
+
+  useEffect(() => {
+    if (!editing) return;
+    const outside = (e: PointerEvent) => {
+      if (!stageRef.current?.contains(e.target as Node)) setEditing(false);
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [editing]);
+  const style = draft.style || DEFAULT_STYLE;
+
+  /** Font and colours: saved a moment later like the layout, so the preview follows. */
+  function setStyle(change: Partial<CertificateStyle>, coalesce = false) {
+    const next = { ...style, ...change };
+    if (JSON.stringify(next) === JSON.stringify(style)) return;
+    // Dragging the colour picker sends many changes: they count as one step back.
+    const now = Date.now();
+    if (!coalesce || now - lastStyleAt.current > 1000) setStyleBack((list) => [...list.slice(-19), style]);
+    lastStyleAt.current = now;
+    setDraft((d) => ({ ...d, style: next }));
+    saveSoon();
+  }
+
+  function undoStyle() {
+    const previous = styleBack[styleBack.length - 1];
+    if (!previous) return;
+    setStyleBack((list) => list.slice(0, -1));
+    lastStyleAt.current = 0;
+    setDraft((d) => ({ ...d, style: previous }));
+    saveSoon();
+  }
+
+  /** "Classic · #8b1e2d · auto": what a step back returns to. */
+  function styleLabel(s: CertificateStyle) {
+    return [t(`cert.fonts.${s.font}`), s.accent || t("cert.colorAuto"), s.ink || t("cert.colorAuto")].join(" · ");
+  }
+
+  function colorRow(key: "accent" | "ink", label: string) {
+    const value = style[key];
+    return (
+      <div className="cert-colors" role="group" aria-label={label}>
+        <span className="hint">{label}</span>
+        <button type="button" className={`btn ghost tiny${!value ? " on" : ""}`} aria-pressed={!value} disabled={off} onClick={() => setStyle({ [key]: "" })}>
+          {t("cert.colorAuto")}
+        </button>
+        {COLORS.map((c) => (
+          <button
+            key={c}
+            type="button"
+            className={`cert-swatch${value === c ? " on" : ""}`}
+            style={{ background: c }}
+            aria-label={c}
+            aria-pressed={value === c}
+            disabled={off}
+            onClick={() => setStyle({ [key]: c })}
+          />
+        ))}
+        <label className={`cert-swatch cert-swatch-own${value && !COLORS.includes(value) ? " on" : ""}`} title={t("cert.colorOwn")}>
+          <input type="color" value={value || "#1a1612"} disabled={off} aria-label={t("cert.colorOwn")} onChange={(e) => setStyle({ [key]: e.target.value }, true)} />
+        </label>
+      </div>
+    );
+  }
   const box = saved?.boxes?.[picked] || { w: 0.57, h: 0.45 };
 
   useEffect(() => {
@@ -178,14 +260,32 @@ export default function CertificateBlock({
     <div className="certificate-block">
       <h3>{t("cert.title")}</h3>
       <p className="hint">{t("cert.hint")}</p>
+      <details
+        className="edit-block cert-look"
+        open={lookOpen}
+        onToggle={(e) => {
+          const next = e.currentTarget.open;
+          setLookOpen(next);
+          localStorage.setItem(LOOK_OPEN_KEY, next ? "1" : "0");
+          if (!next) setEditing(false);
+        }}
+      >
+        <summary className="edit-block-head">
+          <h3>{t("cert.lookTitle")}</h3>
+          <p className="hint">
+            {[t(`cert.fonts.${style.font}`), t("cert.sizeN", { n: Math.round(layout.scale * 100) })].join(" · ")}
+          </p>
+        </summary>
+      {stageSrc && <p className="hint">{t("cert.dragHint")}</p>}
       {stageSrc && (
         <div className="cert-stage" ref={stageRef}>
           <img src={stageSrc} alt={t("cert.previewAlt")} draggable={false} />
           <div
-            className="cert-box"
+            className={`cert-box${editing ? " editing" : ""}`}
             role="slider"
             tabIndex={0}
-            aria-label={t("cert.moveBlock")}
+            title={editing ? undefined : t("cert.clickToEdit")}
+            aria-label={editing ? t("cert.moveBlock") : t("cert.clickToEdit")}
             aria-valuenow={Math.round(layout.scale * 100)}
             style={{
               left: `${(layout.x - (box.w * layout.scale) / 2) * 100}%`,
@@ -193,9 +293,37 @@ export default function CertificateBlock({
               width: `${box.w * layout.scale * 100}%`,
               height: `${box.h * layout.scale * 100}%`,
             }}
-            onPointerDown={(e) => startDrag(e, "move")}
+            onPointerDown={(e) => {
+              if (editing) {
+                startDrag(e, "move");
+                return;
+              }
+              if (disabled || busy) return;
+              e.preventDefault();
+              e.currentTarget.focus();
+              setEditing(true);
+            }}
+            onBlur={() => setEditing(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setEditing(false);
+                return;
+              }
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setEditing(!editing);
+                return;
+              }
+              const step = { ArrowLeft: [-0.01, 0], ArrowRight: [0.01, 0], ArrowUp: [0, -0.01], ArrowDown: [0, 0.01] }[e.key];
+              if (!editing || !step || disabled || busy) return;
+              e.preventDefault();
+              const hw = Math.min(0.5, (box.w * layout.scale) / 2);
+              const hh = Math.min(0.5, (box.h * layout.scale) / 2);
+              setLayout({ ...layout, x: clamp(layout.x + step[0], hw, 1 - hw), y: clamp(layout.y + step[1], hh, 1 - hh) });
+              saveSoon();
+            }}
           >
-            <span className="cert-box-handle" aria-hidden onPointerDown={(e) => startDrag(e, "size")} />
+            {editing && <span className="cert-box-handle" aria-hidden onPointerDown={(e) => startDrag(e, "size")} />}
           </div>
         </div>
       )}
@@ -226,7 +354,33 @@ export default function CertificateBlock({
           {t("cert.resetLayout")}
         </button>
       </div>
-      <p className="hint">{t("cert.dragHint")}</p>
+      <div className="pill-row cert-fonts" role="group" aria-label={t("cert.font")}>
+        <span className="hint">{t("cert.font")}</span>
+        {FONTS.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            className={`btn ghost tiny${style.font === f.id ? " on" : ""}`}
+            style={{ fontFamily: f.css }}
+            aria-pressed={style.font === f.id}
+            disabled={off}
+            onClick={() => setStyle({ font: f.id })}
+          >
+            {t(`cert.fonts.${f.id}`)}
+          </button>
+        ))}
+      </div>
+      {colorRow("accent", t("cert.colorAccent"))}
+      {colorRow("ink", t("cert.colorInk"))}
+      {styleBack.length > 0 && (
+        <div className="action-row">
+          <button type="button" className="btn ghost tiny" disabled={off} onClick={undoStyle} title={styleLabel(styleBack[styleBack.length - 1])}>
+            {t("cert.undoStyle")}
+          </button>
+          <span className="hint">{styleLabel(styleBack[styleBack.length - 1])}</span>
+        </div>
+      )}
+      </details>
       <label className="shot-field">
         <span>{t("cert.heading")}</span>
         <input value={draft.title} maxLength={60} onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
