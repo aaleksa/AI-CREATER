@@ -84,6 +84,17 @@ export type CertificateSettings = {
   /** Where the block of words sits and how big it is; the same for every certificate of the design. */
   layout?: CertificateLayout;
   style?: CertificateStyle;
+  /** Whose logo tops the words: the brand kit's, a file for this certificate, or none. */
+  logo?: "brand" | "own" | "none";
+  /** From the server: this certificate has its own logo file / the brand kit (if used) has a logo. */
+  /** The selected design (picture take): place, font, colours and logo are saved for it alone. */
+  take?: string;
+  ownLogo?: boolean;
+  brandLogo?: boolean;
+  /** Set once the logo is dragged off the words: its own centre and size; null = above the heading. */
+  logoLayout?: CertificateLayout | null;
+  /** Where each person's logo is (centre and size, shares of the page), from the server; null = no logo prints. */
+  logoBoxes?: ({ x: number; y: number; w: number; h: number } | null)[];
   items: CertificateItem[];
   /** Size of each person's block of words (share of the page), from the server — for the drag frame. */
   boxes?: { w: number; h: number }[];
@@ -348,6 +359,23 @@ export const api = {
     request<{ project: Project }>(`/projects/${id}/titles`, { method: "PATCH", body: JSON.stringify(body) }),
   updateReelLogo: (id: string, body: Partial<ReelLogo>) =>
     request<{ project: Project }>(`/projects/${id}/reel-logo`, { method: "PATCH", body: JSON.stringify(body) }),
+  uploadCertificateLogo: async (id: string, file: File) => {
+    const locale = currentLocale();
+    let res: Response;
+    try {
+      res = await fetch(`/projects/${id}/certificate/logo`, {
+        method: "POST",
+        headers: localeHeaders({ "Content-Type": file.type || "application/octet-stream" }),
+        body: file,
+      });
+    } catch {
+      throw new ApiError(translateError(locale, "We can’t reach the studio. Check your internet and try again."), 503);
+    }
+    const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string; project?: Project };
+    if (!res.ok) throw new ApiError(translateError(locale, data.error || "Something went wrong. Try again in a minute."), res.status, data.code);
+    return data as { project: Project };
+  },
+  removeCertificateLogo: (id: string) => request<{ project: Project }>(`/projects/${id}/certificate/logo`, { method: "DELETE" }),
   removeMusic: (id: string) => request<{ project: Project }>(`/projects/${id}/music`, { method: "DELETE" }),
   translateScript: (id: string, lang: "en" | "uk") =>
     request<{ project: Project }>(`/projects/${id}/script/translate`, { method: "POST", body: JSON.stringify({ lang }) }),

@@ -291,6 +291,25 @@ function parseLearned(value?: string | null): LearnedSummary | null {
   }
 }
 
+/**
+ * The brand on a certificate design: colours, mood and trade only. We print the name and the logo in the middle
+ * ourselves, so the picture must not paint them (a painted name is often misspelled) or keep a corner for a logo.
+ */
+function certificateBrandLines(brand?: BrandKit | null) {
+  if (!brand) return "";
+  return [
+    "Brand look (colour and mood only):",
+    brand.primary_color && `Primary colour ${brand.primary_color} — frame, ornaments, small details.`,
+    brand.secondary_color && `Secondary colour ${brand.secondary_color} — paper tone and quiet space.`,
+    brand.tone_of_voice && `Mood: ${brand.tone_of_voice}.`,
+    brand.vertical_note && brand.vertical === "other" && `Their trade: ${brand.vertical_note}.`,
+    brand.vertical && brand.vertical !== "other" && `Their trade: ${brand.vertical}.`,
+    brand.business_name && `Do not paint the business name (${brand.business_name}) or any logo: we print them in the centre ourselves.`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function brandLook(brand?: BrandKit | null, mode: "designed" | "photo" = "designed", logoLine?: string) {
   if (!brand) return "";
   const niche =
@@ -1048,8 +1067,8 @@ export function stillPicturePrompt(
       "Create the decorative design of a printed gift certificate, A5 landscape. It is a background: we print every word on it afterwards.",
       confirmed.length ? ["The owner approved this look. Follow it:", ...confirmed.filter((line) => !/^Words/i.test(line))].join("\n") : idea.visualDirection && `Look: ${idea.visualDirection}`,
       `Their business and occasion (for the motif only, never as text):\n${asked}`,
-      brandLook(brand, "designed"),
-      "Layout: an elegant border or frame and decoration around the edges (motif from their trade, flowers, ribbon, pattern — as fits). The centre — about two thirds of the width and two thirds of the height — stays calm, light and empty, a plain paper tone, so printed text reads clearly on it.",
+      certificateBrandLines(brand),
+      "Layout: an elegant border or frame and decoration around the edges (motif from their trade, flowers, ribbon, pattern — as fits). The centre — about two thirds of the width and two thirds of the height, including its top part where we print the logo — stays calm, light and empty, a plain paper tone, so the printed logo and text read clearly on it. Nothing in the centre: no emblem, no monogram, no title plate, no ribbon banner.",
       "Absolutely no letters, no numbers, no words, no logo, no signature, no barcode, no fake text anywhere. Print quality, crisp, no watermark, no mock-up, no hands, no table — just the flat certificate artwork filling the canvas.",
       regenInstruction(feedback),
     ]
