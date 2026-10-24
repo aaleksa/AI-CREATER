@@ -14,6 +14,11 @@ export const uk: Messages = {
     light: "Світла",
     dark: "Темна",
   },
+  crumbs: {
+    label: "Де ви зараз",
+    back: "Назад",
+    untitled: "Без назви",
+  },
   nav: {
     create: "Створити",
     library: "Бібліотека",

@@ -1,4 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import Breadcrumbs, { BreadcrumbProvider } from "./Breadcrumbs";
 import { useEffect, useState, type FormEvent } from "react";
 import { ApiError, api, clearSession, type Me } from "../lib/api";
 import LanguageSwitch from "./LanguageSwitch";
@@ -164,7 +165,10 @@ export default function AppLayout() {
       </aside>
       <main className="main">
         {me && me.emailVerified === false && <VerifyBanner email={me.user.email} />}
-        <Outlet context={{ me, setMe }} />
+        <BreadcrumbProvider>
+          <Breadcrumbs />
+          <Outlet context={{ me, setMe }} />
+        </BreadcrumbProvider>
       </main>
       <nav className="tabbar" aria-label={t("nav.menu")}>
         <NavLink to="/app" end className={({ isActive }) => (isActive || location.pathname.startsWith("/app/studio") ? "active" : "")}>

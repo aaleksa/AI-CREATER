@@ -1463,3 +1463,16 @@ a, button, summary, label { -webkit-tap-highlight-color: transparent; }
 @media (max-width: 960px) { .cert-box-handle { width: 30px; height: 30px; } }
 .cert-size { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .cert-size input[type="range"] { flex: 1; min-width: 140px; max-width: 280px; }
+
+/* Where you are: a short trail over the page, with one step back */
+.crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin: 0 0 14px; font-size: 14px; color: var(--muted, inherit); }
+.crumbs ol { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.crumbs li { display: inline-flex; align-items: center; min-width: 0; }
+.crumbs li + li::before { content: "›"; margin: 0 6px; opacity: .6; }
+.crumbs a, .crumbs .link-btn { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.crumbs .crumbs-here { color: var(--ink, inherit); font-weight: 600; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crumbs-back {
+  border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; background: none; color: inherit; font: inherit; cursor: pointer;
+}
+.crumbs-back:hover { border-color: var(--accent-2); }
+@media (max-width: 600px) { .crumbs { font-size: 13px; } .crumbs .crumbs-here { max-width: 70vw; } }
