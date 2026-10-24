@@ -79,6 +79,16 @@ export async function reshapePicture(
   format: ImageFormat,
   opts: { mode: ReshapeMode; background: ReshapeBackground; focus: { x: number; y: number } }
 ) {
+  fs.writeFileSync(dest, await renderReshape(src, format, opts, MAX_SIDE));
+}
+
+/** The reshaped picture as a JPEG; `maxSide` keeps a preview small (same cut and bands as the saved one). */
+export async function renderReshape(
+  src: string,
+  format: ImageFormat,
+  opts: { mode: ReshapeMode; background: ReshapeBackground; focus: { x: number; y: number } },
+  maxSide: number
+) {
   const size = imageDimensions(src);
   if (!size?.w || !size?.h) throw Object.assign(new Error("Make the picture first."), { status: 400 });
   const target = formatRatio(format).value;
@@ -94,7 +104,7 @@ export async function reshapePicture(
     W = source > target ? size.w : size.h * target;
     H = source > target ? size.w / target : size.h;
   }
-  const scale = Math.min(1, MAX_SIDE / Math.max(W, H));
+  const scale = Math.min(1, maxSide / Math.max(W, H));
   W = Math.max(16, Math.round(W * scale));
   H = Math.max(16, Math.round(H * scale));
   const href = dataUri(src);
@@ -123,7 +133,7 @@ export async function reshapePicture(
   }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${body}</svg>`;
   const png = new Resvg(svg, { fitTo: { mode: "original" }, font: { loadSystemFonts: false } }).render().asPng();
-  fs.writeFileSync(dest, await pngToJpeg(Buffer.from(png), path.dirname(dest)));
+  return pngToJpeg(Buffer.from(png), path.dirname(src));
 }
 
 /** Paper sizes at 300 dpi (portrait) and in PDF points; the page turns to match the picture. */

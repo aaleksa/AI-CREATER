@@ -122,6 +122,10 @@ function doneThrough(project: Project, step: string) {
   return Boolean(map[step]);
 }
 
+/** What the AI is asked when the owner clears the words off their own certificate design. */
+const REMOVE_DESIGN_TEXT =
+  "Remove every printed word from this certificate design: headings, names, what is given, small lines, dates, codes, small print, and any logo or signature. Keep the frame, border, ornaments, illustrations, colours and background exactly as they are, and fill where the words were with the same clean background, so the middle is calm and empty for new words.";
+
 /** Remembered per browser: whether "Changes to the selected picture" is open. */
 const EDITS_OPEN_KEY = "auteur.studio.editsOpen";
 /** Remembered per browser: whether the list of picture takes is open (open until closed once). */
@@ -693,6 +697,11 @@ export default function Studio() {
   const isCertificate = Boolean(isImage && project?.imageIntent === "certificate");
   /** A picture the owner brought (or copied from another project): no brief, no idea to redo — only changes to it. */
   const isOwn = Boolean(isImage && project?.imageIntent === "own");
+  /** A certificate on the owner's own design (or a finished picture): no brief, no idea, no "make again". */
+  const isOwnDesign = Boolean(
+    isCertificate && (project?.certificate?.ownDesign || project?.idea?.shot?.summary === "The owner's own picture.")
+  );
+  const noBrief = isOwn || isOwnDesign;
   const shapeRatio = isImage && project?.imageFormat ? SHAPE_RATIO[project.imageFormat] : undefined;
   const isPoster = Boolean(isImage && isPosterKind(project?.imageIntent));
   const STEPS = isImage
@@ -1002,6 +1011,32 @@ export default function Studio() {
       pictureLanguage: lang,
       keepStillVersionId: workingVersionId,
     });
+  }
+
+  /** Own certificate design: the AI clears the words printed on it, then ours (already in the forms) print instead. */
+  async function removeDesignText() {
+    if (!id || !project) return;
+    const price = extraPrice("visuals", 1);
+    if (!window.confirm(t("cert.removeTextConfirm", { credits: price.credits }))) return;
+    const ok = await execute("visuals", true, 1, undefined, false, {
+      keepStill: true,
+      copyEdit: REMOVE_DESIGN_TEXT,
+      keepStillVersionId: workingVersionId,
+    });
+    if (!ok) return;
+    try {
+      const { project: fresh } = await api.project(id);
+      const current = fresh.certificate;
+      if (!current) return;
+      const { project: next } = await api.saveCertificate(id, {
+        ...current,
+        readFromDesign: false,
+        style: { ...(current.style || { font: "brand", accent: "", ink: "" }), words: true },
+      });
+      setProject(next);
+    } catch (err) {
+      setError(err instanceof Error ? te(err.message) : t("studio.failStep"));
+    }
   }
 
   async function applyCopyEdit() {
@@ -2209,7 +2244,7 @@ export default function Studio() {
   return (
     <div>
       {!isImage && stepsNav}
-      {isOwn ? null : briefFolded ? (
+      {noBrief ? null : briefFolded ? (
         <div className="brief-line">
           <span className="brief-line-label">{t("studio.briefLabel")}</span>
           <span className="brief-line-text">{project.prompt}</span>
@@ -2287,7 +2322,7 @@ export default function Studio() {
           {error}
         </p>
       )}
-      {isImage && stepsNav}
+      {isImage && !noBrief && stepsNav}
 
       <div className={`studio${isImage ? " image" : ""}${!isImage && viewStep ? " reviewing" : ""}`}>
         <div className={isImage ? "studio-preview" : "reel-stage"}>
@@ -2895,7 +2930,16 @@ export default function Studio() {
                   {t(isInvite ? "studio.inviteReady" : isCertificate ? "studio.certificateReady" : "studio.pictureReady", { credits: project.creditsUsed })}
                 </p>
                 {!isCertificate && <p className="hint">{t(isInvite ? "studio.inviteKeep" : "studio.pictureKeep")}</p>}
-                {isCertificate && <CertificateBlock project={project} onSaved={setProject} onPreview={setCertPreview} disabled={Boolean(busy)} />}
+                {isCertificate && (
+                  <CertificateBlock
+                    project={project}
+                    onSaved={setProject}
+                    onPreview={setCertPreview}
+                    disabled={Boolean(busy)}
+                    onRemoveText={isOwnDesign ? removeDesignText : undefined}
+                    removeTextCost={extraPrice("visuals", 1).credits}
+                  />
+                )}
                 {isOwn && <OwnPictureTools project={project} onSaved={setProject} disabled={Boolean(busy)} />}
                 <div className="action-row">
                   {!isCertificate && downloadSrc && !String(downloadSrc).startsWith("linear") && (
@@ -3524,7 +3568,7 @@ export default function Studio() {
               </div>
             </div>
           )}
-          {STEPS.some((s) => doneThrough(project, s.id)) && !isOwn &&
+          {STEPS.some((s) => doneThrough(project, s.id)) && !noBrief &&
             (isImage && !project.hasImages ? (
               <div style={{ marginTop: 18 }}>{redoList}</div>
             ) : (

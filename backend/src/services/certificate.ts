@@ -40,7 +40,11 @@ export type CertificateLayout = { x: number; y: number; scale: number };
  */
 export const CERTIFICATE_FONTS = ["brand", "montserrat", "playfair", "cormorant", "script"] as const;
 export type CertificateFont = (typeof CERTIFICATE_FONTS)[number];
-export type CertificateStyle = { font: CertificateFont; accent: string; ink: string };
+/** Under the words: a soft wash (as designed), a plate that reads on any picture (photos, busy designs), or nothing. */
+export const CERTIFICATE_PANELS = ["soft", "plate", "none"] as const;
+export type CertificatePanel = (typeof CERTIFICATE_PANELS)[number];
+/** words: print our words (heading, name, gift, dates, code, logo, contacts) — off keeps the design exactly as it is. */
+export type CertificateStyle = { font: CertificateFont; accent: string; ink: string; panel: CertificatePanel; words: boolean };
 /** Whose logo tops the words: the brand kit's, a file for this certificate only, or none. */
 export const CERTIFICATE_LOGOS = ["brand", "own", "none"] as const;
 export type CertificateLogo = (typeof CERTIFICATE_LOGOS)[number];
@@ -52,6 +56,10 @@ export type CertificateSettings = {
   layout: CertificateLayout;
   style: CertificateStyle;
   logo: CertificateLogo;
+  /** The design is the owner's own picture (upload or library), not painted from a brief. */
+  ownDesign: boolean;
+  /** The words in the forms were read off the owner's design (it still shows them until its words are removed). */
+  readFromDesign: boolean;
   /** Set once the logo is dragged off the words: its own centre (share of the page) and size; null = above the heading. */
   logoLayout: CertificateLayout | null;
   items: CertificateItem[];
@@ -102,11 +110,14 @@ const FONT_FAMILY: Record<Exclude<CertificateFont, "brand">, string> = {
   script: "Great Vibes",
 };
 
-function parseStyle(raw: unknown): CertificateStyle {
+/** wordsByDefault: our words when the owner never chose (off on their own design, which keeps its own words). */
+function parseStyle(raw: unknown, wordsByDefault = true): CertificateStyle {
   const row = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const color = (value: unknown) => (typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : "");
   const font = CERTIFICATE_FONTS.includes(row.font as CertificateFont) ? (row.font as CertificateFont) : "brand";
-  return { font, accent: color(row.accent), ink: color(row.ink) };
+  const panel = CERTIFICATE_PANELS.includes(row.panel as CertificatePanel) ? (row.panel as CertificatePanel) : "soft";
+  const words = row.words === undefined ? wordsByDefault : row.words !== false;
+  return { font, accent: color(row.accent), ink: color(row.ink), panel, words };
 }
 
 export const DEFAULT_LAYOUT: CertificateLayout = { x: 0.5, y: 0.5, scale: 1 };
@@ -141,7 +152,12 @@ export function newCertificateCode() {
 }
 
 /** defaultLogo: for a certificate never set up — the brand kit's when made with the brand, else none (as it printed before). */
-export function parseCertificate(raw: unknown, fallbackLang: "uk" | "en", defaultLogo: CertificateLogo = "brand"): CertificateSettings {
+export function parseCertificate(
+  raw: unknown,
+  fallbackLang: "uk" | "en",
+  defaultLogo: CertificateLogo = "brand",
+  ownDesignHint = false
+): CertificateSettings {
   const body = (raw && typeof raw === "object" ? raw : {}) as Partial<Record<keyof CertificateSettings, unknown>>;
   const lang = body.lang === "en" || body.lang === "uk" ? body.lang : fallbackLang;
   const items = (Array.isArray(body.items) ? body.items : [])
@@ -166,9 +182,11 @@ export function parseCertificate(raw: unknown, fallbackLang: "uk" | "en", defaul
     lang,
     codes: body.codes !== false,
     layout: parseLayout(body.layout),
-    style: parseStyle(body.style),
+    style: parseStyle(body.style, !((body as Record<string, unknown>).ownDesign === true || ownDesignHint)),
     logo: CERTIFICATE_LOGOS.includes(body.logo as CertificateLogo) ? (body.logo as CertificateLogo) : defaultLogo,
     logoLayout: parseLogoLayout((body as Record<string, unknown>).logoLayout),
+    ownDesign: (body as Record<string, unknown>).ownDesign === true || ownDesignHint,
+    readFromDesign: (body as Record<string, unknown>).readFromDesign === true,
     items,
   };
 }
@@ -215,6 +233,12 @@ function fitSize(text: string, size: number, width: number, perChar = 0.56) {
 
 /** The page as SVG: the painted design, a quiet panel in the middle, our exact words on it. */
 function certificateSvg(settings: CertificateSettings, item: CertificateItem, brand: BrandKit | null, background: string, logo: string) {
+  if (settings.style && settings.style.words === false) {
+    // Our words off: the owner's design exactly as it is, nothing printed on it.
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${PRINT.w}" height="${PRINT.h}" viewBox="0 0 ${PRINT.w} ${PRINT.h}">
+  <image href="${background}" x="0" y="0" width="${PRINT.w}" height="${PRINT.h}" preserveAspectRatio="xMidYMid slice"/>
+</svg>`;
+  }
   const L = LABELS[settings.lang];
   const style = settings.style || parseStyle(null);
   const font = brand?.user_id ? brandFont(brand.user_id, brand.font) : null;
@@ -295,7 +319,12 @@ function certificateSvg(settings: CertificateSettings, item: CertificateItem, br
   const start = top - 70;
   const middle = (start + y) / 2;
   const at = { x: Math.round(layout.x * W), y: Math.round(layout.y * H) };
-  const words = `<g transform="translate(${at.x} ${at.y}) scale(${layout.scale}) translate(${-cx} ${-Math.round(middle)})">${parts.join("")}</g>`;
+  // A plate: a rounded card behind the block of words, moving and scaling with it.
+  const plate =
+    style.panel === "plate"
+      ? `<rect x="${Math.round(cx - inner / 2 - 60)}" y="${Math.round(start + 10)}" width="${Math.round(inner + 120)}" height="${Math.round(y - start)}" rx="44" fill="${washColor}" fill-opacity="0.86"/>`
+      : "";
+  const words = `<g transform="translate(${at.x} ${at.y}) scale(${layout.scale}) translate(${-cx} ${-Math.round(middle)})">${plate}${parts.join("")}</g>`;
   // A logo dragged off the words: on its own, where the owner put it.
   let looseLogo = "";
   if (loose && settings.logoLayout) {
@@ -317,7 +346,7 @@ function certificateSvg(settings: CertificateSettings, item: CertificateItem, br
     </radialGradient>
   </defs>
   <!-- The words sit on the design's own calm centre; a soft wash only, so they read on any paper tone. -->
-  <ellipse cx="${at.x}" cy="${at.y}" rx="${wash.rx}" ry="${wash.ry}" fill="url(#wash)"/>
+  ${style.panel === "soft" ? `<ellipse cx="${at.x}" cy="${at.y}" rx="${wash.rx}" ry="${wash.ry}" fill="url(#wash)"/>` : ""}
   ${words}
   ${looseLogo}
 </svg>`;

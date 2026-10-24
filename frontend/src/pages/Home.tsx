@@ -34,10 +34,13 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [kit, setKit] = useState<BrandKitRow | null>(null);
   const [useBrand, setUseBrand] = useState(true);
+  /** Certificate design: painted by the AI from the brief, or the owner's own picture (upload or library). */
+  const [certDesign, setCertDesign] = useState<"ai" | "own">("ai");
   const [exampleFiles, setExampleFiles] = useState<{ id: string; src: string }[]>([]);
   const [recentBriefs, setRecentBriefs] = useState<string[]>([]);
   const isImage = type === "image_post";
   const isPoster = isImage && imageIntent !== "photo";
+  const ownCertificate = isImage && imageIntent === "certificate" && certDesign === "own";
   const selectedReady = READY.has(type);
   const selectedTitle = t(`formats.${type}.title`);
   const kindHint = t(`kinds.${imageIntent}.hint`);
@@ -197,7 +200,18 @@ export default function Home() {
           <p className="hint pill-hint" aria-live="polite">{kindHint}</p>
 
           {imageIntent === "certificate" ? (
-            <p className="hint" style={{ marginTop: 18 }}>{t("home.certificateShape")}</p>
+            <>
+              <p className="hint" style={{ marginTop: 18 }}>{t("home.certificateShape")}</p>
+              <p className="step-label" style={{ marginTop: 18 }}>{t("home.certDesignAsk")}</p>
+              <div className="pills" role="group" aria-label={t("home.certDesignAsk")}>
+                {(["ai", "own"] as const).map((id) => (
+                  <button key={id} type="button" aria-pressed={certDesign === id} className={`pill ${certDesign === id ? "on" : ""}`} onClick={() => setCertDesign(id)}>
+                    {t(`home.certDesign.${id}`)}
+                  </button>
+                ))}
+              </div>
+              <p className="hint pill-hint" aria-live="polite">{t(`home.certDesignHint.${certDesign}`)}</p>
+            </>
           ) : (
           <>
           <p className="step-label" style={{ marginTop: 18 }}>{t("shapes.ask")}</p>
@@ -247,8 +261,9 @@ export default function Home() {
       )}
 
       {type === "own_image" && <OwnPictureStart kit={kit} />}
+      {ownCertificate && <OwnPictureStart kit={kit} target="certificate" />}
 
-      {type !== "own_image" && (
+      {type !== "own_image" && !ownCertificate && (
       <div className="prompt-stage">
         <textarea
           value={prompt}

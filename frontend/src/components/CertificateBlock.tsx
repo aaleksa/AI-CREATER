@@ -10,7 +10,8 @@ const DEFAULT_LAYOUT: CertificateLayout = { x: 0.5, y: 0.5, scale: 1 };
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
 /** Remembered per browser: whether "Position, font and colour" is open (open until closed once). */
 const LOOK_OPEN_KEY = "auteur.studio.certLookOpen";
-const DEFAULT_STYLE: CertificateStyle = { font: "brand", accent: "", ink: "" };
+const DEFAULT_STYLE: CertificateStyle = { font: "brand", accent: "", ink: "", panel: "soft" };
+const PANELS = ["soft", "plate", "none"] as const;
 /** Each choice is shown in its own face (the files in /fonts). */
 const FONTS: { id: CertificateFont; css: string }[] = [
   { id: "brand", css: "inherit" },
@@ -30,8 +31,13 @@ export default function CertificateBlock({
   onSaved,
   onPreview,
   disabled,
+  onRemoveText,
+  removeTextCost,
 }: {
   project: Project;
+  /** Own design only: the AI clears the words painted on the design (a paid edit), then ours print instead. */
+  onRemoveText?: () => void;
+  removeTextCost?: number;
   onSaved: (project: Project) => void;
   /** The picked person's certificate, with the words, for the big preview. */
   onPreview: (src: string) => void;
@@ -72,6 +78,8 @@ export default function CertificateBlock({
     return () => document.removeEventListener("pointerdown", outside);
   }, [editing, logoEditing]);
   const style = draft.style || DEFAULT_STYLE;
+  /** Our words printed on the design; off = the owner's design exactly as it is (its own words). */
+  const wordsOn = style.words !== false;
   const logoInput = useRef<HTMLInputElement>(null);
   /** Shown as it prints: "brand" with no logo in the kit prints no logo (only the business name, with the brand on). */
   const logoChoice =
@@ -133,7 +141,8 @@ export default function CertificateBlock({
 
   /** "Classic · #8b1e2d · auto": what a step back returns to. */
   function styleLabel(s: CertificateStyle) {
-    return [t(`cert.fonts.${s.font}`), s.accent || t("cert.colorAuto"), s.ink || t("cert.colorAuto")].join(" · ");
+    if (s.words === false) return t("cert.wordsOffShort");
+    return [t(`cert.fonts.${s.font}`), s.accent || t("cert.colorAuto"), s.ink || t("cert.colorAuto"), t(`cert.panels.${s.panel || "soft"}`)].join(" · ");
   }
 
   function colorRow(key: "accent" | "ink", label: string) {
@@ -367,14 +376,43 @@ export default function CertificateBlock({
         <summary className="edit-block-head">
           <h3>{t("cert.lookTitle")}</h3>
           <p className="hint">
-            {[t(`cert.fonts.${style.font}`), t("cert.sizeN", { n: Math.round(layout.scale * 100) })].join(" · ")}
+            {wordsOn ? [t(`cert.fonts.${style.font}`), t("cert.sizeN", { n: Math.round(layout.scale * 100) })].join(" · ") : t("cert.wordsOffShort")}
           </p>
         </summary>
       <p className="hint">{t("cert.lookPerTake")}</p>
-      {stageSrc && <p className="hint">{t("cert.dragHint")}</p>}
+      <div className="pill-row" role="group" aria-label={t("cert.words")}>
+        <span className="hint">{t("cert.words")}</span>
+        {([true, false] as const).map((on) => (
+          <button
+            key={String(on)}
+            type="button"
+            className={`btn ghost tiny${wordsOn === on ? " on" : ""}`}
+            aria-pressed={wordsOn === on}
+            disabled={off}
+            onClick={() => {
+              setEditing(false);
+              setLogoEditing(false);
+              setStyle({ words: on });
+            }}
+          >
+            {t(on ? "cert.wordsOn" : "cert.wordsOff")}
+          </button>
+        ))}
+      </div>
+      {!wordsOn && <p className="hint">{t(saved?.readFromDesign ? "cert.wordsReadHint" : "cert.wordsOffHint")}</p>}
+      {saved?.ownDesign && onRemoveText && (
+        <div className="action-row">
+          <button type="button" className="btn ghost" disabled={off} onClick={onRemoveText}>
+            {t("cert.removeText", { credits: removeTextCost ?? 8 })}
+          </button>
+          <span className="hint">{t("cert.removeTextHint")}</span>
+        </div>
+      )}
+      {stageSrc && wordsOn && <p className="hint">{t("cert.dragHint")}</p>}
       {stageSrc && (
         <div className="cert-stage" ref={stageRef}>
           <img src={stageSrc} alt={t("cert.previewAlt")} draggable={false} />
+          {wordsOn && (
           <div
             className={`cert-box${editing ? " editing" : ""}`}
             role="slider"
@@ -421,7 +459,8 @@ export default function CertificateBlock({
           >
             {editing && <span className="cert-box-handle" aria-hidden onPointerDown={(e) => startDrag(e, "size")} />}
           </div>
-          {logoView && (
+          )}
+          {wordsOn && logoView && (
             <div
               className={`cert-box cert-logo-box${logoEditing ? " editing" : ""}`}
               role="slider"
@@ -473,6 +512,8 @@ export default function CertificateBlock({
           )}
         </div>
       )}
+      {wordsOn && (
+      <>
       {loose && logoView && (
         <div className="action-row">
           <button
@@ -582,6 +623,24 @@ export default function CertificateBlock({
       </div>
       {colorRow("accent", t("cert.colorAccent"))}
       {colorRow("ink", t("cert.colorInk"))}
+      <div className="pill-row" role="group" aria-label={t("cert.panel")}>
+        <span className="hint">{t("cert.panel")}</span>
+        {PANELS.map((id) => (
+          <button
+            key={id}
+            type="button"
+            className={`btn ghost tiny${(style.panel || "soft") === id ? " on" : ""}`}
+            aria-pressed={(style.panel || "soft") === id}
+            disabled={off}
+            onClick={() => setStyle({ panel: id })}
+          >
+            {t(`cert.panels.${id}`)}
+          </button>
+        ))}
+      </div>
+      <p className="hint">{t("cert.panelHint")}</p>
+      </>
+      )}
       {styleBack.length > 0 && (
         <div className="action-row">
           <button type="button" className="btn ghost tiny" disabled={off} onClick={undoStyle} title={styleLabel(styleBack[styleBack.length - 1])}>

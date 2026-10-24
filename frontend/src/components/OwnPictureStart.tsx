@@ -42,8 +42,14 @@ async function asUpload(file: File): Promise<Blob> {
   }
 }
 
-/** "Your own picture" on Create: upload a file, or take a picture already made in one of your projects. */
-export default function OwnPictureStart({ kit }: { kit: BrandKitRow | null }) {
+/**
+ * "Your own picture" on Create: upload a file, or take a picture already made in one of your projects.
+ * target "certificate": the same, but the picture becomes the design of a new gift certificate (Create → Certificate).
+ */
+export default function OwnPictureStart({ kit, target = "own" }: { kit: BrandKitRow | null; target?: "own" | "certificate" }) {
+  const forCertificate = target === "certificate";
+  const [fitMode, setFitMode] = useState<"crop" | "fit">("crop");
+  const [band, setBand] = useState("blur");
   const { t, te } = useLocale();
   const nav = useNavigate();
   const input = useRef<HTMLInputElement>(null);
@@ -77,9 +83,9 @@ export default function OwnPictureStart({ kit }: { kit: BrandKitRow | null }) {
     let cancelled = false;
     for (const p of visible) {
       if (thumbs[p.id]) continue;
-      // A certificate shows as it prints — with its words — since that is what you take.
+      // A certificate shows as it prints — with its words — since that is what you take (as a design: without them).
       const src =
-        p.imageIntent === "certificate"
+        p.imageIntent === "certificate" && !forCertificate
           ? `/projects/${p.id}/certificate/0?format=preview&t=${encodeURIComponent(p.updatedAt || "")}`
           : `/projects/${p.id}/image/1?t=${encodeURIComponent(p.updatedAt || "")}`;
       fetchMedia(src)
@@ -108,7 +114,9 @@ export default function OwnPictureStart({ kit }: { kit: BrandKitRow | null }) {
     try {
       const body = await asUpload(file);
       if (body.size > MAX_BYTES) throw new Error(t("own.tooBig"));
-      const { project } = await api.createOwnPicture(body, file.name, useBrand);
+      const { project } = forCertificate
+        ? await api.createCertificateFromUpload(body, file.name, useBrand, fitMode, band)
+        : await api.createOwnPicture(body, file.name, useBrand);
       nav(`/app/studio/${project.id}`, { state: { from: "create" } });
     } catch (err) {
       setError(err instanceof Error ? (err.message === "unreadable" ? t("own.unreadable") : te(err.message)) : t("home.fallback"));
@@ -123,7 +131,9 @@ export default function OwnPictureStart({ kit }: { kit: BrandKitRow | null }) {
     setBusy(index === undefined ? id : `${id}-${index}`);
     setError("");
     try {
-      const { project } = await api.createOwnFromProject(id, useBrand, index);
+      const { project } = forCertificate
+        ? await api.makeCertificate(id, { mode: fitMode, background: band, useBrand })
+        : await api.createOwnFromProject(id, useBrand, index);
       nav(`/app/studio/${project.id}`, { state: { from: "create" } });
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("home.fallback"));
@@ -134,8 +144,30 @@ export default function OwnPictureStart({ kit }: { kit: BrandKitRow | null }) {
 
   return (
     <section className="create-step own-start">
-      <p className="step-label">{t("own.ask")}</p>
-      <p className="hint">{t("own.hint")}</p>
+      <p className="step-label">{t(forCertificate ? "own.certAsk" : "own.ask")}</p>
+      <p className="hint">{t(forCertificate ? "own.certStartHint" : "own.hint")}</p>
+      {forCertificate && (
+        <>
+          <div className="pill-row" role="group" aria-label={t("own.modeAsk")}>
+            <span className="hint">{t("own.certFit")}</span>
+            {(["crop", "fit"] as const).map((id) => (
+              <button key={id} type="button" className={`btn ghost tiny${fitMode === id ? " on" : ""}`} aria-pressed={fitMode === id} onClick={() => setFitMode(id)}>
+                {t(`own.modes.${id}`)}
+              </button>
+            ))}
+          </div>
+          {fitMode === "fit" && (
+            <div className="pill-row" role="group" aria-label={t("own.bandAsk")}>
+              <span className="hint">{t("own.bandAsk")}</span>
+              {(["blur", "white", "black"] as const).map((id) => (
+                <button key={id} type="button" className={`btn ghost tiny${band === id ? " on" : ""}`} aria-pressed={band === id} onClick={() => setBand(id)}>
+                  {t(`own.bands.${id}`)}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
       <div className="action-row">
         <button type="button" className="btn accent" disabled={Boolean(busy)} onClick={() => input.current?.click()}>
           {busy === "upload" ? t("own.uploading") : t("own.upload")}
@@ -193,7 +225,7 @@ export default function OwnPictureStart({ kit }: { kit: BrandKitRow | null }) {
                 className="own-library-item"
                 disabled={Boolean(busy)}
                 onClick={() => {
-                  const people = p.imageIntent === "certificate" ? p.certificate?.items || [] : [];
+                  const people = p.imageIntent === "certificate" && !forCertificate ? p.certificate?.items || [] : [];
                   if (people.length > 1) setCertPick(certPick?.id === p.id ? null : p);
                   else void pick(p.id, people.length ? 0 : undefined);
                 }}
@@ -225,7 +257,7 @@ export default function OwnPictureStart({ kit }: { kit: BrandKitRow | null }) {
               </button>
             </div>
           )}
-          <p className="hint">{t("own.libraryHint")}</p>
+          <p className="hint">{t(forCertificate ? "own.certLibraryHint" : "own.libraryHint")}</p>
         </>
       )}
       {error && <p className="err">{error}</p>}
