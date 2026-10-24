@@ -1,7 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Resvg } from "@resvg/resvg-js";
@@ -10,9 +8,7 @@ import { brandFont } from "./brandFont.js";
 import { brandLogoPath } from "./brandAssets.js";
 import { imageDimensions } from "./imageFormats.js";
 import { projectMediaDir, stillFile } from "./media.js";
-
-const require = createRequire(import.meta.url);
-const ffmpegPath = (require("ffmpeg-static") as string | null) || "ffmpeg";
+import { pdfWithJpeg, pngToJpeg } from "./print.js";
 
 /** A5 landscape at 300 dpi: what a print shop expects. */
 const PRINT = { w: 2480, h: 1748 };
@@ -361,48 +357,6 @@ export function certificateLogoBox(settings: CertificateSettings, item: Certific
   };
 }
 
-function run(args: string[]) {
-  return new Promise<boolean>((resolve) => {
-    const child = spawn(ffmpegPath, ["-y", "-hide_banner", "-loglevel", "error", ...args], { stdio: ["ignore", "ignore", "pipe"] });
-    child.on("error", () => resolve(false));
-    child.on("close", (code) => resolve(code === 0));
-  });
-}
-
-/** One page PDF holding the print JPEG edge to edge (A5 landscape). No extra dependency: the format is simple. */
-function pdfWithJpeg(jpeg: Buffer, w: number, h: number) {
-  const chunks: Buffer[] = [];
-  const offsets: number[] = [];
-  let length = 0;
-  const push = (part: string | Buffer) => {
-    const buf = typeof part === "string" ? Buffer.from(part, "latin1") : part;
-    chunks.push(buf);
-    length += buf.length;
-  };
-  const object = (n: number, body: (string | Buffer)[]) => {
-    offsets[n] = length;
-    push(`${n} 0 obj\n`);
-    body.forEach(push);
-    push("\nendobj\n");
-  };
-  const draw = `q ${PAGE.w} 0 0 ${PAGE.h} 0 0 cm /Im0 Do Q`;
-  push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
-  object(1, ["<< /Type /Catalog /Pages 2 0 R >>"]);
-  object(2, ["<< /Type /Pages /Kids [3 0 R] /Count 1 >>"]);
-  object(3, [`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE.w} ${PAGE.h}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`]);
-  object(4, [
-    `<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`,
-    jpeg,
-    "\nendstream",
-  ]);
-  object(5, [`<< /Length ${draw.length} >>\nstream\n${draw}\nendstream`]);
-  const xref = length;
-  push(`xref\n0 6\n0000000000 65535 f \n`);
-  for (let i = 1; i <= 5; i++) push(`${String(offsets[i]).padStart(10, "0")} 00000 n \n`);
-  push(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
-  return Buffer.concat(chunks);
-}
-
 /**
  * One certificate for one person: the painted design with our exact words, as a print PNG, a PDF or a small
  * preview. No AI: free for every person on the list.
@@ -430,17 +384,6 @@ export async function renderCertificate(
     .render()
     .asPng();
   if (format !== "pdf") return { body: Buffer.from(png), mime: "image/png" };
-  const dir = projectMediaDir(projectId);
-  const tmpPng = path.join(dir, `certificate-${process.pid}-${Date.now()}.png`);
-  const tmpJpg = tmpPng.replace(/\.png$/, ".jpg");
-  try {
-    fs.writeFileSync(tmpPng, png);
-    if (!(await run(["-i", tmpPng, "-q:v", "2", tmpJpg])) || !fs.existsSync(tmpJpg)) {
-      throw Object.assign(new Error("We couldn’t make the PDF. Try again in a minute."), { status: 500 });
-    }
-    return { body: pdfWithJpeg(fs.readFileSync(tmpJpg), PRINT.w, PRINT.h), mime: "application/pdf" };
-  } finally {
-    fs.rmSync(tmpPng, { force: true });
-    fs.rmSync(tmpJpg, { force: true });
-  }
+  const jpeg = await pngToJpeg(Buffer.from(png), projectMediaDir(projectId));
+  return { body: pdfWithJpeg(jpeg, PRINT.w, PRINT.h, PAGE), mime: "application/pdf" };
 }

@@ -1,3 +1,4 @@
+import { isPosterKind } from "./imageKinds.js";
 import fs from "node:fs";
 import OpenAI, { toFile } from "openai";
 import { config } from "../config.js";
@@ -525,8 +526,42 @@ const IMAGE_KIND_GUIDE: Record<string, string> = {
   invite: "Finished invitation flyer: photography and words are one designed page (title, programme, date), like ChatGPT would design — not a stock photo with a caption.",
   info: "Information post: a designed page from their fact — photography plus short readable type, one layout.",
   offer: "Offer post: a designed page from their offer — photography plus short readable type, not a price sticker on a stock photo.",
+  announce:
+    "Announcement post: something coming — an opening, a launch, an event, new hours, a date to remember. A designed page with one big headline, the date or time clearly, one or two short lines; a feeling of anticipation, not a calendar.",
+  review:
+    "Customer review post: their client's words as a designed quote card — the quote exactly as they wrote it, in quotation marks, the client's name under it, and a warm real photograph of their place or work. Never invent a review or add words to the quote; stars only if they gave a rating.",
+  greeting:
+    "Greeting post from the business: a holiday, a birthday, thanks or congratulations. One warm greeting line large, a short wish smaller, signed with the business name; festive but in their own look, not a generic stock card.",
+  infographic:
+    "Infographic post: 3 to 5 short points from their words — steps, facts, numbers or tips — as a clean designed layout: a title, numbered or icon rows with very short labels, plenty of space. Only their facts and numbers; never invent a figure.",
+  launch:
+    "New product or service post: the new thing is the hero of the picture (their own photo when they attached one), a small 'New' badge, its name and one short line; the price only if they gave it.",
   certificate:
     "Printed gift certificate (A5 landscape): only the decorative design — frame, motif from their trade, brand colours. We print every word ourselves, so the picture has no letters at all and a calm empty centre.",
+};
+
+/** How a kind of picture is called in a sentence ("A still Instagram announcement that…"). */
+const KIND_NAME: Record<string, string> = {
+  invite: "invitation",
+  info: "information post",
+  offer: "offer",
+  announce: "announcement",
+  review: "customer review",
+  greeting: "greeting",
+  infographic: "infographic",
+  launch: "new product post",
+};
+
+/** What the picture itself must get right for each designed kind (the idea step has the longer guide). */
+const KIND_PICTURE_NOTE: Record<string, string> = {
+  announce: "Make the headline and the date or time the biggest, clearest type on the page.",
+  review:
+    "Print the review exactly as given, letter for letter, in quotation marks, with the client's name under it. Do not shorten, rephrase or add to it. Five small stars only if they gave a rating.",
+  greeting: "The greeting line is the biggest type; the wish is smaller; the business name signs it off at the bottom.",
+  infographic:
+    "Lay the points out as 3 to 5 numbered or icon rows, each a very short label, aligned and evenly spaced, with the title on top. Every number exactly as they wrote it. No charts with made-up values.",
+  launch:
+    "The new product or service fills most of the picture; a small 'New' badge in the picture language; its name large, one short line under it. If a photo of the product is attached, show that exact product — same shape, colours, label and packaging — not a look-alike.",
 };
 
 function mockIdea(prompt: string, type: string, brand?: BrandKit | null, imageIntent = ""): Idea {
@@ -536,6 +571,11 @@ function mockIdea(prompt: string, type: string, brand?: BrandKit | null, imageIn
     invite: "You’re invited.",
     info: "One thing to know.",
     offer: "Come in for this.",
+    announce: "Coming soon.",
+    review: "In their words.",
+    greeting: "With warm wishes.",
+    infographic: "Good to know.",
+    launch: "Something new.",
     photo: "One still. One feeling.",
   };
   return {
@@ -546,7 +586,7 @@ function mockIdea(prompt: string, type: string, brand?: BrandKit | null, imageIn
         : "A clear story, told simply.",
     hook: prompt.slice(0, 90),
     concept: still
-      ? `A still Instagram ${imageIntent === "invite" ? "invitation" : imageIntent === "info" ? "information post" : imageIntent === "offer" ? "offer" : "photo"} that answers “${prompt}” in one glance. ${brandName} shows in colour and light — not as a logo stamp.`
+      ? `A still Instagram ${KIND_NAME[imageIntent] || "photo"} that answers “${prompt}” in one glance. ${brandName} shows in colour and light — not as a logo stamp.`
       : `A vertical film that answers “${prompt}” without asking the viewer to learn any tools. ${brandName} stays visible in colour, type and tone — never as a watermark slapped on at the end.`,
     audience: still
       ? "People scrolling the feed who will stop for a strong photo."
@@ -1059,7 +1099,7 @@ export function stillPicturePrompt(
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 1800);
-  const withCopy = kind === "invite" || kind === "info" || kind === "offer";
+  const withCopy = isPosterKind(kind);
   const shot = idea.shot?.summary ? idea.shot : fallbackShot(idea, asked);
   const confirmed = shotLines(shot);
   if (kind === "certificate") {
@@ -1083,6 +1123,7 @@ export function stillPicturePrompt(
       ? ["The owner approved this shot. Follow it exactly:", ...confirmed].join("\n")
       : idea.visualDirection && `Photograph this: ${idea.visualDirection}`,
     kind === "invite" && inviteDetailsLine(invite),
+    withCopy && KIND_PICTURE_NOTE[kind],
     `Facts from their request (do not add a different scene):\n${asked}`,
     withCopy ? brandLook(brand, "designed") : brandLook(brand, "photo"),
     withCopy && addressLine(brand),
@@ -1125,7 +1166,7 @@ export async function generateIdea(
         ? `\nLanguage: write ${fieldsWord} in English, whatever language the request is in.`
         : `\nLanguage: write ${fieldsWord} in the language of the user request.`;
   const shotGuide = still
-    ? ` shot is what the camera will see — the owner reads it and says "yes, shoot this" before we pay for the picture. Plain words, one short line per field. Every detail the owner wrote about the scene (objects, flowers, light, furniture, place) must appear in subject, place or mood — never drop one. subject = everything in the frame they described. place = where exactly (their business if they said so; never a landscape they did not mention). angle = camera distance and direction. people = "nobody" unless the request clearly asks for a person; in Ukrainian "пара" next to coffee, tea or a cup means steam, not a couple. mood = light and feeling. words = "none" unless the request explicitly asks for text, a caption, a sign or quoted words on the picture; a description of the scene is never words on the picture. For invitations, information and offers, words = the short lines they want printed. summary = one full sentence of the whole shot the owner can check in two seconds. Only facts from the request; if the request does not say, choose the simplest honest option, do not invent a new story.`
+    ? ` shot is what the camera will see — the owner reads it and says "yes, shoot this" before we pay for the picture. Plain words, one short line per field. Every detail the owner wrote about the scene (objects, flowers, light, furniture, place) must appear in subject, place or mood — never drop one. subject = everything in the frame they described. place = where exactly (their business if they said so; never a landscape they did not mention). angle = camera distance and direction. people = "nobody" unless the request clearly asks for a person; in Ukrainian "пара" next to coffee, tea or a cup means steam, not a couple. mood = light and feeling. words = "none" unless the request explicitly asks for text, a caption, a sign or quoted words on the picture; a description of the scene is never words on the picture. For designed kinds (invitations, information, offers, announcements, reviews, greetings, infographics, new products), words = the short lines they want printed; for a review, the quote exactly as written and the client's name. summary = one full sentence of the whole shot the owner can check in two seconds. Only facts from the request; if the request does not say, choose the simplest honest option, do not invent a new story.`
     : "";
   return jsonCompletion<IdeaResult>(
     `You are the creative director of Auteur, an AI content studio. The user never chooses models or prompts. You decide the concept. ${
@@ -1144,8 +1185,8 @@ export async function generateIdea(
         ? " Never translate. Proofread names, dates, place and programme; keep facts, fix spelling, keep normal spaces between words. intro/closing only if they wrote them. program only if they listed times. visualDirection = how a designed flyer is composed (photo area + type blocks), not a single stock portrait with a caption."
         : imageIntent === "certificate"
           ? " visualDirection = the decorative design of a printed gift certificate: a frame or border, a motif from their trade at the edges, their colours, a calm empty light centre for the text we print. No words in the picture (shot words: none)."
-          : imageIntent === "info" || imageIntent === "offer"
-          ? " visualDirection = a designed post: photography plus type as one layout, not a stock photo with a paragraph on top. Proofread. Do not invent a different story."
+          : isPosterKind(imageIntent)
+          ? ` visualDirection = a designed post: photography plus type as one layout, not a stock photo with a paragraph on top. Proofread${imageIntent === "review" ? ", but never change the client's quote" : ""}. Do not invent a different story.`
           : " visualDirection = one concrete photograph from their words, not a generic mood. Do not invent a different story."
     }${shotGuide}`,
     fallback,
@@ -1163,7 +1204,7 @@ function asksForText(text: string) {
 
 /** A photo gets painted words only when the owner clearly asked for text; otherwise the line describes the scene. */
 export function keepWordsHonest(shot: Shot, asked: string[], imageIntent = "") {
-  const designed = imageIntent === "invite" || imageIntent === "info" || imageIntent === "offer";
+  const designed = isPosterKind(imageIntent);
   const words = shot.words.trim();
   if (designed || !words || /^(none|немає|нема|без (слів|напису)|—|-)$/i.test(words)) {
     return /^(none|немає|нема|без (слів|напису)|—|-)$/i.test(words) ? { ...shot, words: "" } : shot;

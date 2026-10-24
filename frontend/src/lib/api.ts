@@ -71,6 +71,11 @@ export type InviteItem = {
   title: string;
   detail: string;
 };
+/** Designed pages: photography and the owner's words as one layout (picture language, word edits). */
+export const POSTER_KINDS = ["invite", "info", "offer", "announce", "review", "greeting", "infographic", "launch", "own"] as const;
+export function isPosterKind(kind: string | undefined | null) {
+  return Boolean(kind && (POSTER_KINDS as readonly string[]).includes(kind));
+}
 export type CertificateItem = { name: string; gift: string; giftNote: string; validFrom: string; validUntil: string; code: string };
 export type CertificateLayout = { x: number; y: number; scale: number };
 export type CertificateFont = "brand" | "montserrat" | "playfair" | "cormorant" | "script";
@@ -133,6 +138,7 @@ export const SHAPE_RATIO: Record<string, string> = {
   portrait: "4 / 5",
   portrait34: "3 / 4",
   a5: "1414 / 1000",
+  a5p: "1000 / 1414",
   story: "9 / 16",
   wide: "191 / 100",
   tall: "2 / 3",
@@ -375,6 +381,33 @@ export const api = {
     if (!res.ok) throw new ApiError(translateError(locale, data.error || "Something went wrong. Try again in a minute."), res.status, data.code);
     return data as { project: Project };
   },
+  createOwnPicture: async (file: Blob, name: string, useBrand: boolean) => {
+    const locale = currentLocale();
+    let res: Response;
+    try {
+      res = await fetch(`/projects/own`, {
+        method: "POST",
+        headers: localeHeaders({
+          "Content-Type": file.type || "application/octet-stream",
+          "X-File-Name": encodeURIComponent(name),
+          "X-Use-Brand": useBrand ? "1" : "0",
+        }),
+        body: file,
+      });
+    } catch {
+      throw new ApiError(translateError(locale, "We can’t reach the studio. Check your internet and try again."), 503);
+    }
+    const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string; project?: Project };
+    if (!res.ok) throw new ApiError(translateError(locale, data.error || "Something went wrong. Try again in a minute."), res.status, data.code);
+    return data as { project: Project };
+  },
+  /** index: for a certificate, whose finished certificate (with its words) to take. */
+  createOwnFromProject: (sourceId: string, useBrand: boolean, index?: number) =>
+    request<{ project: Project }>(`/projects/own/from/${sourceId}`, { method: "POST", body: JSON.stringify({ useBrand, index }) }),
+  reshapePicture: (id: string, body: { format: string; mode: "crop" | "fit"; background?: string; focusX?: number; focusY?: number }) =>
+    request<{ project: Project }>(`/projects/${id}/reshape`, { method: "POST", body: JSON.stringify(body) }),
+  makeCertificate: (id: string, body: { mode: "crop" | "fit"; background?: string }) =>
+    request<{ project: Project }>(`/projects/${id}/make-certificate`, { method: "POST", body: JSON.stringify(body) }),
   removeCertificateLogo: (id: string) => request<{ project: Project }>(`/projects/${id}/certificate/logo`, { method: "DELETE" }),
   removeMusic: (id: string) => request<{ project: Project }>(`/projects/${id}/music`, { method: "DELETE" }),
   translateScript: (id: string, lang: "en" | "uk") =>

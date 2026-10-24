@@ -11,7 +11,7 @@ const ffmpegPath = (require("ffmpeg-static") as string | null) || "ffmpeg";
  * exact shape and nothing is cut. Older image models only paint square, 2:3 and 3:2:
  * for those (a fallback) we paint the closest shape and trim the edges.
  */
-export const IMAGE_FORMATS = ["square", "portrait", "portrait34", "story", "wide", "a5"] as const;
+export const IMAGE_FORMATS = ["square", "portrait", "portrait34", "story", "wide", "a5", "a5p"] as const;
 export type ImageFormat = (typeof IMAGE_FORMATS)[number] | "tall";
 
 type Spec = {
@@ -32,6 +32,8 @@ const SPECS: Record<ImageFormat, Spec> = {
   wide: { exact: { w: 1536, h: 800 }, native: { w: 1536, h: 1024 }, ratio: { w: 191, h: 100 }, label: "wide 1.91:1 (Facebook post or link picture)" },
   // A printed gift certificate: A5 landscape (√2:1).
   a5: { exact: { w: 1456, h: 1024 }, native: { w: 1536, h: 1024 }, ratio: { w: 1414, h: 1000 }, label: "landscape A5 1.41:1 (a printed gift certificate)" },
+  // A printed page standing up (A4 / A5 / A6 portrait, 1:√2).
+  a5p: { exact: { w: 1024, h: 1456 }, native: { w: 1024, h: 1536 }, ratio: { w: 1000, h: 1414 }, label: "portrait A-paper 1:1.41 (a printed page: A4, A5 or A6)" },
   // Older flyers, before people could choose.
   tall: { exact: { w: 1024, h: 1536 }, native: { w: 1024, h: 1536 }, ratio: { w: 2, h: 3 }, label: "tall 2:3" },
 };

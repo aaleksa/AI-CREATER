@@ -24,6 +24,12 @@ export const ERROR_UK: Record<string, string> = {
   "This format is next. Start with a short video or still images.":
     "Цей формат буде далі. Почніть з короткого відео або картинки.",
   "Choose photo, invitation, information or offer.": "Оберіть фото, запрошення, інформацію або офер.",
+  "Choose a kind of picture.": "Оберіть вид картинки.",
+  "Upload a PNG, JPG or WebP picture.": "Завантажте картинку в PNG, JPG або WebP.",
+  "We couldn’t open that picture. Try a JPG or PNG.": "Не вдалося відкрити цю картинку. Спробуйте JPG або PNG.",
+  "Pick a picture.": "Виберіть картинку.",
+  "Choose a shape.": "Оберіть форму.",
+  "We couldn’t make the PDF. Try again in a minute.": "Не вдалося зробити PDF. Спробуйте за хвилину.",
   "Choose English, Ukrainian, or follow the brief.": "Оберіть English, українську, або як у брифі.",
   "Choose English or Ukrainian.": "Оберіть English або українську.",
   "Say what to add or remove on the picture, or choose English or Ukrainian.":

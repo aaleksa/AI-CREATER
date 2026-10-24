@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type LogoBox, type Project, type ReelLogo, type ReelTitles, type Shot, VOICE_CHOICES, type VoiceChoice } from "../lib/api";
+import { isPosterKind, ApiError, SHAPE_RATIO, api, fetchMedia, refreshMe, type ArchiveState, type BrandKitRow, type InviteCard, type LogoBox, type Project, type ReelLogo, type ReelTitles, type Shot, VOICE_CHOICES, type VoiceChoice } from "../lib/api";
 import { copyText } from "../lib/copy";
 import { downloadName, shapeLabel } from "../lib/fileName";
 import { prepareImage } from "../lib/imageUpload";
@@ -8,6 +8,7 @@ import ExampleImages, { useProjectImageSrcs } from "../components/ExampleImages"
 import { useLocale } from "../i18n/locale";
 import MoreHint from "../components/MoreHint";
 import CertificateBlock from "../components/CertificateBlock";
+import OwnPictureTools from "../components/OwnPictureTools";
 
 const VIDEO_STEPS = [
   { id: "idea", cost: 5 },
@@ -686,8 +687,10 @@ export default function Studio() {
   const isImage = project?.type === "image_post";
   const isInvite = Boolean(isImage && project?.imageIntent === "invite");
   const isCertificate = Boolean(isImage && project?.imageIntent === "certificate");
+  /** A picture the owner brought (or copied from another project): no brief, no idea to redo — only changes to it. */
+  const isOwn = Boolean(isImage && project?.imageIntent === "own");
   const shapeRatio = isImage && project?.imageFormat ? SHAPE_RATIO[project.imageFormat] : undefined;
-  const isPoster = Boolean(isImage && (project?.imageIntent === "invite" || project?.imageIntent === "info" || project?.imageIntent === "offer"));
+  const isPoster = Boolean(isImage && isPosterKind(project?.imageIntent));
   const STEPS = isImage
     ? [
         { id: "idea", cost: 5 },
@@ -2183,7 +2186,7 @@ export default function Studio() {
   return (
     <div>
       {!isImage && stepsNav}
-      {briefFolded ? (
+      {isOwn ? null : briefFolded ? (
         <div className="brief-line">
           <span className="brief-line-label">{t("studio.briefLabel")}</span>
           <span className="brief-line-text">{project.prompt}</span>
@@ -2870,6 +2873,7 @@ export default function Studio() {
                 </p>
                 {!isCertificate && <p className="hint">{t(isInvite ? "studio.inviteKeep" : "studio.pictureKeep")}</p>}
                 {isCertificate && <CertificateBlock project={project} onSaved={setProject} onPreview={setCertPreview} disabled={Boolean(busy)} />}
+                {isOwn && <OwnPictureTools project={project} onSaved={setProject} disabled={Boolean(busy)} />}
                 <div className="action-row">
                   {!isCertificate && downloadSrc && !String(downloadSrc).startsWith("linear") && (
                     <a
@@ -3497,7 +3501,7 @@ export default function Studio() {
               </div>
             </div>
           )}
-          {STEPS.some((s) => doneThrough(project, s.id)) &&
+          {STEPS.some((s) => doneThrough(project, s.id)) && !isOwn &&
             (isImage && !project.hasImages ? (
               <div style={{ marginTop: 18 }}>{redoList}</div>
             ) : (

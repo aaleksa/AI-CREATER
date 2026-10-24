@@ -3,18 +3,20 @@ import { useNavigate } from "react-router-dom";
 import { api, type BrandKitRow, type Project } from "../lib/api";
 import BrandToggle from "../components/BrandToggle";
 import ExampleImages from "../components/ExampleImages";
+import OwnPictureStart from "../components/OwnPictureStart";
 import { detectLocale, translate, useLocale } from "../i18n/locale";
 
-const FORMAT_IDS = ["video", "instagram_reel", "image_post", "advertisement", "social_post"] as const;
-const READY = new Set(["instagram_reel", "image_post"]);
+const FORMAT_IDS = ["video", "instagram_reel", "image_post", "own_image", "advertisement", "social_post"] as const;
+const READY = new Set(["instagram_reel", "image_post", "own_image"]);
 const EMOJI: Record<string, string> = {
   video: "🎬",
   instagram_reel: "📱",
   image_post: "🖼️",
+  own_image: "📎",
   advertisement: "📢",
   social_post: "✍️",
 };
-const KIND_IDS = ["photo", "invite", "info", "offer", "certificate"] as const;
+const KIND_IDS = ["photo", "invite", "announce", "info", "offer", "launch", "review", "greeting", "infographic", "certificate"] as const;
 const PIC_LANGS = ["", "en", "uk"] as const;
 
 const SHAPES = ["square", "portrait", "portrait34", "story", "wide"] as const;
@@ -244,6 +246,9 @@ export default function Home() {
         </section>
       )}
 
+      {type === "own_image" && <OwnPictureStart kit={kit} />}
+
+      {type !== "own_image" && (
       <div className="prompt-stage">
         <textarea
           value={prompt}
@@ -315,6 +320,7 @@ export default function Home() {
         </div>
         {error && <p className="err">{error}</p>}
       </div>
+      )}
     </div>
   );
 }
