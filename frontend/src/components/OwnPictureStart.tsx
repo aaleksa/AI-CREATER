@@ -77,7 +77,12 @@ export default function OwnPictureStart({ kit }: { kit: BrandKitRow | null }) {
     let cancelled = false;
     for (const p of visible) {
       if (thumbs[p.id]) continue;
-      fetchMedia(`/projects/${p.id}/image/1?t=${encodeURIComponent(p.updatedAt || "")}`)
+      // A certificate shows as it prints — with its words — since that is what you take.
+      const src =
+        p.imageIntent === "certificate"
+          ? `/projects/${p.id}/certificate/0?format=preview&t=${encodeURIComponent(p.updatedAt || "")}`
+          : `/projects/${p.id}/image/1?t=${encodeURIComponent(p.updatedAt || "")}`;
+      fetchMedia(src)
         .then((blob) => {
           if (cancelled) return;
           const url = URL.createObjectURL(blob);
@@ -112,11 +117,13 @@ export default function OwnPictureStart({ kit }: { kit: BrandKitRow | null }) {
     }
   }
 
-  async function pick(id: string) {
-    setBusy(id);
+  const [certPick, setCertPick] = useState<Project | null>(null);
+
+  async function pick(id: string, index?: number) {
+    setBusy(index === undefined ? id : `${id}-${index}`);
     setError("");
     try {
-      const { project } = await api.createOwnFromProject(id, useBrand);
+      const { project } = await api.createOwnFromProject(id, useBrand, index);
       nav(`/app/studio/${project.id}`);
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("home.fallback"));
@@ -185,7 +192,11 @@ export default function OwnPictureStart({ kit }: { kit: BrandKitRow | null }) {
                 type="button"
                 className="own-library-item"
                 disabled={Boolean(busy)}
-                onClick={() => void pick(p.id)}
+                onClick={() => {
+                  const people = p.imageIntent === "certificate" ? p.certificate?.items || [] : [];
+                  if (people.length > 1) setCertPick(certPick?.id === p.id ? null : p);
+                  else void pick(p.id, people.length ? 0 : undefined);
+                }}
                 title={p.idea?.title || p.prompt}
               >
                 {thumbs[p.id] ? <img src={thumbs[p.id]} alt="" /> : <span className="own-library-empty" aria-hidden />}
@@ -193,6 +204,20 @@ export default function OwnPictureStart({ kit }: { kit: BrandKitRow | null }) {
               </button>
             ))}
           </div>
+          {certPick && (
+            <div className="own-cert-pick">
+              <p className="hint">{t("own.certWhich", { n: certPick.certificate?.items.length || 0 })}</p>
+              <div className="action-row">
+                {(certPick.certificate?.items || []).map((item, i) => (
+                  <button key={i} type="button" className="btn ghost tiny" disabled={Boolean(busy)} onClick={() => void pick(certPick.id, i)}>
+                    {busy === `${certPick.id}-${i}`
+                      ? t("own.opening")
+                      : [t("cert.personN", { n: i + 1 }), item.name || t("cert.noName"), item.gift].filter(Boolean).join(" · ")}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {filtered.length > visible.length && (
             <div className="action-row">
               <button type="button" className="btn ghost" onClick={() => setShown(shown + PAGE)}>

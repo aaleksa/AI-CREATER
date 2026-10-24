@@ -2642,13 +2642,22 @@ function ownTitle(raw: unknown) {
  */
 export async function createOwnPicture(
   userId: string,
-  source: { upload?: Buffer; fromProject?: string; versionId?: string },
+  source: { upload?: Buffer; fromProject?: string; versionId?: string; certificateIndex?: unknown },
   rawUseBrand: unknown,
   rawName: unknown
 ) {
   let fromFile = "";
   let title = ownTitle(rawName);
-  if (source.fromProject) {
+  let upload = source.upload;
+  if (source.fromProject && getProject(source.fromProject, userId).image_intent === "certificate") {
+    // A finished certificate, words and all (one person's), at print size — so it can be cut, fitted or printed on A6.
+    const from = getProject(source.fromProject, userId);
+    const settings = certificateOf(from);
+    const index = Math.max(0, Math.min(Number(source.certificateIndex) || 0, settings.items.length - 1));
+    const item = settings.items[index];
+    upload = (await certificateFile(userId, String(from.id), index, "png")).body as Buffer;
+    title = ownTitle([item?.name, item?.gift].filter(Boolean).join(" · ") || parse<Idea>(from.idea_json as string | null)?.title || from.prompt);
+  } else if (source.fromProject) {
     const from = getProject(source.fromProject, userId);
     if (!isImagePost(String(from.type))) throw Object.assign(new Error("Pick a picture."), { status: 400 });
     const versionId = String(source.versionId || "").slice(0, 80);
@@ -2660,13 +2669,13 @@ export async function createOwnPicture(
           : "";
     if (!fromFile) throw Object.assign(new Error("That picture is gone."), { status: 404 });
     if (!rawName) title = ownTitle(parse<Idea>(from.idea_json as string | null)?.title || from.prompt);
-  } else if (!source.upload?.length) {
+  } else if (!upload?.length) {
     throw Object.assign(new Error("Upload a PNG, JPG or WebP picture."), { status: 400 });
   }
   const useBrand = rawUseBrand !== false && rawUseBrand !== "0" && rawUseBrand !== "false";
   const { id, visuals } = newPictureProject(userId, { intent: "own", title, useBrand, format: "" });
   try {
-    if (source.upload) await writeOwnPicture(source.upload, stillFile(id, 1));
+    if (upload) await writeOwnPicture(upload, stillFile(id, 1));
     else {
       fs.mkdirSync(projectMediaDir(id), { recursive: true });
       fs.copyFileSync(fromFile, stillFile(id, 1));

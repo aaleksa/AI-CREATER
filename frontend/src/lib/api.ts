@@ -401,8 +401,9 @@ export const api = {
     if (!res.ok) throw new ApiError(translateError(locale, data.error || "Something went wrong. Try again in a minute."), res.status, data.code);
     return data as { project: Project };
   },
-  createOwnFromProject: (sourceId: string, useBrand: boolean) =>
-    request<{ project: Project }>(`/projects/own/from/${sourceId}`, { method: "POST", body: JSON.stringify({ useBrand }) }),
+  /** index: for a certificate, whose finished certificate (with its words) to take. */
+  createOwnFromProject: (sourceId: string, useBrand: boolean, index?: number) =>
+    request<{ project: Project }>(`/projects/own/from/${sourceId}`, { method: "POST", body: JSON.stringify({ useBrand, index }) }),
   reshapePicture: (id: string, body: { format: string; mode: "crop" | "fit"; background?: string; focusX?: number; focusY?: number }) =>
     request<{ project: Project }>(`/projects/${id}/reshape`, { method: "POST", body: JSON.stringify(body) }),
   makeCertificate: (id: string, body: { mode: "crop" | "fit"; background?: string }) =>

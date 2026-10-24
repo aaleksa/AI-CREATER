@@ -112,7 +112,7 @@ projectsRouter.post("/own/from/:sourceId", rateLimit(20, 60_000), async (req, re
   try {
     const project = await createOwnPicture(
       req.user!.id,
-      { fromProject: String(req.params.sourceId), versionId: req.body?.versionId },
+      { fromProject: String(req.params.sourceId), versionId: req.body?.versionId, certificateIndex: req.body?.index },
       req.body?.useBrand,
       ""
     );
