@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, fetchMedia, type BrandKitRow, type Project } from "../lib/api";
 import { useLocale } from "../i18n/locale";
-import BrandToggle from "./BrandToggle";
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const PAGE = 24;
@@ -53,7 +52,7 @@ export default function OwnPictureStart({ kit, target = "own" }: { kit: BrandKit
   const { t, te } = useLocale();
   const nav = useNavigate();
   const input = useRef<HTMLInputElement>(null);
-  const [useBrand, setUseBrand] = useState(true);
+  const [useBrand] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [pictures, setPictures] = useState<Project[]>([]);
@@ -184,18 +183,6 @@ export default function OwnPictureStart({ kit, target = "own" }: { kit: BrandKit
           }}
         />
       </div>
-      <BrandToggle
-        compact
-        value={useBrand}
-        onChange={setUseBrand}
-        ask={t("home.useBrandAsk")}
-        onLabel={t("home.useBrand")}
-        onHint={t("own.brandHint")}
-        offLabel={t("home.skipBrand")}
-        offHint={t("own.noBrandHint")}
-        usingLabel={t("home.brandUsing")}
-        kit={kit}
-      />
       {pictures.length > 0 && (
         <>
           <p className="step-label" style={{ marginTop: 18 }}>{t("own.fromLibrary")}</p>
