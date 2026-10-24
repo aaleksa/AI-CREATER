@@ -334,7 +334,34 @@ function certificateTake(projectId: string) {
   return row?.id || "";
 }
 
-type SavedCertificate = Record<string, unknown> & { looks?: Record<string, Record<string, unknown>> };
+type SavedCertificate = Record<string, unknown> & {
+  looks?: Record<string, Record<string, unknown>>;
+  variants?: { text?: Record<string, unknown>; blank?: Record<string, unknown> };
+};
+
+export function saveCertificateVariants(saved: SavedCertificate, settings: CertificateSettings): SavedCertificate {
+  const variants = (saved.variants && typeof saved.variants === "object" ? saved.variants : {}) as { text?: Record<string, unknown>; blank?: Record<string, unknown> };
+  const wordsOn = settings.style?.words !== false;
+  const textVariant = {
+    ...saved,
+    ...settings,
+    style: { ...(settings.style || {}), words: true },
+  } as Record<string, unknown>;
+  const blankVariant = {
+    ...saved,
+    ...settings,
+    style: { ...(settings.style || {}), words: false },
+  } as Record<string, unknown>;
+
+  return {
+    ...saved,
+    ...settings,
+    variants: {
+      text: wordsOn ? textVariant : variants.text || textVariant,
+      blank: wordsOn ? variants.blank || blankVariant : blankVariant,
+    },
+  };
+}
 
 /**
  * The words printed on a gift certificate and the people it is for — shared by every design — plus the look of the
@@ -347,9 +374,11 @@ function certificateOf(row: Record<string, unknown>): CertificateSettings {
   const saved = (parse<SavedCertificate>(row.certificate_json as string | null) || {}) as SavedCertificate;
   const take = certificateTake(String(row.id));
   const look = (take && saved.looks && typeof saved.looks === "object" && saved.looks[take]) || {};
+  const variants = (saved.variants && typeof saved.variants === "object" ? saved.variants : {}) as Record<string, Record<string, unknown>>;
+  const preferred = saved.style && saved.style.words === false ? variants.blank : variants.text;
   // Certificates made on the owner's own design before the flag existed: their design came with no brief.
   const ownDesign = saved.ownDesign === true || parse<Idea>(row.idea_json as string | null)?.shot?.summary === "The owner's own picture.";
-  const settings = parseCertificate({ ...saved, ...look }, lang as "uk" | "en", Number(row.use_brand) === 0 ? "none" : "brand", ownDesign);
+  const settings = parseCertificate({ ...saved, ...look, ...(preferred || {}) }, lang as "uk" | "en", Number(row.use_brand) === 0 ? "none" : "brand", ownDesign);
   return settings.items.length ? settings : { ...settings, items: [{ name: "", gift: "", giftNote: "", validFrom: "", validUntil: "", code: "" }] };
 }
 
@@ -359,6 +388,7 @@ function writeCertificate(projectId: string, settings: CertificateSettings, pict
   const saved = (parse<SavedCertificate>(row?.certificate_json ?? null) || {}) as SavedCertificate;
   const take = certificateTake(projectId);
   const { layout, style, logo, logoLayout, ...words } = settings;
+  const variants = saveCertificateVariants(saved, settings).variants || {};
   const next = take
     ? {
         ...words,
@@ -367,9 +397,10 @@ function writeCertificate(projectId: string, settings: CertificateSettings, pict
         style: saved.style,
         logo: saved.logo,
         logoLayout: saved.logoLayout,
+        variants,
         looks: { ...(saved.looks || {}), [take]: { layout, style, logo, logoLayout } },
       }
-    : { ...settings, looks: saved.looks };
+    : { ...settings, variants, looks: saved.looks };
   if (pictureLanguage) {
     db.prepare("UPDATE projects SET certificate_json = ?, picture_language = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(next), pictureLanguage, projectId);
   } else {
