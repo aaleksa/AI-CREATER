@@ -215,6 +215,20 @@ function dataUri(file: string) {
   return `data:${mime};base64,${bytes.toString("base64")}`;
 }
 
+async function previewDataUri(file: string) {
+  const bytes = fs.readFileSync(file);
+  const kind =
+    bytes[0] === 0x89 && bytes[1] === 0x50
+      ? "png"
+      : bytes[0] === 0xff && bytes[1] === 0xd8
+        ? "jpeg"
+        : bytes.subarray(8, 12).toString("latin1") === "WEBP"
+          ? "webp"
+          : "png";
+  const jpeg = kind === "jpeg" ? bytes : kind === "png" || kind === "webp" ? await pngToJpeg(bytes, path.dirname(file)) : bytes;
+  return `data:image/jpeg;base64,${jpeg.toString("base64")}`;
+}
+
 function hexOk(hex = "") {
   return /^#[0-9a-f]{6}$/i.test(hex);
 }
@@ -404,7 +418,8 @@ export async function renderCertificate(
   const fonts = [...SANS_FONTS];
   const own = brand?.user_id ? brandFont(brand.user_id, brand.font) : null;
   if (own) fonts.unshift(own.file);
-  const svg = certificateSvg(settings, item, brand, dataUri(design), certificateLogoPath(projectId, settings, ownerId));
+  const background = await previewDataUri(design);
+  const svg = certificateSvg(settings, item, brand, background, certificateLogoPath(projectId, settings, ownerId));
   const width = format === "preview" ? 1240 : PRINT.w;
   const png = new Resvg(svg, {
     fitTo: { mode: "width", value: width },
