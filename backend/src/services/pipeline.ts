@@ -100,7 +100,7 @@ import {
   voiceDurationSec,
 } from "./media.js";
 import { assertArchiveRoom, evictOverLimit } from "./archive.js";
-import { printPicture, readPaper, readReshape, reshapePicture, writeOwnPicture } from "./ownPicture.js";
+import { printPicture, readPaper, readReshape, renderReshape, reshapePicture, writeOwnPicture } from "./ownPicture.js";
 import { inviteFrom, parseInvite, preferBriefInvite, type InviteCard } from "./invite.js";
 import { LOGO_ROOM, PRINT_HEIGHT, certificateBlockBox, certificateLogoBox, certificateLogoPath, ownLogoFile, parseCertificate, renderCertificate, withCodes, type CertificateSettings } from "./certificate.js";
 import { parseStepFeedback, recordStepRejection } from "./feedback.js";
@@ -2736,6 +2736,19 @@ function reshapeSource(projectId: string) {
     if (mark && !mark.startsWith("reshape:")) return modelPictureFor(projectId, rows, i, 1).file;
   }
   return currentModelPicture(projectId, 1).file;
+}
+
+/** What a change of shape would look like (small, not saved): the same cut and bands as "Make", from the same picture. */
+export async function previewReshape(userId: string, projectId: string, raw: unknown) {
+  const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const format = parseImageFormat(body.format);
+  if (!format) throw Object.assign(new Error("Choose a shape."), { status: 400 });
+  const project = getProject(projectId, userId);
+  if (!isImagePost(String(project.type)) || project.image_intent === "certificate" || !hasStillFile(projectId, 1)) {
+    throw Object.assign(new Error("Make the picture first."), { status: 400 });
+  }
+  const base = reshapeSource(projectId) || stillFile(projectId, 1);
+  return renderReshape(base, format, readReshape(body), 900);
 }
 
 /** The selected picture on a printed page (A4, A5 or A6, 300 dpi), whole on white or filling the page. Free. */

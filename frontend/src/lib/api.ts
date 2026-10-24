@@ -406,6 +406,16 @@ export const api = {
     request<{ project: Project }>(`/projects/own/from/${sourceId}`, { method: "POST", body: JSON.stringify({ useBrand, index }) }),
   reshapePicture: (id: string, body: { format: string; mode: "crop" | "fit"; background?: string; focusX?: number; focusY?: number }) =>
     request<{ project: Project }>(`/projects/${id}/reshape`, { method: "POST", body: JSON.stringify(body) }),
+  /** What the change of shape would look like — a small JPEG, nothing saved. */
+  reshapePreview: async (id: string, body: { format: string; mode: "crop" | "fit"; background?: string; focusX?: number; focusY?: number }) => {
+    const locale = currentLocale();
+    const res = await fetch(`/projects/${id}/reshape/preview`, { method: "POST", headers: localeHeaders(), body: JSON.stringify(body) });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new ApiError(translateError(locale, data.error || "Something went wrong. Try again in a minute."), res.status);
+    }
+    return res.blob();
+  },
   makeCertificate: (id: string, body: { mode: "crop" | "fit"; background?: string }) =>
     request<{ project: Project }>(`/projects/${id}/make-certificate`, { method: "POST", body: JSON.stringify(body) }),
   removeCertificateLogo: (id: string) => request<{ project: Project }>(`/projects/${id}/certificate/logo`, { method: "DELETE" }),
