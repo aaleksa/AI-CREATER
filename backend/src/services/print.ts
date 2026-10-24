@@ -1,8 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
-import { randomUUID } from "node:crypto";
+import sharp from "sharp";
 
 const require = createRequire(import.meta.url);
 const ffmpegPath = (require("ffmpeg-static") as string | null) || "ffmpeg";
@@ -15,20 +13,9 @@ export function runFfmpeg(args: string[]) {
   });
 }
 
-/** A rendered PNG as a print JPEG (high quality), through a temp file in `dir`. */
-export async function pngToJpeg(png: Buffer, dir: string) {
-  const tmpPng = path.join(dir, `print-${randomUUID()}.png`);
-  const tmpJpg = tmpPng.replace(/\.png$/, ".jpg");
-  try {
-    fs.writeFileSync(tmpPng, png);
-    if (!(await runFfmpeg(["-i", tmpPng, "-q:v", "2", tmpJpg])) || !fs.existsSync(tmpJpg)) {
-      throw Object.assign(new Error("We couldn’t make the PDF. Try again in a minute."), { status: 500 });
-    }
-    return fs.readFileSync(tmpJpg);
-  } finally {
-    fs.rmSync(tmpPng, { force: true });
-    fs.rmSync(tmpJpg, { force: true });
-  }
+/** A rendered PNG as a print JPEG (high quality), without writing a temp file to disk. */
+export async function pngToJpeg(png: Buffer): Promise<Buffer> {
+  return sharp(png).jpeg({ quality: 90 }).toBuffer();
 }
 
 /** One page PDF holding a JPEG edge to edge on a page of `page` points (1/72 inch). No extra dependency: the format is simple. */

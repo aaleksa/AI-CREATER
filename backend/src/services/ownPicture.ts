@@ -50,7 +50,7 @@ export async function writeOwnPicture(buf: Buffer, dest: string) {
 async function dataUri(file: string) {
   const bytes = fs.readFileSync(file);
   const kind = sniffPicture(bytes);
-  const jpeg = kind === "jpeg" ? bytes : kind === "png" || kind === "webp" ? await pngToJpeg(bytes, path.dirname(file)) : bytes;
+  const jpeg = kind === "jpeg" ? bytes : kind === "png" || kind === "webp" ? await pngToJpeg(bytes) : bytes;
   return `data:image/jpeg;base64,${jpeg.toString("base64")}`;
 }
 
@@ -134,7 +134,7 @@ export async function renderReshape(
   }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${body}</svg>`;
   const png = new Resvg(svg, { fitTo: { mode: "original" }, font: { loadSystemFonts: false } }).render().asPng();
-  return pngToJpeg(Buffer.from(png), path.dirname(src));
+  return pngToJpeg(Buffer.from(png));
 }
 
 /** Paper sizes at 300 dpi (portrait) and in PDF points; the page turns to match the picture. */
@@ -165,6 +165,6 @@ export async function printPicture(src: string, paper: Paper, fill: boolean) {
   <image href="${dataUri(src)}" x="0" y="0" width="${px.w}" height="${px.h}" preserveAspectRatio="xMidYMid ${fill ? "slice" : "meet"}"/>
 </svg>`;
   const rendered = new Resvg(svg, { fitTo: { mode: "original" }, font: { loadSystemFonts: false } }).render();
-  const jpeg = await pngToJpeg(Buffer.from(rendered.asPng()), path.dirname(src));
+  const jpeg = await pngToJpeg(Buffer.from(rendered.asPng()));
   return pdfWithJpeg(jpeg, rendered.width, rendered.height, pt);
 }

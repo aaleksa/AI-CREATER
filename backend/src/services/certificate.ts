@@ -225,7 +225,7 @@ async function previewDataUri(file: string) {
         : bytes.subarray(8, 12).toString("latin1") === "WEBP"
           ? "webp"
           : "png";
-  const jpeg = kind === "jpeg" ? bytes : kind === "png" || kind === "webp" ? await pngToJpeg(bytes, path.dirname(file)) : bytes;
+  const jpeg = kind === "jpeg" ? bytes : kind === "png" || kind === "webp" ? await pngToJpeg(bytes) : bytes;
   return `data:image/jpeg;base64,${jpeg.toString("base64")}`;
 }
 
@@ -428,6 +428,6 @@ export async function renderCertificate(
     .render()
     .asPng();
   if (format !== "pdf") return { body: Buffer.from(png), mime: "image/png" };
-  const jpeg = await pngToJpeg(Buffer.from(png), projectMediaDir(projectId));
+  const jpeg = await pngToJpeg(Buffer.from(png));
   return { body: pdfWithJpeg(jpeg, PRINT.w, PRINT.h, PAGE), mime: "application/pdf" };
 }
