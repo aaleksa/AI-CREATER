@@ -47,10 +47,11 @@ export async function writeOwnPicture(buf: Buffer, dest: string) {
   return size;
 }
 
-function dataUri(file: string) {
+async function dataUri(file: string) {
   const bytes = fs.readFileSync(file);
-  const mime = sniffPicture(bytes) === "jpeg" ? "image/jpeg" : "image/png";
-  return `data:${mime};base64,${bytes.toString("base64")}`;
+  const kind = sniffPicture(bytes);
+  const jpeg = kind === "jpeg" ? bytes : kind === "png" || kind === "webp" ? await pngToJpeg(bytes, path.dirname(file)) : bytes;
+  return `data:image/jpeg;base64,${jpeg.toString("base64")}`;
 }
 
 export type ReshapeMode = "crop" | "fit";
@@ -107,7 +108,7 @@ export async function renderReshape(
   const scale = Math.min(1, maxSide / Math.max(W, H));
   W = Math.max(16, Math.round(W * scale));
   H = Math.max(16, Math.round(H * scale));
-  const href = dataUri(src);
+  const href = await dataUri(src);
   let body: string;
   if (opts.mode === "crop") {
     const cover = Math.max(W / size.w, H / size.h);
