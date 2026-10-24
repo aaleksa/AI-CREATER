@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type ArchiveState, type Project } from "../lib/api";
 import { copyText } from "../lib/copy";
+import { projectTypeLabel } from "../lib/projectTypeLabel";
 import { useLocale } from "../i18n/locale";
 
 function fileGone(project: Project) {
@@ -70,8 +71,7 @@ export default function Library() {
               <span>
                 <b className="brief-preview">{p.prompt}</b>
                 <div className="hint">
-                  {t(`formats.${p.type}.title`) || p.type} ·{" "}
-                  {p.hasVideo
+                  {projectTypeLabel(p, t)} · {p.hasVideo
                     ? t("library.mp4")
                     : p.hasImages
                       ? t("library.stills")
