@@ -330,6 +330,8 @@ h2 + .ready-block { margin-top: 12px; padding-top: 0; border-top: 0; }
   gap: 8px;
 }
 .action-row .btn { flex: 1 1 140px; text-align: center; }
+.own-start .pill-row + .action-row,
+.own-start > .action-row { margin-top: 12px; }
 .phone {
   width: 100%;
   aspect-ratio: 9 / 16;
