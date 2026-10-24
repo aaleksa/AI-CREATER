@@ -109,7 +109,7 @@ export default function OwnPictureStart({ kit }: { kit: BrandKitRow | null }) {
       const body = await asUpload(file);
       if (body.size > MAX_BYTES) throw new Error(t("own.tooBig"));
       const { project } = await api.createOwnPicture(body, file.name, useBrand);
-      nav(`/app/studio/${project.id}`);
+      nav(`/app/studio/${project.id}`, { state: { from: "create" } });
     } catch (err) {
       setError(err instanceof Error ? (err.message === "unreadable" ? t("own.unreadable") : te(err.message)) : t("home.fallback"));
     } finally {
@@ -124,7 +124,7 @@ export default function OwnPictureStart({ kit }: { kit: BrandKitRow | null }) {
     setError("");
     try {
       const { project } = await api.createOwnFromProject(id, useBrand, index);
-      nav(`/app/studio/${project.id}`);
+      nav(`/app/studio/${project.id}`, { state: { from: "create" } });
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("home.fallback"));
     } finally {

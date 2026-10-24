@@ -9,6 +9,7 @@ import { useLocale } from "../i18n/locale";
 import MoreHint from "../components/MoreHint";
 import CertificateBlock from "../components/CertificateBlock";
 import OwnPictureTools from "../components/OwnPictureTools";
+import { useBreadcrumbs } from "../components/Breadcrumbs";
 
 const VIDEO_STEPS = [
   { id: "idea", cost: 5 },
@@ -405,7 +406,10 @@ function VersionCompare({
 export default function Studio() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const missedExamples = Number((useLocation().state as { missedExamples?: number } | null)?.missedExamples) || 0;
+  const studioState = useLocation().state as { missedExamples?: number; from?: string } | null;
+  const missedExamples = Number(studioState?.missedExamples) || 0;
+  /** Came straight from Create (a new project) — the trail starts there; otherwise from the Library. */
+  const cameFromCreate = studioState?.from === "create";
   const { t, te } = useLocale();
   const [project, setProject] = useState<Project | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -1693,6 +1697,25 @@ export default function Studio() {
       setBriefSaving(false);
     }
   }
+
+  const projectTitle = project ? (project.idea?.title || project.prompt || "").replace(/\s+/g, " ").trim() : "";
+  useBreadcrumbs(
+    project
+      ? {
+          crumbs: [
+            cameFromCreate ? { label: t("nav.create"), to: "/app" } : { label: t("nav.library"), to: "/app/library" },
+            { label: isImage ? t(`kinds.${project.imageIntent || "photo"}.label`) : t("formats.instagram_reel.title") },
+            {
+              label: projectTitle.length > 48 ? `${projectTitle.slice(0, 47)}…` : projectTitle || t("crumbs.untitled"),
+              onClick: viewStep ? () => setViewStep(null) : undefined,
+            },
+            ...(viewStep ? [{ label: stepLabel(viewStep) }] : []),
+          ],
+          // Looking at a done step: Back closes it first, before leaving the project.
+          back: viewStep ? () => setViewStep(null) : undefined,
+        }
+      : null
+  );
 
   if (!project) return <p className="hint">{error || t("studio.opening")}</p>;
 

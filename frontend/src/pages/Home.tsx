@@ -113,7 +113,7 @@ export default function Home() {
           missedExamples++;
         }
       }
-      nav(`/app/studio/${project.id}`, missedExamples ? { state: { missedExamples } } : undefined);
+      nav(`/app/studio/${project.id}`, { state: { from: "create", ...(missedExamples ? { missedExamples } : {}) } });
     } catch (err) {
       setError(err instanceof Error ? te(err.message) : t("home.fallback"));
     } finally {

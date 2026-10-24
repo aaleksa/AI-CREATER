@@ -12,6 +12,11 @@ export const en = {
     light: "Light",
     dark: "Dark",
   },
+  crumbs: {
+    label: "Where you are",
+    back: "Back",
+    untitled: "Untitled",
+  },
   nav: {
     create: "Create",
     library: "Library",
