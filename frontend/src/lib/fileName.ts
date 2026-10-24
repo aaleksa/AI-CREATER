@@ -1,4 +1,5 @@
 import type { Project } from "./api";
+import { isPosterKind } from "./api";
 
 type T = (path: string, vars?: Record<string, string | number>) => string;
 
@@ -9,12 +10,13 @@ const SHAPE: Record<string, string> = {
   story: "9x16",
   wide: "1.91x1",
   a5: "A5",
+  a5p: "A",
   tall: "2x3",
 };
 
 /** "портрет 4:5", "сторіз 9:16" — the shape of a picture in a few characters. */
 export function shapeLabel(shape: string, t: T) {
-  return SHAPE[shape] ? (shape === "a5" ? t("fileName.a5") : `${t(`fileName.${shape}`)} ${SHAPE[shape].replace("x", ":")}`) : "";
+  return SHAPE[shape] ? (shape === "a5" || shape === "a5p" ? t(`fileName.${shape}`) : `${t(`fileName.${shape}`)} ${SHAPE[shape].replace("x", ":")}`) : "";
 }
 
 /** Words of the title, safe for a file name on any computer. Letters of any alphabet stay. */
@@ -51,7 +53,7 @@ export function downloadName(project: Project, t: T, ext: "jpg" | "mp4") {
   const intent = project.imageIntent || "";
   const kind = video
     ? t("fileName.reel")
-    : intent === "invite" || intent === "info" || intent === "offer"
+    : isPosterKind(intent)
       ? t(`fileName.${intent}`)
       : t("fileName.photo");
   const subject = slug(project.invite?.name || project.idea?.title || project.prompt || "");

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { OWN_INTENT, POSTER_INTENTS, isPosterKind } from "./imageKinds.js";
 import path from "node:path";
 import { v4 as uuid } from "uuid";
 import { brandImageUrls, brandLogoPath } from "./brandAssets.js";
@@ -99,6 +100,7 @@ import {
   voiceDurationSec,
 } from "./media.js";
 import { assertArchiveRoom, evictOverLimit } from "./archive.js";
+import { printPicture, readPaper, readReshape, reshapePicture, writeOwnPicture } from "./ownPicture.js";
 import { inviteFrom, parseInvite, preferBriefInvite, type InviteCard } from "./invite.js";
 import { LOGO_ROOM, PRINT_HEIGHT, certificateBlockBox, certificateLogoBox, certificateLogoPath, ownLogoFile, parseCertificate, renderCertificate, withCodes, type CertificateSettings } from "./certificate.js";
 import { parseStepFeedback, recordStepRejection } from "./feedback.js";
@@ -116,7 +118,7 @@ export function isImagePost(type: string) {
   return type === "image_post";
 }
 
-export const IMAGE_INTENTS = ["photo", "invite", "info", "offer", "certificate"] as const;
+export const IMAGE_INTENTS = ["photo", ...POSTER_INTENTS, "certificate"] as const;
 export type ImageIntent = (typeof IMAGE_INTENTS)[number];
 
 export function isInvitePoster(type: string, intent: string) {
@@ -124,7 +126,7 @@ export function isInvitePoster(type: string, intent: string) {
 }
 
 export function isTextPoster(type: string, intent: string) {
-  return isImagePost(type) && (intent === "invite" || intent === "info" || intent === "offer");
+  return isImagePost(type) && isPosterKind(intent);
 }
 
 export function parseImageIntent(type: string, raw: unknown): ImageIntent | "" {
@@ -138,10 +140,10 @@ export function parseImageIntent(type: string, raw: unknown): ImageIntent | "" {
 export function readCreateImageIntent(type: string, raw: unknown): { intent: ImageIntent | "" } | { error: string } {
   if (!isImagePost(type)) return { intent: "" };
   if (raw == null || raw === "") return { intent: "photo" };
-  if (typeof raw === "string" && (IMAGE_INTENTS as readonly string[]).includes(raw)) {
+  if (typeof raw === "string" && raw !== OWN_INTENT && (IMAGE_INTENTS as readonly string[]).includes(raw)) {
     return { intent: raw as ImageIntent };
   }
-  return { error: "Choose photo, invitation, information or offer." };
+  return { error: "Choose a kind of picture." };
 }
 
 /** The language a picture version was made in, read from its prompt; null when the prompt does not say. */
@@ -2584,4 +2586,182 @@ function downstreamWipe(step: keyof typeof CREDIT_COSTS, _singleFrame = false): 
     return { captions_json: null, output_url: null, status: "draft" };
   }
   return {};
+}
+
+/* ---------- Your own picture: an image project that starts with a finished picture (an upload or one made here) ---------- */
+
+/**
+ * Versions of an own picture count as the "original" picture of their line, so logo moves start from them.
+ * `reshape:` marks a free change of shape: the next change of shape starts from the picture before it, not from the cut.
+ */
+function saveOwnPictureVersion(userId: string, projectId: string, visuals: Visual[], mark: "own" | "reshape" = "own") {
+  const versionId = saveStepVersion(projectId, "visuals", visuals, `${mark}:${uuid()}`);
+  snapshotStills(projectId, versionId, visuals);
+  db.prepare("UPDATE projects SET visuals_json = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(visuals), projectId);
+  return serializeProject(getProject(projectId, userId));
+}
+
+function ownIdea(title: string): Idea {
+  return {
+    title,
+    hook: "",
+    concept: "",
+    audience: "",
+    visualDirection: "",
+    shot: { ...emptyShot(), summary: "The owner's own picture." },
+    shotConfirmed: true,
+  };
+}
+
+/** A new image project around a picture file we already have on disk (the still is copied, the source stays as it is). */
+function newPictureProject(userId: string, opts: { intent: "own" | "certificate"; title: string; useBrand: boolean; format: string }) {
+  const id = uuid();
+  const idea = ownIdea(opts.title);
+  const visuals: Visual[] = [{ sceneId: 1, imageUrl: `/projects/${id}/image/1`, prompt: "The owner's own picture." }];
+  db.prepare(
+    `INSERT INTO projects (id, user_id, type, prompt, image_intent, use_brand, picture_language, image_format, status, current_step, idea_json, visuals_json)
+     VALUES (?, ?, 'image_post', ?, ?, ?, '', ?, 'ready', 'visuals', ?, ?)`
+  ).run(id, userId, opts.title, opts.intent, opts.useBrand ? 1 : 0, opts.format, JSON.stringify(idea), JSON.stringify(visuals));
+  saveStepVersion(id, "idea", idea, "");
+  return { id, visuals };
+}
+
+function ownTitle(raw: unknown) {
+  const name = String(raw || "")
+    .replace(/\.[a-z0-9]{2,5}$/i, "")
+    .replace(/[_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  return name || "My picture";
+}
+
+/**
+ * "Your own picture" on Create: from an upload, or a copy of a picture made in another of your projects (its selected
+ * take, or a given one). Free — nothing is painted. Logo, AI edits, another shape, print and certificates work on it.
+ */
+export async function createOwnPicture(
+  userId: string,
+  source: { upload?: Buffer; fromProject?: string; versionId?: string },
+  rawUseBrand: unknown,
+  rawName: unknown
+) {
+  let fromFile = "";
+  let title = ownTitle(rawName);
+  if (source.fromProject) {
+    const from = getProject(source.fromProject, userId);
+    if (!isImagePost(String(from.type))) throw Object.assign(new Error("Pick a picture."), { status: 400 });
+    const versionId = String(source.versionId || "").slice(0, 80);
+    fromFile =
+      versionId && hasStillVersionFile(String(from.id), 1, versionId)
+        ? stillVersionFile(String(from.id), 1, versionId)
+        : hasStillFile(String(from.id), 1)
+          ? stillFile(String(from.id), 1)
+          : "";
+    if (!fromFile) throw Object.assign(new Error("That picture is gone."), { status: 404 });
+    if (!rawName) title = ownTitle(parse<Idea>(from.idea_json as string | null)?.title || from.prompt);
+  } else if (!source.upload?.length) {
+    throw Object.assign(new Error("Upload a PNG, JPG or WebP picture."), { status: 400 });
+  }
+  const useBrand = rawUseBrand !== false && rawUseBrand !== "0" && rawUseBrand !== "false";
+  const { id, visuals } = newPictureProject(userId, { intent: "own", title, useBrand, format: "" });
+  try {
+    if (source.upload) await writeOwnPicture(source.upload, stillFile(id, 1));
+    else {
+      fs.mkdirSync(projectMediaDir(id), { recursive: true });
+      fs.copyFileSync(fromFile, stillFile(id, 1));
+    }
+  } catch (error) {
+    db.prepare("DELETE FROM project_step_versions WHERE project_id = ?").run(id);
+    db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+    fs.rmSync(projectMediaPath(id), { recursive: true, force: true });
+    throw error;
+  }
+  const format = formatOfFile(stillFile(id, 1));
+  db.prepare("UPDATE projects SET image_format = ? WHERE id = ?").run(format && format !== "tall" ? format : "", id);
+  return saveOwnPictureVersion(userId, id, visuals);
+}
+
+/**
+ * The picture in another shape without AI (free): cut around a focus point, or fitted whole on a blurred or plain band.
+ * Starts from the picture without our logo and puts the logo back in its corner; a new take, so the old shape stays.
+ */
+export async function reshapeOwnPicture(userId: string, projectId: string, raw: unknown) {
+  const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const format = parseImageFormat(body.format);
+  if (!format) throw Object.assign(new Error("Choose a shape."), { status: 400 });
+  const project = getProject(projectId, userId);
+  if (project.image_intent === "certificate") throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
+  const { visuals } = await pictureForLogo(userId, projectId, 1);
+  const frame = visuals.find((item) => item.sceneId === 1)!;
+  const base = reshapeSource(projectId) || stillFile(projectId, 1);
+  const tmp = path.join(projectMediaDir(projectId), `reshape-${uuid()}.jpg`);
+  try {
+    await reshapePicture(base, tmp, format, readReshape(body));
+    fs.renameSync(tmp, stillFile(projectId, 1));
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
+  const { clean: _clean, logoCorner, logoBox: _box, ...rest } = frame;
+  let next: Visual = rest;
+  const brand = logoCorner ? brandFor(userId) : null;
+  if (brand && logoCorner) {
+    const clean = keepCleanStill(projectId, 1);
+    if (await stampBrandMark(stillFile(projectId, 1), brand, logoCorner)) next = { ...rest, clean, logoCorner };
+  }
+  db.prepare("UPDATE projects SET image_format = ? WHERE id = ?").run(format, projectId);
+  return saveOwnPictureVersion(
+    userId,
+    projectId,
+    visuals.map((item) => (item.sceneId === 1 ? next : item)),
+    "reshape"
+  );
+}
+
+/** The whole picture a change of shape starts from: the latest upload or AI picture at or above the selected take, without our logo. */
+function reshapeSource(projectId: string) {
+  const rows = versionRows(projectId, "visuals");
+  const selected = rows.findIndex((row) => Number(row.accepted) === 1);
+  for (let i = selected < 0 ? rows.length - 1 : selected; i >= 0; i--) {
+    const mark = String(rows[i]?.generation_id || "");
+    if (mark && !mark.startsWith("reshape:")) return modelPictureFor(projectId, rows, i, 1).file;
+  }
+  return currentModelPicture(projectId, 1).file;
+}
+
+/** The selected picture on a printed page (A4, A5 or A6, 300 dpi), whole on white or filling the page. Free. */
+export async function printOwnPicture(userId: string, projectId: string, rawPaper: unknown, rawFill: unknown) {
+  const project = getProject(projectId, userId);
+  if (!isImagePost(String(project.type)) || !hasStillFile(projectId, 1)) {
+    throw Object.assign(new Error("Make the picture first."), { status: 400 });
+  }
+  const paper = readPaper(rawPaper);
+  const fill = rawFill === "1" || rawFill === "true" || rawFill === true;
+  const body = await printPicture(stillFile(projectId, 1), paper, fill);
+  return { body, name: `${ownTitle(project.prompt)}-${paper.toUpperCase()}` };
+}
+
+/** A gift certificate project whose design is this picture (cut or fitted to A5 landscape). Free; the picture stays here. */
+export async function certificateFromPicture(userId: string, projectId: string, raw: unknown) {
+  const project = getProject(projectId, userId);
+  if (!isImagePost(String(project.type)) || !hasStillFile(projectId, 1)) {
+    throw Object.assign(new Error("Make the picture first."), { status: 400 });
+  }
+  const base = reshapeSource(projectId) || stillFile(projectId, 1);
+  const { id, visuals } = newPictureProject(userId, {
+    intent: "certificate",
+    title: ownTitle(parse<Idea>(project.idea_json as string | null)?.title || project.prompt),
+    useBrand: Number(project.use_brand) !== 0,
+    format: "a5",
+  });
+  try {
+    fs.mkdirSync(projectMediaDir(id), { recursive: true });
+    await reshapePicture(base, stillFile(id, 1), "a5", readReshape(raw));
+  } catch (error) {
+    db.prepare("DELETE FROM project_step_versions WHERE project_id = ?").run(id);
+    db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+    fs.rmSync(projectMediaPath(id), { recursive: true, force: true });
+    throw error;
+  }
+  return saveOwnPictureVersion(userId, id, visuals);
 }

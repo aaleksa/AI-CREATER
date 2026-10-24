@@ -2,12 +2,13 @@ import express, { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_INVITE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, logoBaseFile, logoLayout, logoMarkFile, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, editCaptions, editScript, translateReelScript, setMusic, updateMusic, removeMusic, updateReelLogo, updateCaptionStyle, updateReelTitles, refreshReelVideo, forkReel, setVoiceChoice, setCaptionsOff, setVoiceOff, stampLogoOnPicture, updateInvite, updateShot, updateCertificate, certificateFile, translateCertificate, setCertificateLogo, removeCertificateLogo } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, logoBaseFile, logoLayout, logoMarkFile, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, editCaptions, editScript, translateReelScript, setMusic, updateMusic, removeMusic, updateReelLogo, updateCaptionStyle, updateReelTitles, refreshReelVideo, forkReel, setVoiceChoice, setCaptionsOff, setVoiceOff, stampLogoOnPicture, updateInvite, updateShot, updateCertificate, certificateFile, translateCertificate, setCertificateLogo, removeCertificateLogo, createOwnPicture, reshapeOwnPicture, printOwnPicture, certificateFromPicture } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
 import { voiceSampleFile, voiceChoiceOf, VOICE_CHOICES, hasMusicFile, hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, MUSIC_MAX_BYTES, musicFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
 import { archiveState } from "../services/archive.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 import { publicError, USER_ERRORS } from "../services/userErrors.js";
+import { OWN_PICTURE_MAX } from "../services/ownPicture.js";
 import { addExampleRef, exampleRefFile, exampleRefList, readExampleUpload, removeExampleRef } from "../services/projectRefs.js";
 
 function readPrompt(value: unknown) {
@@ -81,6 +82,45 @@ projectsRouter.post("/", (req, res) => {
     shape.format
   );
   res.status(201).json({ project: serializeProject(project) });
+});
+
+/** "Your own picture": a file from the owner's device (body = the image bytes). */
+projectsRouter.post(
+  "/own",
+  rateLimit(20, 60_000),
+  express.raw({ type: () => true, limit: OWN_PICTURE_MAX + 1024 }),
+  async (req, res) => {
+    try {
+      const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      let name = "";
+      try {
+        name = decodeURIComponent(String(req.get("X-File-Name") || ""));
+      } catch {
+        name = "";
+      }
+      const project = await createOwnPicture(req.user!.id, { upload: buf }, req.get("X-Use-Brand"), name);
+      res.status(201).json({ project });
+    } catch (error) {
+      const { status, body } = publicError(error, `${req.method} ${req.path}`);
+      res.status(status).json(body);
+    }
+  }
+);
+
+/** "Your own picture" from a picture made in another of the owner's projects (copied; that project stays as it is). */
+projectsRouter.post("/own/from/:sourceId", rateLimit(20, 60_000), async (req, res) => {
+  try {
+    const project = await createOwnPicture(
+      req.user!.id,
+      { fromProject: String(req.params.sourceId), versionId: req.body?.versionId },
+      req.body?.useBrand,
+      ""
+    );
+    res.status(201).json({ project });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
 });
 
 function ownProject(req: { params: Record<string, unknown>; user?: { id: string } }) {
@@ -321,6 +361,37 @@ projectsRouter.post(
 projectsRouter.delete("/:id/certificate/logo", rateLimit(20, 60_000), (req, res) => {
   try {
     res.json({ project: removeCertificateLogo(req.user!.id, String(req.params.id)) });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.post("/:id/reshape", rateLimit(20, 60_000), async (req, res) => {
+  try {
+    res.json({ project: await reshapeOwnPicture(req.user!.id, String(req.params.id), req.body) });
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.get("/:id/print", rateLimit(30, 60_000), async (req, res) => {
+  try {
+    const file = await printOwnPicture(req.user!.id, String(req.params.id), req.query.paper, req.query.fill);
+    const safe = file.name.replace(/[^\p{L}\p{N}-]+/gu, "-").slice(0, 60) || "picture";
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="picture.pdf"; filename*=UTF-8''${encodeURIComponent(safe)}.pdf`);
+    res.send(file.body);
+  } catch (error) {
+    const { status, body } = publicError(error, `${req.method} ${req.path}`);
+    res.status(status).json(body);
+  }
+});
+
+projectsRouter.post("/:id/make-certificate", rateLimit(10, 60_000), async (req, res) => {
+  try {
+    res.status(201).json({ project: await certificateFromPicture(req.user!.id, String(req.params.id), req.body) });
   } catch (error) {
     const { status, body } = publicError(error, `${req.method} ${req.path}`);
     res.status(status).json(body);

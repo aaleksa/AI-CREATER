@@ -256,6 +256,7 @@ export function guessOffer(prompt: string): InviteCard {
 export function guessPoster(prompt: string, kind = "invite"): InviteCard {
   if (kind === "info") return guessInfo(prompt);
   if (kind === "offer") return guessOffer(prompt);
+  if (kind !== "invite") return guessInfo(prompt);
   return guessInvite(prompt);
 }
 
