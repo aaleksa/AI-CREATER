@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { OWN_INTENT, POSTER_INTENTS, isPosterKind } from "./imageKinds.js";
 import path from "node:path";
+import os from "node:os";
 import { v4 as uuid } from "uuid";
 import { brandImageUrls, brandLogoPath } from "./brandAssets.js";
 import { exampleRefList, listExampleRefs, readExampleUpload, writeEditExample } from "./projectRefs.js";
@@ -30,6 +31,7 @@ import {
   rewriteStillCopyPrompt,
   rewriteStillFormatPrompt,
   readPaintedCopy,
+  readCertificateWords,
   translateBrief,
   translateScript,
   translateCertificateWords,
@@ -345,7 +347,9 @@ function certificateOf(row: Record<string, unknown>): CertificateSettings {
   const saved = (parse<SavedCertificate>(row.certificate_json as string | null) || {}) as SavedCertificate;
   const take = certificateTake(String(row.id));
   const look = (take && saved.looks && typeof saved.looks === "object" && saved.looks[take]) || {};
-  const settings = parseCertificate({ ...saved, ...look }, lang as "uk" | "en", Number(row.use_brand) === 0 ? "none" : "brand");
+  // Certificates made on the owner's own design before the flag existed: their design came with no brief.
+  const ownDesign = saved.ownDesign === true || parse<Idea>(row.idea_json as string | null)?.shot?.summary === "The owner's own picture.";
+  const settings = parseCertificate({ ...saved, ...look }, lang as "uk" | "en", Number(row.use_brand) === 0 ? "none" : "brand", ownDesign);
   return settings.items.length ? settings : { ...settings, items: [{ name: "", gift: "", giftNote: "", validFrom: "", validUntil: "", code: "" }] };
 }
 
@@ -422,7 +426,7 @@ export function updateCertificate(userId: string, projectId: string, raw: unknow
   const project = getProject(projectId, userId);
   if (project.image_intent !== "certificate") throw Object.assign(new Error(USER_ERRORS.refresh), { status: 400 });
   const current = certificateOf(project);
-  let settings = withCodes(parseCertificate(raw, current.lang, current.logo));
+  let settings = withCodes(parseCertificate(raw, current.lang, current.logo, current.ownDesign));
   // The logo leaves the words (or comes back): the words keep their place on the page instead of jumping by its height.
   const printsLogo = Boolean(certificateLogoPath(projectId, settings, userId));
   const left = !current.logoLayout && settings.logoLayout;
@@ -2763,22 +2767,93 @@ export async function printOwnPicture(userId: string, projectId: string, rawPape
   return { body, name: `${ownTitle(project.prompt)}-${paper.toUpperCase()}` };
 }
 
-/** A gift certificate project whose design is this picture (cut or fitted to A5 landscape). Free; the picture stays here. */
+/**
+ * A gift certificate whose design is your own picture (cut or fitted to A5 landscape): a picture from one of your
+ * projects, or an upload. Free; the source stays as it is.
+ */
 export async function certificateFromPicture(userId: string, projectId: string, raw: unknown) {
   const project = getProject(projectId, userId);
   if (!isImagePost(String(project.type)) || !hasStillFile(projectId, 1)) {
     throw Object.assign(new Error("Make the picture first."), { status: 400 });
   }
-  const base = reshapeSource(projectId) || stillFile(projectId, 1);
-  const { id, visuals } = newPictureProject(userId, {
-    intent: "certificate",
-    title: ownTitle(parse<Idea>(project.idea_json as string | null)?.title || project.prompt),
-    useBrand: Number(project.use_brand) !== 0,
-    format: "a5",
-  });
+  const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const useBrand = body.useBrand === undefined ? Number(project.use_brand) !== 0 : body.useBrand !== false && body.useBrand !== "0";
+  // One of our certificates: its design has no words, so its own words come along into the forms, printed as before.
+  const fromCertificate = project.image_intent === "certificate" ? certificateOf(project) : null;
+  return certificateFromFile(
+    userId,
+    reshapeSource(projectId) || stillFile(projectId, 1),
+    ownTitle(parse<Idea>(project.idea_json as string | null)?.title || project.prompt),
+    useBrand,
+    raw,
+    fromCertificate
+  );
+}
+
+/** A certificate whose design is an uploaded file (Create → Certificate → your own design). */
+export async function certificateFromUpload(userId: string, upload: Buffer, rawUseBrand: unknown, rawName: unknown, raw: unknown) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "auteur-design-"));
+  const tmp = path.join(dir, "design.img");
+  try {
+    await writeOwnPicture(upload, tmp);
+    const useBrand = rawUseBrand !== false && rawUseBrand !== "0" && rawUseBrand !== "false";
+    return await certificateFromFile(userId, tmp, ownTitle(rawName), useBrand, raw);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function uiLang(raw: unknown) {
+  const value = (raw && typeof raw === "object" ? (raw as Record<string, unknown>).lang : "") || "";
+  return value === "uk" || value === "en" ? value : "";
+}
+
+async function certificateFromFile(
+  userId: string,
+  base: string,
+  title: string,
+  useBrand: boolean,
+  raw: unknown,
+  fromCertificate: CertificateSettings | null = null
+) {
+  const { id, visuals } = newPictureProject(userId, { intent: "certificate", title, useBrand, format: "a5" });
   try {
     fs.mkdirSync(projectMediaDir(id), { recursive: true });
     await reshapePicture(base, stillFile(id, 1), "a5", readReshape(raw));
+    if (fromCertificate) {
+      // Its words and its look come along. A certificate on its own design that still shows its own words keeps
+      // ours off (and its words in the forms), so nothing is printed twice.
+      const { title: heading, note, lang, codes, items, style, readFromDesign } = fromCertificate;
+      db.prepare("UPDATE projects SET certificate_json = ? WHERE id = ?").run(
+        JSON.stringify({ ownDesign: true, title: heading, note, lang, codes, items, readFromDesign, style }),
+        id
+      );
+    } else {
+      // What is on their picture decides where we start:
+      // - certificate words on it: they go into the forms, ours stay off (the design is printed as it is);
+      // - a blank certificate design: our words with the usual values, on a soft wash;
+      // - anything else (a photo, a poster) or unreadable: our words with the usual values, on a plate so they read.
+      const read = await readCertificateWords(stillFile(id, 1));
+      const hasWords = Boolean(read?.found);
+      const panel = hasWords ? "none" : read?.isCertificate ? "soft" : "plate";
+      const words = read && hasWords
+        ? {
+            title: read.title,
+            note: read.note,
+            ...(read.lang ? { lang: read.lang } : {}),
+            codes: Boolean(read.code),
+            items: [{ name: read.name, gift: read.gift, giftNote: read.giftNote, validFrom: read.validFrom, validUntil: read.validUntil, code: read.code }],
+            readFromDesign: true,
+          }
+        : {};
+      db.prepare("UPDATE projects SET certificate_json = ? WHERE id = ?").run(
+        JSON.stringify({ ownDesign: true, ...words, style: { panel, words: !hasWords } }),
+        id
+      );
+      // The words' language: as read off the design, else the language the owner works in.
+      const lang = hasWords && read?.lang ? read.lang : uiLang(raw);
+      if (lang) db.prepare("UPDATE projects SET picture_language = ? WHERE id = ?").run(lang, id);
+    }
   } catch (error) {
     db.prepare("DELETE FROM project_step_versions WHERE project_id = ?").run(id);
     db.prepare("DELETE FROM projects WHERE id = ?").run(id);

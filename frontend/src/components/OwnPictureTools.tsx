@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { SHAPE_RATIO, api, fetchMedia, type Project } from "../lib/api";
 import { useLocale } from "../i18n/locale";
 import MoreHint from "./MoreHint";
@@ -16,8 +15,8 @@ function frameStyle(shape: string) {
 }
 
 /**
- * Free tools for a picture you brought (or copied from another project): another shape without AI, a print PDF,
- * and a gift certificate with this picture as its design. Every change is a new take, so nothing is lost.
+ * Free tools for a picture you brought (or copied from another project): another shape without AI and a print PDF.
+ * Every change is a new take, so nothing is lost. (A certificate from your own design starts on Create → Certificate.)
  */
 export default function OwnPictureTools({
   project,
@@ -29,7 +28,6 @@ export default function OwnPictureTools({
   disabled: boolean;
 }) {
   const { t, te } = useLocale();
-  const nav = useNavigate();
   const [shape, setShape] = useState<(typeof SHAPES)[number] | "">("");
   const [mode, setMode] = useState<"crop" | "fit">("crop");
   const [focus, setFocus] = useState({ x: 50, y: 50 });
@@ -107,12 +105,6 @@ export default function OwnPictureTools({
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
-    });
-
-  const certificate = () =>
-    run("certificate", async () => {
-      const { project: made } = await api.makeCertificate(project.id, { mode, background });
-      nav(`/app/studio/${made.id}`);
     });
 
   return (
@@ -213,13 +205,6 @@ export default function OwnPictureTools({
         </button>
       </div>
 
-      <p className="pane-title" style={{ marginTop: 18 }}>{t("own.certTitle")}</p>
-      <p className="hint">{t("own.certHint")}</p>
-      <div className="action-row">
-        <button type="button" className="btn ghost" disabled={off} onClick={certificate}>
-          {busy === "certificate" ? t("own.working") : t("own.certMake")}
-        </button>
-      </div>
       {error && <p className="err">{error}</p>}
     </details>
   );

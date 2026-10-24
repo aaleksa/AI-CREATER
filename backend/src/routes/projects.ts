@@ -2,7 +2,7 @@ import express, { Router } from "express";
 import { db } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CREDIT_COSTS, FULL_IMAGE_COST, FULL_INVITE_COST, FULL_VIDEO_COST, MAX_PROMPT_CHARS, MIN_PROMPT_CHARS } from "../config.js";
-import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, logoBaseFile, logoLayout, logoMarkFile, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, editCaptions, editScript, translateReelScript, setMusic, updateMusic, removeMusic, updateReelLogo, updateCaptionStyle, updateReelTitles, refreshReelVideo, forkReel, setVoiceChoice, setCaptionsOff, setVoiceOff, stampLogoOnPicture, updateInvite, updateShot, updateCertificate, certificateFile, translateCertificate, setCertificateLogo, removeCertificateLogo, createOwnPicture, reshapeOwnPicture, previewReshape, printOwnPicture, certificateFromPicture } from "../services/pipeline.js";
+import { FORMAT_TYPES, MVP_READY, createProject, deletePictureVersion, keepOnlyCurrentPicture, logoBaseFile, logoLayout, logoMarkFile, readCreateImageFormat, readCreateImageIntent, readCreatePictureLanguage, removeLogoFromPicture, restoreStepVersion, runStep, saveFeedback, serializeProject, editCaptions, editScript, translateReelScript, setMusic, updateMusic, removeMusic, updateReelLogo, updateCaptionStyle, updateReelTitles, refreshReelVideo, forkReel, setVoiceChoice, setCaptionsOff, setVoiceOff, stampLogoOnPicture, updateInvite, updateShot, updateCertificate, certificateFile, translateCertificate, setCertificateLogo, removeCertificateLogo, createOwnPicture, reshapeOwnPicture, previewReshape, printOwnPicture, certificateFromPicture, certificateFromUpload } from "../services/pipeline.js";
 import { createPreviewLink, findPreview, serializePreview } from "../services/share.js";
 import { voiceSampleFile, voiceChoiceOf, VOICE_CHOICES, hasMusicFile, hasStillFile, hasStillVersionFile, hasVideoFile, hasVoiceFile, MUSIC_MAX_BYTES, musicFile, removeProjectMedia, stillFile, stillVersionFile, videoFile, voiceFile } from "../services/media.js";
 import { archiveState } from "../services/archive.js";
@@ -99,6 +99,33 @@ projectsRouter.post(
         name = "";
       }
       const project = await createOwnPicture(req.user!.id, { upload: buf }, req.get("X-Use-Brand"), name);
+      res.status(201).json({ project });
+    } catch (error) {
+      const { status, body } = publicError(error, `${req.method} ${req.path}`);
+      res.status(status).json(body);
+    }
+  }
+);
+
+/** Create → Certificate → your own design: the file becomes the certificate's design (cut or fitted to A5). */
+projectsRouter.post(
+  "/certificate-design",
+  rateLimit(20, 60_000),
+  express.raw({ type: () => true, limit: OWN_PICTURE_MAX + 1024 }),
+  async (req, res) => {
+    try {
+      const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      let name = "";
+      try {
+        name = decodeURIComponent(String(req.get("X-File-Name") || ""));
+      } catch {
+        name = "";
+      }
+      const project = await certificateFromUpload(req.user!.id, buf, req.get("X-Use-Brand"), name, {
+        mode: req.get("X-Mode"),
+        background: req.get("X-Background"),
+        lang: String(req.get("Accept-Language") || "").startsWith("uk") ? "uk" : "en",
+      });
       res.status(201).json({ project });
     } catch (error) {
       const { status, body } = publicError(error, `${req.method} ${req.path}`);
@@ -403,7 +430,8 @@ projectsRouter.get("/:id/print", rateLimit(30, 60_000), async (req, res) => {
 
 projectsRouter.post("/:id/make-certificate", rateLimit(10, 60_000), async (req, res) => {
   try {
-    res.status(201).json({ project: await certificateFromPicture(req.user!.id, String(req.params.id), req.body) });
+    const lang = String(req.get("Accept-Language") || "").startsWith("uk") ? "uk" : "en";
+    res.status(201).json({ project: await certificateFromPicture(req.user!.id, String(req.params.id), { ...(req.body || {}), lang }) });
   } catch (error) {
     const { status, body } = publicError(error, `${req.method} ${req.path}`);
     res.status(status).json(body);

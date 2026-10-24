@@ -80,7 +80,10 @@ export type CertificateItem = { name: string; gift: string; giftNote: string; va
 export type CertificateLayout = { x: number; y: number; scale: number };
 export type CertificateFont = "brand" | "montserrat" | "playfair" | "cormorant" | "script";
 /** Font and colours of the big words; an empty colour means the studio picks it. */
-export type CertificateStyle = { font: CertificateFont; accent: string; ink: string };
+/** Under the words: a soft wash, a plate that reads on any picture, or nothing. */
+export type CertificatePanel = "soft" | "plate" | "none";
+/** words: print our words on the design (off = the design exactly as it is). */
+export type CertificateStyle = { font: CertificateFont; accent: string; ink: string; panel?: CertificatePanel; words?: boolean };
 export type CertificateSettings = {
   title: string;
   note: string;
@@ -91,6 +94,10 @@ export type CertificateSettings = {
   style?: CertificateStyle;
   /** Whose logo tops the words: the brand kit's, a file for this certificate, or none. */
   logo?: "brand" | "own" | "none";
+  /** The design is the owner's own picture, not painted from a brief: no brief or idea to show. */
+  ownDesign?: boolean;
+  /** The words in the forms were read off the owner's design, which still shows them. */
+  readFromDesign?: boolean;
   /** From the server: this certificate has its own logo file / the brand kit (if used) has a logo. */
   /** The selected design (picture take): place, font, colours and logo are saved for it alone. */
   take?: string;
@@ -416,7 +423,30 @@ export const api = {
     }
     return res.blob();
   },
-  makeCertificate: (id: string, body: { mode: "crop" | "fit"; background?: string }) =>
+  /** Create → Certificate → your own design: the uploaded file becomes the design (cut or fitted to A5). */
+  createCertificateFromUpload: async (file: Blob, name: string, useBrand: boolean, mode: "crop" | "fit", background: string) => {
+    const locale = currentLocale();
+    let res: Response;
+    try {
+      res = await fetch(`/projects/certificate-design`, {
+        method: "POST",
+        headers: localeHeaders({
+          "Content-Type": file.type || "application/octet-stream",
+          "X-File-Name": encodeURIComponent(name),
+          "X-Use-Brand": useBrand ? "1" : "0",
+          "X-Mode": mode,
+          "X-Background": background,
+        }),
+        body: file,
+      });
+    } catch {
+      throw new ApiError(translateError(locale, "We can’t reach the studio. Check your internet and try again."), 503);
+    }
+    const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string; project?: Project };
+    if (!res.ok) throw new ApiError(translateError(locale, data.error || "Something went wrong. Try again in a minute."), res.status, data.code);
+    return data as { project: Project };
+  },
+  makeCertificate: (id: string, body: { mode: "crop" | "fit"; background?: string; useBrand?: boolean }) =>
     request<{ project: Project }>(`/projects/${id}/make-certificate`, { method: "POST", body: JSON.stringify(body) }),
   removeCertificateLogo: (id: string) => request<{ project: Project }>(`/projects/${id}/certificate/logo`, { method: "DELETE" }),
   removeMusic: (id: string) => request<{ project: Project }>(`/projects/${id}/music`, { method: "DELETE" }),

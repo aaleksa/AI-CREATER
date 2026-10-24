@@ -929,6 +929,87 @@ export function rewriteStillCopyPrompt(copyEdit: string, logoSpot?: LogoSpot) {
   ].join("\n\n");
 }
 
+/** The words already printed on a certificate design, sorted into our fields (empty when there are none). */
+export type CertificateWords = {
+  found: boolean;
+  /** A certificate / voucher design (with or without words) or something else (a photo, a poster). */
+  isCertificate: boolean;
+  title: string;
+  name: string;
+  gift: string;
+  giftNote: string;
+  validFrom: string;
+  validUntil: string;
+  code: string;
+  note: string;
+  lang: "uk" | "en" | "";
+};
+
+/** A postal address or a web / email line: we print contacts from the brand kit ourselves, so it is not the note. A booking phone stays. */
+function contactLine(line: string) {
+  return /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i.test(line) || /@|www\.|https?:\/\//i.test(line);
+}
+
+/**
+ * Reads a certificate design the owner brought and sorts its printed words into the certificate fields, so they can
+ * be changed in the forms. A cheap text call (gpt-4o-mini sees the picture); nothing is painted.
+ */
+export async function readCertificateWords(imagePath: string): Promise<CertificateWords | null> {
+  // null = could not read (no AI): the caller treats the picture as "not a certificate".
+  const openai = client();
+  if (!openai || !fs.existsSync(imagePath)) return null;
+  const bytes = fs.readFileSync(imagePath);
+  if (!bytes.length) return null;
+  const mime = logoKindFromBytes(bytes) === "png" ? "image/png" : "image/jpeg";
+  try {
+    const response = await openai.chat.completions.create({
+      model: config.openaiModel || "gpt-4o-mini",
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: clipInput(
+                [
+                  "This picture may be the design of a printed gift certificate (or voucher). Read the words printed on it and sort them into fields.",
+                  "Return JSON: { isCertificate, found, title, name, gift, giftNote, validFrom, validUntil, code, note, lang }.",
+                  "isCertificate = true if the picture is a certificate or voucher design — a frame, border or card layout meant for certificate words, with or without words on it yet. A photograph, a poster or a flyer is false.",
+                  "found = true only if there are certificate words (a heading like Gift certificate / Подарунковий сертифікат, what is given, a name, a date or a code). The business name or logo alone is not certificate words: then found = false.",
+                  "title = the heading. name = who it is for (only the person, without 'For' / 'Для'). gift = what is given (the big line). giftNote = a smaller line under the gift. validFrom / validUntil = the dates as printed (only the date). code = the code (only the code). note = any other small line (terms, booking phone) — not the business address or website.",
+                  "Keep the spelling exactly as printed. Empty string for a field that is not on the picture. lang = \"uk\" if the words are Ukrainian, \"en\" if English, else \"\".",
+                ].join("\n")
+              ),
+            },
+            { type: "image_url", image_url: { url: `data:${mime};base64,${bytes.toString("base64")}` } },
+          ],
+        },
+      ],
+    });
+    const raw = JSON.parse(String(response.choices[0]?.message?.content || "{}")) as Record<string, unknown>;
+    const text = (value: unknown, max: number) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+    const words: CertificateWords = {
+      found: raw.found === true,
+      isCertificate: raw.isCertificate === true || raw.found === true,
+      title: text(raw.title, 60),
+      name: text(raw.name, 60),
+      gift: text(raw.gift, 80),
+      giftNote: text(raw.giftNote, 120),
+      validFrom: text(raw.validFrom, 40),
+      validUntil: text(raw.validUntil, 40),
+      code: text(raw.code, 24).toUpperCase(),
+      note: contactLine(text(raw.note, 120)) ? "" : text(raw.note, 120),
+      lang: raw.lang === "uk" || raw.lang === "en" ? raw.lang : "",
+    };
+    return { ...words, found: words.found && Boolean(words.title || words.gift || words.name) };
+  } catch (error) {
+    console.error("readCertificateWords failed", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
 export async function readPaintedCopy(imagePath: string) {
   const openai = client();
   if (!openai || !fs.existsSync(imagePath)) return "";
