@@ -39,6 +39,9 @@ export type BrandKitRow = Record<string, string> & {
   tone_note?: string;
   vertical_note?: string;
   logo_on_photos?: boolean;
+  /** Saved business locations. `address` / `addressSelected` is the one used on flyers. */
+  addresses?: string[];
+  addressSelected?: number;
 };
 export const VOICE_CHOICES = ["coral", "nova", "sage", "ash", "onyx", "echo"] as const;
 export type VoiceChoice = (typeof VOICE_CHOICES)[number];
@@ -483,7 +486,7 @@ export const api = {
   deleteProjectRef: (id: string, slot: string) =>
     request<{ refs: { id: string; url: string }[] }>(`/projects/${id}/refs/${slot}`, { method: "DELETE" }),
   brand: () => request<{ brandKit: BrandKitRow | null }>("/brand"),
-  saveBrand: (body: Record<string, string | boolean>) =>
+  saveBrand: (body: Record<string, string | boolean | number | string[]>) =>
     request<{ brandKit: BrandKitRow }>("/brand", { method: "PUT", body: JSON.stringify(body) }),
   uploadLogo: (image: string) =>
     request<{ brandKit: BrandKitRow }>("/brand/logo", { method: "POST", body: JSON.stringify({ image }) }),

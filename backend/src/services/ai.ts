@@ -9,6 +9,7 @@ import { listBrandRefFiles, logoKindFromBytes, type BrandImageFile } from "./bra
 import { fontSampleFile, hasTitleFont } from "./brandFont.js";
 import { logoLook } from "./logoLook.js";
 import { guessPoster, type InviteCard } from "./invite.js";
+import { primaryAddress } from "./brandAddresses.js";
 
 export type LearnedSummary = {
   generatedAt: string;
@@ -41,6 +42,9 @@ export type BrandKit = {
   logo_position?: string;
   contact_on_photos?: boolean | number | string;
   address?: string;
+  addresses?: string[];
+  addressSelected?: number;
+  addresses_json?: string | null;
 };
 
 export const LOGO_POSITIONS = ["top-left", "top-right", "bottom-left", "bottom-right"] as const;
@@ -455,8 +459,11 @@ function brandContext(brand?: BrandKit | null) {
     brand.ref_place_url && `They uploaded a photo of their real place. Use that room only when the story is set in their own place; otherwise ignore it.`,
     brand.ref_people_url && `They uploaded a photo of a real person who works there. Prefer that person only when someone from the business belongs in the scene.`,
     brand.ref_product_url && `They uploaded a photo of their real product. Use that item only when the story needs it.`,
-    brand.address &&
-      `Business address: ${brand.address}. If an invitation or offer has no place in the request, use this address. If the request names another place, use that one. Never invent an address.`,
+    (() => {
+      const place = primaryAddress(brand);
+      if (!place) return "";
+      return `Business address: ${place}. If an invitation or offer has no place in the request, use this address. If the request names another place, use that one. Never invent an address.`;
+    })(),
     brand.instagram && `Instagram: ${brand.instagram}`,
     brand.website && `Website: ${brand.website}`,
     niche,
@@ -1137,11 +1144,11 @@ function looksLikeTargetLanguage(text: string, lang: PictureLanguage) {
   return true;
 }
 
-/** Owner's saved address for flyers: used only when the request names no place of its own. */
+/** Owner's selected address for flyers: used only when the request names no place of its own. */
 function addressLine(brand?: BrandKit | null) {
-  const address = String(brand?.address || "").trim();
-  if (!address) return "";
-  return `Their business address is "${address}". If this picture invites people to an event or offer at their business and the request names no place or address, print this address once as the place line, spelled exactly as given. If the request already names a place or address, use that and do not add this one. If the picture is not about visiting them, do not print it. Never invent a different address.`;
+  const place = primaryAddress(brand);
+  if (!place) return "";
+  return `Their business address is "${place}". If this picture invites people to an event or offer at their business and the request names no place or address, print this address once as the place line, spelled exactly as given. If the request already names a place or address, use that and do not add this one. If the picture is not about visiting them, do not print it. Never invent a different address.`;
 }
 
 /** The invitation's details as the owner checked them: printed exactly, never reworded or translated. */
