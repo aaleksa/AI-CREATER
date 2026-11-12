@@ -209,6 +209,8 @@ export type Project = {
     visuals?: (StepVersion<{ sceneId: number; imageUrl: string; prompt: string; placeholder?: boolean; clean?: string; logoCorner?: string; logoBox?: LogoBox }[]> & {
       ourLogo?: boolean;
       shape?: string;
+      /** en / uk from this take's remake chain; empty when it follows the brief. */
+      language?: string;
     })[];
   };
   previewUrl: string | null;

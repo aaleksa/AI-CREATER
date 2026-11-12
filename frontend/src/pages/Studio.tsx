@@ -2946,7 +2946,10 @@ export default function Studio() {
                     <a
                       className="btn accent"
                       href={downloadSrc}
-                      download={downloadName(project, t, "jpg")}
+                      download={downloadName(project, t, "jpg", {
+                        shape: shownVersion?.shape || project.imageFormat,
+                        language: shownVersion?.language ?? project.pictureLanguage,
+                      })}
                     >
                       {t(isInvite ? "studio.downloadInvite" : "studio.downloadPicture")}
                     </a>

@@ -152,7 +152,20 @@ export function readCreateImageIntent(type: string, raw: unknown): { intent: Ima
 function languageOfPrompt(prompt: string): PictureLanguage | null {
   if (/Translate the text in this image to English|Translate the whole brief into English first/.test(prompt)) return "en";
   if (/Translate the text in this image to Ukrainian|Translate the whole brief into Ukrainian first/.test(prompt)) return "uk";
-  if (/Same language as the request/.test(prompt)) return "";
+  // "Same language as the request" means follow the brief — not a language tag for the filename.
+  return null;
+}
+
+/**
+ * Language of one visuals take: its own remake prompt, or (for an edit / new shape / logo) the one it grew from.
+ * Null when nothing in the chain says — the brief decides.
+ */
+function versionPictureLanguage(rows: { payload_json: string }[], index: number): PictureLanguage | null {
+  for (let i = Math.min(index, rows.length - 1); i >= 0; i--) {
+    const frame = (parse<Visual[]>(rows[i].payload_json) || []).find((item) => item.sceneId === 1);
+    const lang = languageOfPrompt(String(frame?.prompt || ""));
+    if (lang !== null) return lang;
+  }
   return null;
 }
 
@@ -168,12 +181,8 @@ function chosenPictureLanguage(projectId: string): PictureLanguage | null {
   rows.forEach((row, i) => {
     if (Number(row.accepted) === 1) index = i;
   });
-  for (let i = index; i >= 0; i--) {
-    const frame = (parse<Visual[]>(rows[i].payload_json) || []).find((item) => item.sceneId === 1);
-    const lang = languageOfPrompt(String(frame?.prompt || ""));
-    if (lang !== null) return lang;
-  }
-  return null;
+  if (index < 0) return null;
+  return versionPictureLanguage(rows, index);
 }
 
 export function parsePictureLanguage(raw: unknown): PictureLanguage {
@@ -705,7 +714,13 @@ function lastVersions(projectId: string, step: string, project?: Record<string, 
     accepted: Number(row.accepted) === 1,
     createdAt: row.created_at,
     payload: slimVersionPayload(step, parse(row.payload_json)),
-    ...(step === "visuals" ? { ourLogo: hasOurLogo(projectId, rows, index), shape: versionShape(projectId, row) } : {}),
+    ...(step === "visuals"
+      ? {
+          ourLogo: hasOurLogo(projectId, rows, index),
+          shape: versionShape(projectId, row),
+          language: versionPictureLanguage(rows, index) || "",
+        }
+      : {}),
     ...(reel && step === "script" ? { keeps: continuationOf(projectId, project!, parse<Script>(row.payload_json)) } : {}),
     ...(reel && step === "idea"
       ? (() => {

@@ -138,7 +138,7 @@ export const en = {
     en: "EN",
     square: "square",
     portrait: "portrait",
-    portrait34: "portrait",
+    portrait34: "3x4",
     story: "story",
     wide: "wide",
     tall: "tall",

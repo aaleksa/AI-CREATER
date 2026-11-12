@@ -140,7 +140,7 @@ export const uk: Messages = {
     en: "англ",
     square: "квадрат",
     portrait: "портрет",
-    portrait34: "портрет",
+    portrait34: "3x4",
     story: "сторіз",
     wide: "широка",
     tall: "висока",
