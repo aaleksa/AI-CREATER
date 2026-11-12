@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { SCHEMA_SQL } from "./schema.js";
 import { dataDir } from "../dataDir.js";
 
@@ -128,9 +128,9 @@ function named(args: unknown[]) {
 
 function wrap(statement: ReturnType<DatabaseSync["prepare"]>) {
   return {
-    run: (...args: unknown[]) => statement.run(...named(args)),
-    get: (...args: unknown[]) => statement.get(...named(args)) as Record<string, unknown> | undefined,
-    all: (...args: unknown[]) => statement.all(...named(args)) as Record<string, unknown>[],
+    run: (...args: unknown[]) => statement.run(...(named(args) as SQLInputValue[])),
+    get: (...args: unknown[]) => statement.get(...(named(args) as SQLInputValue[])) as Record<string, unknown> | undefined,
+    all: (...args: unknown[]) => statement.all(...(named(args) as SQLInputValue[])) as Record<string, unknown>[],
   };
 }
 
