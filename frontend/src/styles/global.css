@@ -1028,6 +1028,20 @@ textarea.brief-box::placeholder {
 .brand-section h2 { margin: 0 0 4px; font-family: var(--serif); font-size: 24px; }
 .brand-section:focus { outline: none; }
 .brand-section .where { margin: 22px 0 6px; font-size: 15px; }
+.brand-addresses { display: flex; flex-direction: column; gap: 8px; }
+.brand-address-row { display: flex; gap: 8px; align-items: center; }
+.brand-address-row > input:not([type="radio"]) { flex: 1; min-width: 0; }
+.brand-address-row .btn { flex: 0 0 auto; }
+.brand-address-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.brand-address-pick input { margin: 0; }
+.brand-address-pick .hint { margin: 0; }
 .hint.warn { color: var(--danger); margin-top: 8px; }
 input.bad { border-color: var(--danger); }
 .tones .choice .hint { font-style: italic; }

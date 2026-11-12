@@ -22,6 +22,7 @@ import {
 import { fontFamilyName, writeFontSample } from "../services/brandFont.js";
 import { LOGO_POSITIONS } from "../services/ai.js";
 import { maybeRefreshLearnedSummary, readyCount } from "../services/learning.js";
+import { addressBookOf, addressesForSave } from "../services/brandAddresses.js";
 
 function flag(value: unknown) {
   return value === true || value === 1 || value === "1";
@@ -94,6 +95,7 @@ function serializeBrand(row: Record<string, unknown> | undefined, userId: string
   }
   const progress = completeness(row, userId);
   const images = brandImageUrls(userId);
+  const book = addressBookOf(row as { address?: string; addresses_json?: string | null });
   return {
     ...row,
     logo_url: images.logo_url || String(row.logo_url || ""),
@@ -103,6 +105,9 @@ function serializeBrand(row: Record<string, unknown> | undefined, userId: string
     font_url: images.font_url,
     logo_on_photos: Number(row.logo_on_photos) === 1,
     contact_on_photos: Number(row.contact_on_photos) === 1,
+    address: book.list[book.selected] || "",
+    addresses: book.list,
+    addressSelected: book.selected,
     learned_summary,
     learned_lines,
     completeness: progress,
@@ -274,8 +279,12 @@ brandRouter.put("/", (req, res) => {
     logo_on_photos: flag(body.logo_on_photos) ? 1 : 0,
     logo_position: logoPosition(body.logo_position),
     contact_on_photos: flag(body.contact_on_photos) ? 1 : 0,
-    address: String(body.address ?? "").replace(/\s+/g, " ").trim().slice(0, 160),
   };
+  const { address, addresses_json } = addressesForSave({
+    address: body.address,
+    addresses: body.addresses,
+    addressSelected: body.addressSelected,
+  });
   const existing = db.prepare("SELECT id FROM brand_kits WHERE user_id = ?").get(req.user!.id) as { id: string } | undefined;
   if (existing) {
     db.prepare(
@@ -283,14 +292,15 @@ brandRouter.put("/", (req, res) => {
         business_name=@business_name, logo_url=@logo_url, primary_color=@primary_color,
         secondary_color=@secondary_color, font=@font, tone_of_voice=@tone_of_voice, tone_note=@tone_note,
         website=@website, instagram=@instagram, vertical=@vertical, vertical_note=@vertical_note,
-        logo_on_photos=@logo_on_photos, logo_position=@logo_position, contact_on_photos=@contact_on_photos, address=@address, updated_at=datetime('now')
+        logo_on_photos=@logo_on_photos, logo_position=@logo_position, contact_on_photos=@contact_on_photos,
+        address=@address, addresses_json=@addresses_json, updated_at=datetime('now')
        WHERE user_id=@user_id`
-    ).run({ ...fields, user_id: req.user!.id });
+    ).run({ ...fields, address, addresses_json, user_id: req.user!.id });
   } else {
     db.prepare(
-      `INSERT INTO brand_kits (id, user_id, business_name, logo_url, primary_color, secondary_color, font, tone_of_voice, tone_note, website, instagram, vertical, vertical_note, logo_on_photos, logo_position, contact_on_photos, address)
-       VALUES (@id, @user_id, @business_name, @logo_url, @primary_color, @secondary_color, @font, @tone_of_voice, @tone_note, @website, @instagram, @vertical, @vertical_note, @logo_on_photos, @logo_position, @contact_on_photos, @address)`
-    ).run({ id: uuid(), user_id: req.user!.id, ...fields });
+      `INSERT INTO brand_kits (id, user_id, business_name, logo_url, primary_color, secondary_color, font, tone_of_voice, tone_note, website, instagram, vertical, vertical_note, logo_on_photos, logo_position, contact_on_photos, address, addresses_json)
+       VALUES (@id, @user_id, @business_name, @logo_url, @primary_color, @secondary_color, @font, @tone_of_voice, @tone_note, @website, @instagram, @vertical, @vertical_note, @logo_on_photos, @logo_position, @contact_on_photos, @address, @addresses_json)`
+    ).run({ id: uuid(), user_id: req.user!.id, ...fields, address, addresses_json });
   }
   writeFontSample(req.user!.id, fields.business_name, fields.font);
   res.json({ brandKit: serializeBrand(kitOf(req.user!.id), req.user!.id) });

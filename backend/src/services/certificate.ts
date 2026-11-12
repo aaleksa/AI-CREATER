@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Resvg } from "@resvg/resvg-js";
 import type { BrandKit } from "./ai.js";
+import { primaryAddress } from "./brandAddresses.js";
 import { brandFont } from "./brandFont.js";
 import { brandLogoPath } from "./brandAssets.js";
 import { imageDimensions } from "./imageFormats.js";
@@ -323,7 +324,7 @@ function certificateSvg(settings: CertificateSettings, item: CertificateItem, br
     parts.push(`<text x="${cx}" y="${y}" text-anchor="middle" font-family="${sans}" font-size="${fitSize(settings.note, 44, inner)}" fill="${muted}"${mutedOpacity}>${xml(settings.note)}</text>`);
     y += 80;
   }
-  const contact = [brand?.address, brand?.instagram, brand?.website].map((v) => clip(v, 60)).filter(Boolean).join("  ·  ");
+  const contact = [primaryAddress(brand), brand?.instagram, brand?.website].map((v) => clip(v, 60)).filter(Boolean).join("  ·  ");
   if (contact) {
     parts.push(`<text x="${cx}" y="${y + 20}" text-anchor="middle" font-family="${sans}" font-size="${fitSize(contact, 40, inner)}" fill="${muted}"${mutedOpacity}>${xml(contact)}</text>`);
     y += 80;
@@ -376,7 +377,7 @@ export function certificateBlockBox(settings: CertificateSettings, item: Certifi
   if (item.giftNote) h += 120;
   if (item.validFrom || item.validUntil || (settings.codes && item.code)) h += 100;
   if (settings.note) h += 80;
-  if ([brand?.address, brand?.instagram, brand?.website].some((v) => String(v || "").trim())) h += 80;
+  if ([primaryAddress(brand), brand?.instagram, brand?.website].some((v) => String(v || "").trim())) h += 80;
   return { w: 0.66 * 0.86, h: Math.round((h / PRINT.h) * 1000) / 1000 };
 }
 

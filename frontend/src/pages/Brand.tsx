@@ -49,6 +49,21 @@ function goTo(id: string) {
   if (typeof (el as HTMLElement).focus === "function") (el as HTMLElement).focus({ preventScroll: true });
 }
 
+const MAX_ADDRESSES = 5;
+
+function kitAddresses(kit: BrandKitRow) {
+  const fromList = Array.isArray(kit.addresses)
+    ? kit.addresses.map((line) => String(line || "").trim()).filter(Boolean)
+    : [];
+  if (fromList.length) {
+    const list = fromList.slice(0, MAX_ADDRESSES);
+    const selected = Math.max(0, Math.min(list.length - 1, Number(kit.addressSelected) || 0));
+    return { list, selected };
+  }
+  const one = String(kit.address || "").trim();
+  return one ? { list: [one], selected: 0 } : { list: [""], selected: 0 };
+}
+
 function snapshot(form: typeof empty, logoOnPhotos: boolean, contactOnPhotos: boolean) {
   // Photos and logo save on their own, so they do not count as unsaved.
   const { logo_url, ref_place_url, ref_people_url, ref_product_url, font_url, ...rest } = form;
@@ -84,7 +99,8 @@ const empty = {
   tone_note: "",
   website: "",
   instagram: "",
-  address: "",
+  addresses: [""] as string[],
+  addressSelected: 0,
   vertical: "",
   vertical_note: "",
   ref_place_url: "",
@@ -114,7 +130,10 @@ function applyKit(kit: BrandKitRow) {
     tone_note: kit.tone_note || "",
     website: kit.website || "",
     instagram: kit.instagram || "",
-    address: kit.address || "",
+    ...(() => {
+      const book = kitAddresses(kit);
+      return { addresses: book.list, addressSelected: book.selected };
+    })(),
     vertical: kit.vertical || "",
     vertical_note: kit.vertical_note || "",
     ref_place_url: kit.ref_place_url || "",
@@ -254,8 +273,13 @@ export default function Brand() {
     }
     try {
       const instagram = form.instagram.trim().replace(/^@+/, "");
+      const addresses = form.addresses.map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, MAX_ADDRESSES);
+      const addressSelected = Math.max(0, Math.min(Math.max(addresses.length - 1, 0), form.addressSelected));
       const { brandKit } = await api.saveBrand({
         ...form,
+        addresses,
+        addressSelected,
+        address: addresses[addressSelected] || "",
         instagram: instagram ? `@${instagram}` : "",
         website: form.website.trim(),
         logo_on_photos: logoOnPhotos,
@@ -515,16 +539,65 @@ export default function Brand() {
               )}
             </div>
             <div className="field">
-              <label htmlFor="address">{t("brand.address")}</label>
+              <label htmlFor="address-0">{t("brand.address")}</label>
               <p className="hint">{t("brand.addressHint")}</p>
-              <input
-                id="address"
-                value={form.address}
-                maxLength={160}
-                autoComplete="street-address"
-                onChange={(e) => set("address", e.target.value)}
-                placeholder={t("brand.addressPh")}
-              />
+              <div className="brand-addresses" role="radiogroup" aria-label={t("brand.address")}>
+                {form.addresses.map((line, index) => (
+                  <div className="brand-address-row" key={index}>
+                    <label className="brand-address-pick">
+                      <input
+                        type="radio"
+                        name="addressSelected"
+                        checked={form.addressSelected === index}
+                        onChange={() => setForm((f) => ({ ...f, addressSelected: index }))}
+                        aria-label={t("brand.addressUse")}
+                      />
+                      <span className="hint">{t("brand.addressUse")}</span>
+                    </label>
+                    <input
+                      id={index === 0 ? "address-0" : undefined}
+                      value={line}
+                      maxLength={160}
+                      autoComplete="street-address"
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          addresses: f.addresses.map((item, i) => (i === index ? e.target.value : item)),
+                        }))
+                      }
+                      placeholder={t("brand.addressPh")}
+                      aria-label={t("brand.addressN", { n: index + 1 })}
+                    />
+                    {form.addresses.length > 1 && (
+                      <button
+                        className="btn ghost"
+                        type="button"
+                        onClick={() =>
+                          setForm((f) => {
+                            const addresses = f.addresses.filter((_, i) => i !== index);
+                            let addressSelected = f.addressSelected;
+                            if (index < addressSelected) addressSelected -= 1;
+                            else if (index === addressSelected) addressSelected = Math.min(addressSelected, addresses.length - 1);
+                            return { ...f, addresses, addressSelected: Math.max(0, addressSelected) };
+                          })
+                        }
+                      >
+                        {t("brand.addressRemove")}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {form.addresses.length < MAX_ADDRESSES && (
+                <button
+                  className="btn ghost"
+                  type="button"
+                  style={{ marginTop: 8 }}
+                  onClick={() => setForm((f) => ({ ...f, addresses: [...f.addresses, ""] }))}
+                >
+                  {t("brand.addressAdd")}
+                </button>
+              )}
             </div>
           </section>
 

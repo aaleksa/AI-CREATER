@@ -53,6 +53,7 @@ addColumn("ALTER TABLE projects ADD COLUMN voice_choice TEXT NOT NULL DEFAULT ''
 addColumn("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0");
 addColumn("ALTER TABLE brand_kits ADD COLUMN contact_on_photos INTEGER NOT NULL DEFAULT 0");
 addColumn("ALTER TABLE brand_kits ADD COLUMN address TEXT NOT NULL DEFAULT ''");
+addColumn("ALTER TABLE brand_kits ADD COLUMN addresses_json TEXT NOT NULL DEFAULT ''");
 addColumn("ALTER TABLE brand_kits ADD COLUMN logo_position TEXT NOT NULL DEFAULT 'bottom-right'");
 addColumn("ALTER TABLE projects ADD COLUMN image_format TEXT NOT NULL DEFAULT ''");
 
